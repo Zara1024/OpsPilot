@@ -50,7 +50,7 @@ services:
         max-file: "5"
 
   opspilot:
-    image: docker.cnb.cool/zara1024/opspilot:${OPSPILOT_IMAGE_TAG:-${OPSPILOT_VERSION:-v1.0.0}}
+    image: docker.cnb.cool/zara1024/opspilot:${OPSPILOT_VERSION}
     container_name: opspilot
     restart: unless-stopped
     depends_on:
@@ -303,7 +303,7 @@ services:
   # Image bakes web/dist/ in; nginx.conf and certs/ are bind-mounted so
   # operators can edit them without rebuilding the image.
   nginx:
-    image: docker.cnb.cool/zara1024/opspilot/opspilot-web:${OPSPILOT_WEB_IMAGE_TAG:-${OPSPILOT_VERSION:-v1.0.0}}
+    image: docker.cnb.cool/zara1024/opspilot/opspilot-web:${OPSPILOT_VERSION}
     container_name: opspilot-nginx
     restart: unless-stopped
     depends_on:
