@@ -1,0 +1,30 @@
+{{- if eq (include "opspilot-edge.telemetryGatewayEnabled" .) "true" }}
+{{- $gw := default dict .Values.telemetryGateway -}}
+{{- $svc := default dict $gw.service -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "opspilot-edge.telemetryGatewayName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "opspilot-edge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: telemetry-gateway
+spec:
+  type: {{ default "ClusterIP" $svc.type }}
+  selector:
+    app.kubernetes.io/name: {{ include "opspilot-edge.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    # The selector is stable across embedded/deployment modes. The pre-upgrade
+    # hook adds this label to a legacy embedded Controller before Helm changes
+    # the Service, then the final manifests hand it to the standalone Gateway.
+    {{ include "opspilot-edge.telemetryBackendLabel" . }}: "true"
+  ports:
+    - name: otlp-grpc
+      port: {{ default 4317 $svc.grpcPort }}
+      targetPort: otlp-grpc
+      protocol: TCP
+    - name: otlp-http
+      port: {{ default 4318 $svc.httpPort }}
+      targetPort: otlp-http
+      protocol: TCP
+{{- end }}

@@ -1,0 +1,192 @@
+{{- $controllerMetrics := default dict .Values.controller.metrics -}}
+{{- $telemetryConfig := default dict .Values.telemetryConfig -}}
+{{- $k8sMetricsEndpoint := include "opspilot-edge.k8sMetricsEndpoint" . -}}
+{{- $telemetryGatewayEnabled := eq (include "opspilot-edge.telemetryGatewayEnabled" .) "true" -}}
+{{- $telemetryGatewayEmbedded := and $telemetryGatewayEnabled (eq (include "opspilot-edge.telemetryGatewayMode" .) "embedded") -}}
+{{- $kubernetesMetricsEnabled := eq (include "opspilot-edge.kubernetesMetricsEnabled" .) "true" -}}
+{{- $controllerMetricsMode := and $kubernetesMetricsEnabled (eq (include "opspilot-edge.kubernetesMetricsMode" .) "controller") -}}
+{{- $telemetryDataPlaneRequired := or (and $telemetryGatewayEnabled (eq (include "opspilot-edge.telemetryGatewayMode" .) "deployment")) (and $kubernetesMetricsEnabled (eq (include "opspilot-edge.kubernetesMetricsMode" .) "scraper")) -}}
+{{- $controllerInventory := default dict .Values.controller.inventory -}}
+{{- $controllerConfigChecksum := printf "%s\n%s\n%s\n%v\n%s" .Values.mode .Values.manager.publicURL .Values.manager.tunnelAddr (default true $controllerInventory.watch) (default "10m" $controllerInventory.fullSyncInterval) | sha256sum -}}
+{{- if $controllerMetricsMode -}}
+{{- $controllerConfigChecksum = include (print $.Template.BasePath "/configmap.yaml") . | sha256sum -}}
+{{- end -}}
+{{- if ne (int .Values.controller.replicas) 1 -}}
+{{- fail "controller.replicas must be 1 until controller leader election is implemented" -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "opspilot-edge.fullname" . }}-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "opspilot-edge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  replicas: {{ .Values.controller.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "opspilot-edge.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: controller
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ $controllerConfigChecksum }}
+        checksum/controller-bootstrap: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+      labels:
+        {{- include "opspilot-edge.labels" . | nindent 8 }}
+        app.kubernetes.io/component: controller
+        {{ include "opspilot-edge.telemetryBackendLabel" . }}: {{ ternary "true" "false" $telemetryGatewayEmbedded | quote }}
+    spec:
+      serviceAccountName: {{ include "opspilot-edge.controllerServiceAccount" . }}
+      {{- with .Values.image.architecture }}
+      nodeSelector:
+        kubernetes.io/arch: {{ . | quote }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: {{ .Values.podSecurity.runAsNonRoot }}
+        runAsUser: {{ .Values.podSecurity.runAsUser }}
+        runAsGroup: {{ .Values.podSecurity.runAsGroup }}
+        fsGroup: {{ .Values.podSecurity.fsGroup }}
+      containers:
+        - name: edge-controller
+          image: {{ include "opspilot-edge.image" . | quote }}
+          imagePullPolicy: {{ default "IfNotPresent" .Values.image.pullPolicy }}
+          workingDir: /
+          {{- if $telemetryGatewayEmbedded }}
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+              protocol: TCP
+            - name: otlp-http
+              containerPort: 4318
+              protocol: TCP
+          {{- end }}
+          env:
+            - name: OPSPILOT_EDGE_MODE
+              value: k8s-controller
+            - name: OPSPILOT_K8S_ROLE
+              value: "controller"
+            - name: OPSPILOT_K8S_MODE
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: mode
+            - name: OPSPILOT_K8S_CLUSTER_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-controller-bootstrap
+                  key: cluster-id
+            - name: OPSPILOT_K8S_BOOTSTRAP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-controller-bootstrap
+                  key: bootstrap-token
+            - name: OPSPILOT_K8S_CREDENTIAL_SECRET
+              value: {{ include "opspilot-edge.controllerCredentialSecretName" . | quote }}
+            - name: OPSPILOT_K8S_TELEMETRY_SECRET
+              value: {{ include "opspilot-edge.telemetryCredentialSecretName" . | quote }}
+            - name: OPSPILOT_K8S_TELEMETRY_REQUIRED
+              value: {{ $telemetryDataPlaneRequired | quote }}
+            - name: OPSPILOT_K8S_TELEMETRY_CONFIG_REFRESH_INTERVAL
+              value: {{ default "1m" $telemetryConfig.refreshInterval | quote }}
+            - name: OPSPILOT_MANAGER_PUBLIC_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: manager-public-url
+            - name: OPSPILOT_EDGE_CLOUD_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: manager-tunnel-addr
+            - name: OPSPILOT_K8S_ENROLL_TLS_INSECURE
+              value: {{ .Values.manager.tlsInsecure | quote }}
+            {{- if $telemetryGatewayEmbedded }}
+            - name: OPSPILOT_K8S_TELEMETRY_GATEWAY_ENABLED
+              value: "true"
+            {{- end }}
+            - name: OPSPILOT_K8S_INVENTORY_WATCH
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: k8s-inventory-watch
+            - name: OPSPILOT_K8S_INVENTORY_INTERVAL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: k8s-inventory-full-sync-interval
+            - name: OPSPILOT_K8S_APP_METRICS_DISCOVERY
+              {{- if $controllerMetricsMode }}
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: k8s-app-metrics-discovery
+              {{- else }}
+              value: "false"
+              {{- end }}
+            - name: OPSPILOT_K8S_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OPSPILOT_K8S_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: OPSPILOT_K8S_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            {{- if and (eq (include "opspilot-edge.k8sMetricsEnabled" .) "true") $k8sMetricsEndpoint }}
+            - name: OPSPILOT_K8S_METRICS_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: k8s-metrics-endpoint
+            - name: OPSPILOT_K8S_METRICS_INTERVAL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: k8s-metrics-interval
+            - name: OPSPILOT_K8S_METRICS_TIMEOUT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: k8s-metrics-timeout
+            - name: OPSPILOT_K8S_METRICS_PUSH_TIMEOUT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: k8s-metrics-push-timeout
+            - name: OPSPILOT_K8S_METRICS_SAMPLE_LIMIT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: k8s-metrics-sample-limit
+            - name: OPSPILOT_K8S_METRICS_BATCH_SAMPLE_LIMIT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: k8s-metrics-batch-sample-limit
+            - name: OPSPILOT_K8S_METRICS_BATCH_BYTE_LIMIT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: k8s-metrics-batch-byte-limit
+            {{- end }}
+          resources:
+            {{- toYaml .Values.controller.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: edge-state
+              mountPath: /var/lib/opspilot-edge
+      volumes:
+        - name: edge-state
+          emptyDir: {}

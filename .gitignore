@@ -1,0 +1,72 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Go coverage output
+*.out
+coverage.out
+coverage.html
+
+# Build output
+bin/
+dist/stage/
+dist/out/
+tmp/
+
+# Stray top-level binaries from `go build` / `go run`
+/opspilot
+/opspilot-frontier
+/opspilot-edge
+
+# release artifacts
+dist/stage/
+dist/out/
+bin/linux-*
+bin/darwin-*
+bin/windows-*
+
+# Dependencies
+vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Env files — keep .env.example
+.env
+.env.*
+!.env.example
+
+# Local-only config overrides
+*.local.yaml
+*.local.yml
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Claude Code transient files
+.claude/
+web/dist/
+web/node_modules/
+web/tsconfig.tsbuildinfo
+api/gen/
+/.playwright-cli/
+/output/
+
+# Local dev artifacts (deploy/)
+deploy/docker-compose.override.yml
+deploy/certs/
+deploy/install/certs/
+/local/
+
+# build cache: stack-dep upstream binaries fetched by dist/package.sh
+.cache/
+.gstack/

@@ -1,0 +1,457 @@
+# opspilot local dev compose.
+# NOT for production. See deploy/README.md and HLD-001 section 9 for production notes.
+# Modern compose: no top-level `version:` key.
+#
+# Post-pivot stack: MySQL is the default backend. The opspilot service waits
+# for the mysql healthcheck before it starts connecting. SQLite remains an
+# opt-in backend for local tinkering (see deploy/README.md).
+#
+# Tunnel topology (ADR-007): edges dial the upstream singchia/frontier
+# broker on port 40012 (mapped to host 40012). Manager connects to the
+# broker's service-bound port 40011 over the compose network.
+
+services:
+  mysql:
+    image: docker.cnb.cool/zara1024/opspilot/mysql:8.0
+    container_name: opspilot-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpw
+      MYSQL_DATABASE: opspilot
+      MYSQL_USER: opspilot
+      MYSQL_PASSWORD: opspilot
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -prootpw"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+    networks:
+      - opspilot_net
+
+  opspilot:
+    build:
+      # Build context is the repo root so the Dockerfile (which lives in
+      # deploy/) can see go.mod, cmd/, internal/, etc.
+      context: ..
+      dockerfile: deploy/Dockerfile.opspilot
+      args:
+        VERSION: ${VERSION:-dev}
+    image: opspilot:${VERSION:-dev}
+    container_name: opspilot
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    environment:
+      OPSPILOT_HTTP_ADDR: ${OPSPILOT_HTTP_ADDR:-:8080}
+      OPSPILOT_METRICS_ADDR: ${OPSPILOT_METRICS_ADDR:-:9100}
+      # Frontier broker (upstream singchia/frontier). Manager dials the
+      # service-bound port over the compose network.
+      OPSPILOT_FRONTIER_ADDR: ${OPSPILOT_FRONTIER_ADDR:-frontier:40011}
+      OPSPILOT_FRONTIER_SERVICE_NAME: ${OPSPILOT_FRONTIER_SERVICE_NAME:-opspilot-manager}
+      # Database (MySQL by default). Point at the mysql service on the
+      # compose network; the opspilot service waits for the healthcheck.
+      OPSPILOT_DB_DIALECT: ${OPSPILOT_DB_DIALECT:-mysql}
+      OPSPILOT_DB_DSN: ${OPSPILOT_DB_DSN:-opspilot:opspilot@tcp(mysql:3306)/opspilot?parseTime=true&charset=utf8mb4&loc=Local}
+      OPSPILOT_JWT_SECRET: ${OPSPILOT_JWT_SECRET:-change-me-to-a-long-random-string}
+      # HLD-017 credential vault at-rest key (AES-256-GCM); set 32+ random chars.
+      OPSPILOT_SECRET_KEY: ${OPSPILOT_SECRET_KEY:-}
+      OPSPILOT_JWT_ACCESS_TTL: ${OPSPILOT_JWT_ACCESS_TTL:-15m}
+      OPSPILOT_JWT_REFRESH_TTL: ${OPSPILOT_JWT_REFRESH_TTL:-168h}
+      OPSPILOT_OPENAI_API_KEY: ${OPSPILOT_OPENAI_API_KEY:-}
+      OPSPILOT_OPENAI_MODEL: ${OPSPILOT_OPENAI_MODEL:-gpt-4o}
+      OPSPILOT_OPENAI_BASE_URL: ${OPSPILOT_OPENAI_BASE_URL:-}
+      # AIOps agent kernel. "graph" enables the eino graph kernel +
+      # SkillRegistry.Resolve activation-keyword filter (skills with
+      # activation:keyword stay out of the prompt unless the user query
+      # mentions a keyword) + ToolBag deferral pipeline. "legacy" =
+      # historical for-loop runner with all tools always full-schema.
+      # Default flipped to graph 2026-05-08; flip to legacy to bisect.
+      OPSPILOT_AGENT_KERNEL: ${OPSPILOT_AGENT_KERNEL:-graph}
+      # ToolBag deferral threshold. When tool count > this, specialty-tier
+      # tools get redacted schemas (LLM must call ToolSearch to expand).
+      # Default 30 is fine until marketplace grows the bag past it.
+      OPSPILOT_TOOLBAG_DEFERRAL_THRESHOLD: ${OPSPILOT_TOOLBAG_DEFERRAL_THRESHOLD:-30}
+      # ADR-009: cloud-side Prometheus. Manager remote_writes open-set
+      # samples here and the aiops query_promql tool reads from it.
+      OPSPILOT_PROM_ENABLED: ${OPSPILOT_PROM_ENABLED:-true}
+      OPSPILOT_PROM_URL: ${OPSPILOT_PROM_URL:-http://prometheus:9090/prometheus}
+      OPSPILOT_PROM_REMOTE_WRITE_URL: ${OPSPILOT_PROM_REMOTE_WRITE_URL:-}
+      OPSPILOT_PROM_QUERY_URL: ${OPSPILOT_PROM_QUERY_URL:-http://prometheus:9090/prometheus}
+      OPSPILOT_PROFILE_QUERY_URL: ${OPSPILOT_PROFILE_QUERY_URL:-http://pyroscope:4040}
+      OPSPILOT_PROM_TLS_INSECURE: ${OPSPILOT_PROM_TLS_INSECURE:-false}
+      OPSPILOT_PROM_TLS_CA_FILE: ${OPSPILOT_PROM_TLS_CA_FILE:-}
+      # Root-span head sampling. Keep local development at 100%; production
+      # can lower this without rebuilding the manager image.
+      OPSPILOT_OTEL_SAMPLING_RATIO: ${OPSPILOT_OTEL_SAMPLING_RATIO:-1}
+      # Knowledge base / RAG: local BGE embedding + qdrant. This mirrors
+      # the install package default so the dev stack has KB search without
+      # an external embedding API key.
+      OPSPILOT_QDRANT_URL: ${OPSPILOT_QDRANT_URL:-http://qdrant:6333}
+      OPSPILOT_EMBEDDING_PROVIDER: ${OPSPILOT_EMBEDDING_PROVIDER:-local}
+      OPSPILOT_EMBEDDING_MODEL: ${OPSPILOT_EMBEDDING_MODEL:-bge-small-zh-v1.5}
+      OPSPILOT_EMBEDDING_DIM: ${OPSPILOT_EMBEDDING_DIM:-512}
+      OPSPILOT_EMBEDDING_BASE_URL: ${OPSPILOT_EMBEDDING_BASE_URL:-}
+      OPSPILOT_EMBEDDING_API_KEY: ${OPSPILOT_EMBEDDING_API_KEY:-}
+      OPSPILOT_EMBEDDING_CACHE_DIR: ${OPSPILOT_EMBEDDING_CACHE_DIR:-/var/lib/opspilot/embeddings}
+      # Optional pip index mirror for cloud_bash runtime tool installs (empty =
+      # pypi). Set to a regional mirror where pypi.org is slow.
+      OPSPILOT_PIP_INDEX_URL: ${OPSPILOT_PIP_INDEX_URL:-}
+      ONNX_PATH: /usr/lib/libonnxruntime.so
+      # Embedded Grafana first-boot integration. The manager uses the
+      # dev-only admin creds below to create an opspilot Service Account +
+      # token, then stores the token in system_settings.grafana.sa_token.
+      # Override/blank the password when pointing at an external Grafana.
+      OPSPILOT_GRAFANA_INTERNAL_URL: ${OPSPILOT_GRAFANA_INTERNAL_URL:-http://grafana:3000/grafana}
+      OPSPILOT_GRAFANA_BOOTSTRAP_USER: ${OPSPILOT_GRAFANA_BOOTSTRAP_USER:-${GRAFANA_ADMIN_USER:-admin}}
+      OPSPILOT_GRAFANA_BOOTSTRAP_PASSWORD: ${OPSPILOT_GRAFANA_BOOTSTRAP_PASSWORD-${GRAFANA_ADMIN_PASSWORD:-admin}}
+      OPSPILOT_GRAFANA_TLS_INSECURE: ${OPSPILOT_GRAFANA_TLS_INSECURE:-false}
+      # Public URL the manager hands out to edges as the data-plane
+      # endpoint for plugin telemetry (ADR-014 / ADR-015).
+      OPSPILOT_PUBLIC_URL: ${OPSPILOT_PUBLIC_URL:-}
+      OPSPILOT_TUNNEL_ADDR: ${OPSPILOT_TUNNEL_ADDR:-}
+      OPSPILOT_K8S_EVENT_RETENTION: ${OPSPILOT_K8S_EVENT_RETENTION:-24h}
+      OPSPILOT_K8S_EVENT_MAX_PER_CLUSTER: ${OPSPILOT_K8S_EVENT_MAX_PER_CLUSTER:-5000}
+      OPSPILOT_K8S_EVENT_CLEANUP_INTERVAL: ${OPSPILOT_K8S_EVENT_CLEANUP_INTERVAL:-1h}
+      # Built-in host alert thresholds over push_host_metrics.
+      OPSPILOT_ALERT_ENABLED: ${OPSPILOT_ALERT_ENABLED:-true}
+      OPSPILOT_ALERT_COOLDOWN: ${OPSPILOT_ALERT_COOLDOWN:-10m}
+      OPSPILOT_ALERT_CPU_PERCENT: ${OPSPILOT_ALERT_CPU_PERCENT:-90}
+      OPSPILOT_ALERT_MEM_PERCENT: ${OPSPILOT_ALERT_MEM_PERCENT:-90}
+      OPSPILOT_ALERT_DISK_USED_PERCENT: ${OPSPILOT_ALERT_DISK_USED_PERCENT:-90}
+      OPSPILOT_ALERT_LOAD1: ${OPSPILOT_ALERT_LOAD1:-0}
+      # Outbound notifications for alerts / scheduled jobs / proactive AIOps.
+      OPSPILOT_NOTIFY_ENABLED: ${OPSPILOT_NOTIFY_ENABLED:-false}
+      OPSPILOT_NOTIFY_DEFAULT_CHANNELS: ${OPSPILOT_NOTIFY_DEFAULT_CHANNELS:-log}
+      OPSPILOT_NOTIFY_TIMEOUT: ${OPSPILOT_NOTIFY_TIMEOUT:-10s}
+      OPSPILOT_NOTIFY_LOG_ENABLED: ${OPSPILOT_NOTIFY_LOG_ENABLED:-true}
+      OPSPILOT_NOTIFY_LOG_NAME: ${OPSPILOT_NOTIFY_LOG_NAME:-log}
+      OPSPILOT_NOTIFY_WEBHOOK_ENABLED: ${OPSPILOT_NOTIFY_WEBHOOK_ENABLED:-false}
+      OPSPILOT_NOTIFY_WEBHOOK_NAME: ${OPSPILOT_NOTIFY_WEBHOOK_NAME:-webhook}
+      OPSPILOT_NOTIFY_WEBHOOK_URL: ${OPSPILOT_NOTIFY_WEBHOOK_URL:-}
+      OPSPILOT_NOTIFY_WEBHOOK_SECRET: ${OPSPILOT_NOTIFY_WEBHOOK_SECRET:-}
+      OPSPILOT_NOTIFY_SLACK_ENABLED: ${OPSPILOT_NOTIFY_SLACK_ENABLED:-false}
+      OPSPILOT_NOTIFY_SLACK_NAME: ${OPSPILOT_NOTIFY_SLACK_NAME:-slack}
+      OPSPILOT_NOTIFY_SLACK_WEBHOOK_URL: ${OPSPILOT_NOTIFY_SLACK_WEBHOOK_URL:-}
+      OPSPILOT_NOTIFY_FEISHU_ENABLED: ${OPSPILOT_NOTIFY_FEISHU_ENABLED:-false}
+      OPSPILOT_NOTIFY_FEISHU_NAME: ${OPSPILOT_NOTIFY_FEISHU_NAME:-feishu}
+      OPSPILOT_NOTIFY_FEISHU_WEBHOOK_URL: ${OPSPILOT_NOTIFY_FEISHU_WEBHOOK_URL:-}
+      OPSPILOT_NOTIFY_FEISHU_SECRET: ${OPSPILOT_NOTIFY_FEISHU_SECRET:-}
+      OPSPILOT_NOTIFY_DINGTALK_ENABLED: ${OPSPILOT_NOTIFY_DINGTALK_ENABLED:-false}
+      OPSPILOT_NOTIFY_DINGTALK_NAME: ${OPSPILOT_NOTIFY_DINGTALK_NAME:-dingtalk}
+      OPSPILOT_NOTIFY_DINGTALK_WEBHOOK_URL: ${OPSPILOT_NOTIFY_DINGTALK_WEBHOOK_URL:-}
+      OPSPILOT_NOTIFY_DINGTALK_SECRET: ${OPSPILOT_NOTIFY_DINGTALK_SECRET:-}
+      # Bootstrap admin. If either is empty, no admin is seeded and the
+      # server starts with zero users (nobody can log in — see "First login"
+      # in deploy/README.md).
+      OPSPILOT_ADMIN_EMAIL: ${OPSPILOT_ADMIN_EMAIL:-}
+      OPSPILOT_ADMIN_PASSWORD: ${OPSPILOT_ADMIN_PASSWORD:-}
+    # No ./data bind mount in MySQL mode (data lives in the mysql_data
+    # named volume on the mysql service).
+    # if switching to sqlite: add bind mount here
+    #   volumes:
+    #     - ./data:/data
+    #   and set OPSPILOT_DB_DIALECT=sqlite, OPSPILOT_DB_PATH=/data/opspilot.db.
+    volumes:
+      # ADR-024 edge upgrade bundles. ./edge holds edge-bundle-<arch>-
+      # <ver>.tar.gz + .tar.gz.sha256 (placed there by install.sh /
+      # upgrade.sh from the release tarball). Manager reads the .sha256
+      # at upgrade-trigger time to build the FetchPackageRequest;
+      # nginx (opspilot-web) serves the .tar.gz bytes from the same dir
+      # via /edge/<name>.
+      - ./edge:/usr/share/opspilot/edge-bundles:ro
+      - ../.cache/embedding-models:/var/lib/opspilot/embeddings
+      - opspilot_repos:/var/lib/opspilot/repos
+      # HLD-017 cloud skill marketplace: persist user-installed skills so
+      # they survive container recreation (bind-mount, not container layer).
+      - ../.cache/opspilot-skills:/var/lib/opspilot/skills
+      # HLD-019 agent workspace: per-session persistent cwd for cloud_bash.
+      - ../.cache/opspilot-workspace:/var/lib/opspilot/workspace
+      # cloud_bash tools: host-mounted PYTHONUSERBASE + <dir>/bin on PATH, so
+      # CLIs the agent installs (tccli, awscli, …) persist on the host across
+      # container recreation instead of being baked into the image.
+      - ../.cache/opspilot-tools:/var/lib/opspilot/tools
+      # Packet capture raw PCAP objects for local dev.
+      - ../.cache/opspilot-packet-captures:/var/lib/opspilot/packet-captures
+      - ../.cache/opspilot-chat-attachments:/var/lib/opspilot/chat-attachments
+    # ADR-008: HTTP API (8080) is no longer published to host in the
+    # production-shape stack — nginx fronts it on 443/80. Metrics port
+    # 9100 stays exposed for the host's Prometheus.
+    ports:
+      - "9100:9100"
+    networks:
+      - opspilot_net
+
+  # ADR-008: TLS termination + frontend SPA + /api reverse proxy. Same
+  # shape as deploy/install/docker-compose.yml; suitable for local dev.
+  nginx:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+      args:
+        VERSION: ${VERSION:-dev}
+    image: opspilot-web:${VERSION:-dev}
+    container_name: opspilot-nginx
+    restart: unless-stopped
+    depends_on:
+      opspilot:
+        condition: service_started
+      profiles-gateway:
+        condition: service_started
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+      # Public edge artifact dir for /install.sh + /edge/<file>.
+      - ../bin:/usr/share/nginx/html/edge:ro
+    ports:
+      - "${OPSPILOT_HTTP_PORT:-443}:443"
+      - "${OPSPILOT_HTTP_REDIRECT_PORT:-80}:80"
+    expose:
+      - "8081"
+    networks:
+      - opspilot_net
+
+  frontier:
+    # Upstream broker (ADR-007), mirrored to the project CNB registry.
+    # Edge-bound port 40012 is exposed on host:40012 so the tunnel endpoint
+    # URL stays identical to pre-split deployments.
+    image: docker.cnb.cool/zara1024/opspilot/frontier:1.2.6
+    container_name: opspilot-frontier
+    restart: unless-stopped
+    volumes:
+      - ./install/frontier.yaml:/usr/conf/frontier.yaml:ro
+    ports:
+      - "40012:40012"
+    networks:
+      - opspilot_net
+
+  # ADR-009: cloud-side Prometheus. Core service for the dev stack — same
+  # role as in deploy/install/docker-compose.yml (remote_write receiver +
+  # query backend for the aiops query_promql tool). Dev publishes 9090 to
+  # host so you can poke PromQL from the laptop browser; prod doesn't.
+  prometheus:
+    image: docker.cnb.cool/zara1024/opspilot/prometheus:v2.54.0
+    container_name: opspilot-prometheus
+    restart: unless-stopped
+    depends_on:
+      - opspilot
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${OPSPILOT_PROM_RETENTION_TIME:-2160h}
+      - --storage.tsdb.retention.size=${OPSPILOT_PROM_RETENTION_SIZE:-20GB}
+      - --web.enable-remote-write-receiver
+      - --web.enable-lifecycle
+      - --web.external-url=/prometheus/
+      - --web.route-prefix=/prometheus/
+    # Phase-A unblock: let the prometheus.yml `node-exporter-host` job
+    # resolve `host.docker.internal` on Linux too. Docker Desktop already
+    # provides this name; on Linux the docker-engine resolves the special
+    # value `host-gateway` to the docker0 bridge address. Set
+    # OPSPILOT_HOST_GATEWAY to the docker bridge IP on older engines.
+    extra_hosts:
+      - "host.docker.internal:${OPSPILOT_HOST_GATEWAY:-host-gateway}"
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus_data:/prometheus
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - opspilot_net
+
+  # Loki (ADR-012). Single-binary log backend, only docker-internal port
+  # 3100 — public access flows through nginx /loki/api/v1/push with
+  # auth_request → manager edgeauth (ADR-014 §决策).
+  loki:
+    image: docker.cnb.cool/zara1024/opspilot/loki:3.4.0
+    container_name: opspilot-loki
+    restart: unless-stopped
+    environment:
+      LOKI_RETENTION_PERIOD: ${OPSPILOT_LOKI_RETENTION_PERIOD:-720h}
+    command:
+      - -config.file=/etc/loki/local-config.yaml
+      - -config.expand-env=true
+    volumes:
+      - loki_data:/loki
+      - ./install/loki-config.yaml:/etc/loki/local-config.yaml:ro
+    networks:
+      - opspilot_net
+
+  # Tempo (ADR-013). Single-binary trace backend; OTLP gRPC :4317 and
+  # HTTP :4318 are intentionally NOT published — public access flows
+  # through nginx /v1/traces with auth_request → manager edgeauth
+  # (ADR-014 §决策第 1 条).
+  tempo:
+    image: docker.cnb.cool/zara1024/opspilot/tempo:2.10.0
+    container_name: opspilot-tempo
+    restart: unless-stopped
+    environment:
+      TEMPO_BLOCK_RETENTION: ${OPSPILOT_TEMPO_BLOCK_RETENTION:-168h}
+    command:
+      - -config.file=/etc/tempo/tempo.yaml
+      - -config.expand-env=true
+    volumes:
+      - tempo_data:/var/tempo
+      - ./install/tempo-config.yaml:/etc/tempo/tempo.yaml:ro
+    depends_on:
+      - prometheus
+    networks:
+      - opspilot_net
+
+  # OpenTelemetry Profiles is still alpha, so keep the gateway and backend
+  # versions pinned. Edge collectors send OTLP/HTTP through authenticated nginx;
+  # this collector forwards the profiles signal to Pyroscope over OTLP/gRPC.
+  profiles-gateway:
+    image: otel/opentelemetry-collector-contrib:0.157.0
+    container_name: opspilot-profiles-gateway
+    restart: unless-stopped
+    command:
+      - --config=/etc/otelcol/profiles-gateway.yaml
+      - --feature-gates=service.profilesSupport
+    volumes:
+      - ./install/profiles-gateway.yaml:/etc/otelcol/profiles-gateway.yaml:ro
+    depends_on:
+      - pyroscope
+    networks:
+      - opspilot_net
+
+  pyroscope:
+    image: grafana/pyroscope:1.21.1
+    container_name: opspilot-pyroscope
+    restart: unless-stopped
+    command:
+      - -self-profiling.disable-push=true
+      - -config.file=/etc/pyroscope.yaml
+    tmpfs:
+      - /data:rw,nosuid,nodev,size=1g,uid=10001,gid=10001,mode=0750
+      - /data-metastore:rw,nosuid,nodev,size=128m,uid=10001,gid=10001,mode=0750
+      - /data-compactor:rw,nosuid,nodev,size=256m,uid=10001,gid=10001,mode=0750
+    volumes:
+      - ./install/pyroscope-config.yaml:/etc/pyroscope.yaml:ro
+    networks:
+      - opspilot_net
+
+  # SearXNG (default backend for the manager-scoped web_search skill).
+  # Self-hosted meta-search aggregator — fans out queries to Bing /
+  # DuckDuckGo / Brave / Baidu / Sogou and returns a normalised JSON
+  # response. Zero API key, zero quota. Only docker-internal port 8080
+  # — manager reaches it at http://searxng:8080/search?q=...&format=json.
+  searxng:
+    image: docker.cnb.cool/zara1024/opspilot/searxng:latest
+    container_name: opspilot-searxng
+    restart: unless-stopped
+    environment:
+      SEARXNG_BASE_URL: http://searxng:8080/
+      INSTANCE_NAME: opspilot-search
+    volumes:
+      - ./searxng:/etc/searxng:ro
+    networks:
+      - opspilot_net
+
+  qdrant:
+    image: docker.cnb.cool/zara1024/opspilot/qdrant:v1.11.3
+    container_name: opspilot-qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - opspilot_net
+
+  grafana:
+    image: docker.cnb.cool/zara1024/opspilot/grafana-oss:11.1.4
+    container_name: opspilot-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+      - pyroscope
+    environment:
+      GF_SERVER_ROOT_URL: ${OPSPILOT_GRAFANA_ROOT_URL:-%(protocol)s://%(domain)s/grafana/}
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      # Local-dev only: fixed admin credentials let the manager bootstrap
+      # a Grafana Service Account token automatically. Production install
+      # uses deploy/install with a generated random password.
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Editor
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_USERS_DEFAULT_THEME: system
+      # Default UI language for anonymous viewers. Without this the
+      # Grafana picker follows Accept-Language → a CN-zh browser sees
+      # Chinese even when the opspilot product UI is in EN mode. We pin
+      # en-US as the fallback; the web/drilldown URL builder also
+      # appends ?lang=zh-Hans / en-US so the per-tab locale follows
+      # the product UI on Grafana 11.x where the param is honored.
+      GF_USERS_DEFAULT_LANGUAGE: en-US
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_INSTALL_PLUGINS: grafana-pyroscope-app
+      # iframe embedding for opspilot /monitor solo-mode panels. Default
+      # Grafana sets X-Frame-Options=deny + frame-ancestors=none which
+      # blocks our iframes. We're same-origin (under /grafana on the
+      # same nginx) so the security cost is essentially zero, and the
+      # nginx auth_request gate stays in front.
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      # Datasource provisioning URLs (loki / tempo). Grafana doesn't
+      # support shell-style ${VAR:-default} in YAML — set the default
+      # here so the provisioning yamls can use plain ${VAR}.
+      OPSPILOT_LOG_URL: ${OPSPILOT_LOG_URL:-http://loki:3100}
+      OPSPILOT_TRACE_QUERY_URL: ${OPSPILOT_TRACE_QUERY_URL:-http://tempo:3200}
+      OPSPILOT_PROFILE_QUERY_URL: ${OPSPILOT_PROFILE_QUERY_URL:-http://pyroscope:4040}
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - opspilot_net
+
+# ---------------------------------------------------------------------------
+# opspilot-edge is intentionally NOT defined here — in real deployments the
+# edge agent runs on the user's own host, not on the cloud side. If you want
+# to spin up a local demo edge for development, uncomment the stanza below
+# and make sure OPSPILOT_EDGE_CLOUD_ADDR points at the frontier service on the
+# compose network (`frontier:40012`).
+#
+#  opspilot-edge:
+#    build:
+#      context: ..
+#      dockerfile: deploy/Dockerfile.opspilot-edge
+#      args:
+#        VERSION: ${VERSION:-dev}
+#    image: opspilot-edge:${VERSION:-dev}
+#    container_name: opspilot-edge
+#    restart: unless-stopped
+#    depends_on:
+#      - frontier
+#    environment:
+#      OPSPILOT_EDGE_CLOUD_ADDR: ${OPSPILOT_EDGE_CLOUD_ADDR:-frontier:40012}
+#      OPSPILOT_EDGE_ACCESS_KEY: ${OPSPILOT_EDGE_ACCESS_KEY:-}
+#      OPSPILOT_EDGE_SECRET_KEY: ${OPSPILOT_EDGE_SECRET_KEY:-}
+#    networks:
+#      - opspilot_net
+
+volumes:
+  opspilot_repos:
+  mysql_data:
+  prometheus_data:
+  grafana_data:
+  qdrant_data:
+  loki_data:
+  tempo_data:
+
+networks:
+  opspilot_net:
+    driver: bridge

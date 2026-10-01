@@ -1,0 +1,208 @@
+{{- $nodeConfigChecksum := printf "%s\n%s\n%s" .Values.mode .Values.manager.publicURL .Values.manager.tunnelAddr | sha256sum -}}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "opspilot-edge.fullname" . }}-node
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "opspilot-edge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+spec:
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "opspilot-edge.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: node
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ $nodeConfigChecksum }}
+        checksum/node-bootstrap: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- if not (semverCompare ">=1.30-0" .Capabilities.KubeVersion.Version) }}
+        container.apparmor.security.beta.kubernetes.io/edge-node: unconfined
+        {{- end }}
+      labels:
+        {{- include "opspilot-edge.labels" . | nindent 8 }}
+        app.kubernetes.io/component: node
+    spec:
+      serviceAccountName: {{ include "opspilot-edge.nodeServiceAccount" . }}
+      # The node Agent chroots into /host/root before it starts the Collector.
+      # Disable the implicit mount and project the same rotating credentials
+      # explicitly below so they can also be mounted inside that chroot.
+      automountServiceAccountToken: false
+      {{- with .Values.image.architecture }}
+      nodeSelector:
+        kubernetes.io/arch: {{ . | quote }}
+      {{- end }}
+      hostPID: true
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      tolerations:
+        {{- toYaml .Values.node.tolerations | nindent 8 }}
+      initContainers:
+        - name: install-host-runtime
+          image: {{ include "opspilot-edge.image" . | quote }}
+          imagePullPolicy: {{ default "IfNotPresent" .Values.image.pullPolicy }}
+          args:
+            - install-k8s-host-runtime
+            - /host/root
+            - {{ .Values.podSecurity.runAsUser | quote }}
+            - {{ .Values.podSecurity.runAsGroup | quote }}
+          env:
+            # Compatibility for older Edge images; current images ignore this gate.
+            - name: OPSPILOT_AUTO_APM_ALLOW_BPF
+              value: "true"
+          resources:
+            requests:
+              cpu: 5m
+              memory: 32Mi
+            limits:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN", "DAC_OVERRIDE", "FOWNER"]
+          volumeMounts:
+            - name: host-root
+              mountPath: /host/root
+            - name: node-service-account
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+      containers:
+        - name: edge-node
+          image: {{ include "opspilot-edge.image" . | quote }}
+          imagePullPolicy: {{ default "IfNotPresent" .Values.image.pullPolicy }}
+          workingDir: /
+          args:
+            - enter-k8s-host
+            - /host/root
+            - {{ .Values.podSecurity.runAsUser | quote }}
+            - {{ .Values.podSecurity.runAsGroup | quote }}
+          env:
+            - name: OPSPILOT_EDGE_MODE
+              value: k8s-node
+            - name: OPSPILOT_K8S_ROLE
+              value: node
+            - name: OPSPILOT_K8S_MODE
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: mode
+            - name: OPSPILOT_K8S_CLUSTER_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-node-bootstrap
+                  key: cluster-id
+            - name: OPSPILOT_K8S_BOOTSTRAP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-node-bootstrap
+                  key: bootstrap-token
+            - name: OPSPILOT_K8S_CREDENTIAL_FILE
+              value: {{ printf "/var/lib/opspilot-edge/k8s-state/credentials/opspilot-edge-cluster-%v.json" .Values.enrollment.clusterID | quote }}
+            - name: OPSPILOT_K8S_SERVICE_ACCOUNT_DIR
+              value: /var/lib/opspilot-edge/k8s-runtime/serviceaccount
+            - name: OPSPILOT_EDGE_PLUGIN_BIN_DIR
+              value: /var/lib/opspilot-edge/k8s-runtime/plugins
+            - name: OPSPILOT_EDGE_PLUGIN_WORK_DIR
+              value: /var/lib/opspilot-edge/k8s-state/plugins
+            - name: OPSPILOT_EDGE_SECRET_DIR
+              value: /var/lib/opspilot-edge/k8s-state/secrets
+            - name: OPSPILOT_EDGE_UPGRADE_STAGE_DIR
+              value: /var/lib/opspilot-edge/k8s-state/.upgrade
+            - name: OPSPILOT_MANAGER_PUBLIC_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: manager-public-url
+            - name: OPSPILOT_EDGE_CLOUD_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: manager-tunnel-addr
+            - name: OPSPILOT_K8S_ENROLL_TLS_INSECURE
+              value: {{ .Values.manager.tlsInsecure | quote }}
+            - name: OPSPILOT_K8S_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: OPSPILOT_K8S_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OPSPILOT_K8S_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: OPSPILOT_EDGE_COLLECTOR_MODE
+              value: {{ .Values.node.collectorMode | quote }}
+            # Compatibility for older Edge images; current images ignore this gate.
+            - name: OPSPILOT_AUTO_APM_ALLOW_BPF
+              value: "true"
+            - name: HOST_PROC
+              value: /proc
+            - name: HOST_SYS
+              value: /sys
+            - name: HOST_ROOT
+              value: /
+          resources:
+            {{- toYaml .Values.node.resources | nindent 12 }}
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            {{- if semverCompare ">=1.30-0" .Capabilities.KubeVersion.Version }}
+            # Host process inspection and bpffs writes cross the runtime's
+            # default AppArmor boundary. These permissions apply to the node Agent.
+            appArmorProfile:
+              type: Unconfined
+            {{- end }}
+            capabilities:
+              drop: ["ALL"]
+              add: ["DAC_READ_SEARCH", "NET_ADMIN", "SETGID", "SETPCAP", "SETUID", "SYS_CHROOT", "BPF", "PERFMON", "SYS_PTRACE", "CHECKPOINT_RESTORE", "NET_RAW", "SYS_ADMIN", "SYS_RESOURCE"]
+          volumeMounts:
+            - name: host-root
+              mountPath: /host/root
+              mountPropagation: HostToContainer
+            # enter-k8s-host chroots into /host/root. Mount the projected
+            # credentials below that root so the Agent's Kubernetes client
+            # can use them while following kubelet token rotation. The
+            # node-local logs Collector does not access the Kubernetes API.
+            - name: node-service-account
+              mountPath: /host/root/var/lib/opspilot-edge/k8s-runtime/serviceaccount
+              readOnly: true
+      volumes:
+        - name: host-root
+          hostPath:
+            path: /
+            type: Directory
+        - name: node-service-account
+          projected:
+            defaultMode: 0444
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef:
+                        fieldPath: metadata.namespace

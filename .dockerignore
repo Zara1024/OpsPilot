@@ -1,0 +1,32 @@
+.git
+.gitignore
+.dockerignore
+.claude/
+
+local/
+.cache/
+tmp/
+output/
+
+bin/
+dist/stage/
+dist/out/
+
+web/node_modules/
+web/dist/
+web/tsconfig.tsbuildinfo
+
+# Local deployment archives and screenshots must never inflate image build
+# contexts. They are generated outside release artifacts.
+*.tar
+*.tar.gz
+*.tgz
+*.png
+.tmp-*
+
+!packet-capture-opspilot
+!packet-capture-web-dist/
+!packet-capture-web-dist/**
+
+deploy/certs/
+deploy/install/certs/

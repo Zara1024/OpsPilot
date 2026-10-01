@@ -1,0 +1,6 @@
+apiVersion: v2
+name: opspilot-edge
+description: OpsPilot Kubernetes edge node and controller onboarding chart
+type: application
+version: 0.0.0-dev
+appVersion: "dev"

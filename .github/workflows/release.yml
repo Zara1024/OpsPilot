@@ -1,0 +1,452 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG_PATTERN: '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+
+jobs:
+  manager-image:
+    name: Build manager image (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Resolve tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [[ ! "$tag" =~ $RELEASE_TAG_PATTERN || "$version" != "$tag" ]]; then
+            echo "VERSION ($version) must match release tag ($tag)" >&2
+            exit 2
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to CNB registry
+        uses: docker/login-action@v3
+        with:
+          registry: docker.cnb.cool
+          username: cnb
+          password: ${{ secrets.CNB_TOKEN }}
+
+      - name: Publish native manager platform digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          make docker-push-cloud-manager-platform \
+            RELEASE_IMAGE_PLATFORM="${{ matrix.platform }}" \
+            RELEASE_IMAGE_METADATA_FILE="dist/release-digests/manager-linux-${{ matrix.arch }}.metadata.json" \
+            RELEASE_IMAGE_DIGEST_FILE="dist/release-digests/manager-linux-${{ matrix.arch }}.digest"
+
+      - name: Upload manager platform digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: manager-digest-${{ matrix.arch }}
+          path: dist/release-digests/manager-linux-${{ matrix.arch }}.digest
+          if-no-files-found: error
+          retention-days: 1
+
+  web-image:
+    name: Publish Web multi-arch image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Resolve tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [[ ! "$tag" =~ $RELEASE_TAG_PATTERN || "$version" != "$tag" ]]; then
+            echo "VERSION ($version) must match release tag ($tag)" >&2
+            exit 2
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to CNB registry
+        uses: docker/login-action@v3
+        with:
+          registry: docker.cnb.cool
+          username: cnb
+          password: ${{ secrets.CNB_TOKEN }}
+
+      - name: Publish Web image
+        shell: bash
+        run: |
+          set -euo pipefail
+          make docker-push-cloud-web
+
+  k8s-edge-image:
+    name: Publish Kubernetes Edge multi-arch image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Resolve tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [[ ! "$tag" =~ $RELEASE_TAG_PATTERN || "$version" != "$tag" ]]; then
+            echo "VERSION ($version) must match release tag ($tag)" >&2
+            exit 2
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to CNB registry
+        uses: docker/login-action@v3
+        with:
+          registry: docker.cnb.cool
+          username: cnb
+          password: ${{ secrets.CNB_TOKEN }}
+
+      - name: Publish Kubernetes Edge image
+        shell: bash
+        run: |
+          set -euo pipefail
+          make docker-push-k8s-edge
+
+  image:
+    name: Merge release images and publish Helm chart
+    runs-on: ubuntu-24.04
+    needs:
+      - manager-image
+      - web-image
+      - k8s-edge-image
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Resolve tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [[ ! "$tag" =~ $RELEASE_TAG_PATTERN || "$version" != "$tag" ]]; then
+            echo "VERSION ($version) must match release tag ($tag)" >&2
+            exit 2
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v5
+
+      - name: Log in to CNB registry
+        uses: docker/login-action@v3
+        with:
+          registry: docker.cnb.cool
+          username: cnb
+          password: ${{ secrets.CNB_TOKEN }}
+
+      - name: Download manager platform digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: manager-digest-*
+          path: dist/release-digests
+          merge-multiple: true
+
+      - name: Merge manager multi-arch manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          make docker-merge-cloud-manager
+
+      - name: Verify multi-arch manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          make verify-release-images
+
+      - name: Publish Helm chart
+        env:
+          CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          make publish-k8s-chart
+
+  build:
+    name: Build ${{ matrix.arch }} package
+    runs-on: ubuntu-24.04
+    needs: image
+    timeout-minutes: 180
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: arm64
+            platform: linux/arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "$tag" =~ $RELEASE_TAG_PATTERN ]]; then
+            echo "release tag must match vMAJOR.MINOR.PATCH[-PRERELEASE], got: $tag" >&2
+            exit 2
+          fi
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [[ "$version" != "$tag" ]]; then
+            echo "VERSION ($version) must match tag ($tag)" >&2
+            exit 2
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      - name: Install host tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xz-utils unzip
+
+      - name: Fetch bundled embedding model
+        shell: bash
+        run: |
+          set -euo pipefail
+          make fetch-embedding-model
+
+      - name: Build ${{ matrix.arch }} package
+        shell: bash
+        run: |
+          set -euo pipefail
+          make package TARGET_OS=linux TARGET_ARCH=${{ matrix.arch }} PLATFORM=${{ matrix.platform }}
+
+      - name: Verify package
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tag.outputs.tag }}"
+          arch="${{ matrix.arch }}"
+          test -s "dist/out/opspilot-${tag}-linux-${arch}.tar.xz"
+          test -s "dist/out/opspilot-${tag}-linux-${arch}.tar.xz.sha256"
+          (cd dist/out && sha256sum -c "opspilot-${tag}-linux-${arch}.tar.xz.sha256")
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-${{ matrix.arch }}
+          path: |
+            dist/out/opspilot-${{ steps.tag.outputs.tag }}-linux-${{ matrix.arch }}.tar.xz
+            dist/out/opspilot-${{ steps.tag.outputs.tag }}-linux-${{ matrix.arch }}.tar.xz.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  edge-release:
+    name: Publish versioned Edge release to CNB
+    runs-on: ubuntu-24.04
+    needs: image
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Resolve tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [[ ! "$tag" =~ $RELEASE_TAG_PATTERN || "$version" != "$tag" ]]; then
+            echo "VERSION ($version) must match release tag ($tag)" >&2
+            exit 2
+          fi
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          # Exact toolchain is part of the immutable Edge binary identity.
+          go-version: '1.25.11'
+          cache: true
+
+      - name: Publish versioned Edge release to CNB
+        env:
+          CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          make publish-edge-version-attachments
+
+  release:
+    name: Publish release
+    runs-on: ubuntu-24.04
+    needs:
+      - build
+      - edge-release
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "$tag" =~ $RELEASE_TAG_PATTERN ]]; then
+            echo "release tag must match vMAJOR.MINOR.PATCH[-PRERELEASE], got: $tag" >&2
+            exit 2
+          fi
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [[ "$version" != "$tag" ]]; then
+            echo "VERSION ($version) must match tag ($tag)" >&2
+            exit 2
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-assets-*
+          path: dist/out
+          merge-multiple: true
+
+      - name: Verify release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tag.outputs.tag }}"
+          for arch in amd64 arm64; do
+            test -s "dist/out/opspilot-${tag}-linux-${arch}.tar.xz"
+            test -s "dist/out/opspilot-${tag}-linux-${arch}.tar.xz.sha256"
+            (cd dist/out && sha256sum -c "opspilot-${tag}-linux-${arch}.tar.xz.sha256")
+          done
+
+      - name: Write release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tag.outputs.tag }}"
+          published_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          cat > dist/out/latest.json <<EOF
+          {
+            "version": "${tag}",
+            "tag_name": "${tag}",
+            "release_url": "https://github.com/Zara1024/OpsPilot/releases/tag/${tag}",
+            "published_at": "${published_at}",
+            "download_base": "https://opspilot.cloud/dl",
+            "assets": {
+              "linux-amd64": {
+                "package": "opspilot-${tag}-linux-amd64.tar.xz",
+                "sha256": "opspilot-${tag}-linux-amd64.tar.xz.sha256"
+              },
+              "linux-arm64": {
+                "package": "opspilot-${tag}-linux-arm64.tar.xz",
+                "sha256": "opspilot-${tag}-linux-arm64.tar.xz.sha256"
+              }
+            }
+          }
+          EOF
+          test -s dist/out/latest.json
+
+      - name: Write release install notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tag.outputs.tag }}"
+          cat > "$RUNNER_TEMP/release-notes.md" <<EOF
+          ## Install
+
+          Ubuntu 22.04+, Debian 12+, RHEL/Rocky 9 are supported.
+
+          ### AMD64
+          \`\`\`bash
+          wget https://github.com/Zara1024/OpsPilot/releases/download/${tag}/opspilot-${tag}-linux-amd64.tar.xz
+          tar -xf opspilot-${tag}-linux-amd64.tar.xz && cd opspilot-${tag}-linux-amd64 && sudo ./install.sh
+          \`\`\`
+
+          ### ARM64
+          \`\`\`bash
+          wget https://github.com/Zara1024/OpsPilot/releases/download/${tag}/opspilot-${tag}-linux-arm64.tar.xz
+          tar -xf opspilot-${tag}-linux-arm64.tar.xz && cd opspilot-${tag}-linux-arm64 && sudo ./install.sh
+          \`\`\`
+
+          Both installers cache checksum-verified AMD64 and ARM64 Edge assets from CNB; fleet upgrades select the device architecture automatically.
+          EOF
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tag.outputs.tag }}"
+          release_notes="$(cat "$RUNNER_TEMP/release-notes.md")"
+          release_flags=()
+          [[ "$tag" == *-* ]] && release_flags+=(--prerelease)
+          gh release create "$tag" \
+            "dist/out/opspilot-${tag}-linux-amd64.tar.xz" \
+            "dist/out/opspilot-${tag}-linux-amd64.tar.xz.sha256" \
+            "dist/out/opspilot-${tag}-linux-arm64.tar.xz" \
+            "dist/out/opspilot-${tag}-linux-arm64.tar.xz.sha256" \
+            "dist/out/latest.json" \
+            --verify-tag \
+            --title "OpsPilot ${tag}" \
+            --generate-notes \
+            --notes "$release_notes" \
+            "${release_flags[@]}"

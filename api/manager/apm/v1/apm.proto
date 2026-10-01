@@ -1,0 +1,269 @@
+syntax = "proto3";
+
+package opspilot.manager.apm.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/Zara1024/OpsPilot/api/gen/manager/apm/v1;apmv1";
+
+// Authenticated REST routes under /api/v1/apm; no telemetry ingestion here.
+service APMService {
+  rpc ListServices(ListServicesRequest) returns (ListServicesResponse);
+  rpc GetOverview(GetOverviewRequest) returns (GetOverviewResponse);
+  // The same scoped summary and source metadata, without trend queries.
+  rpc GetSummary(GetOverviewRequest) returns (GetOverviewResponse);
+  rpc ListOperations(ListOperationsRequest) returns (ListOperationsResponse);
+  // Omit service_name for the service map; optional environment/namespace match
+  // either endpoint. Supplying service_name still requires a complete identity.
+  rpc GetDependencies(GetDependenciesRequest) returns (GetDependenciesResponse);
+  rpc GetDiagnostics(GetDiagnosticsRequest) returns (GetDiagnosticsResponse);
+  rpc GetRuntime(GetRuntimeRequest) returns (GetRuntimeResponse);
+  // Lightweight service-wide instance discovery, without runtime gauges or curves.
+  rpc GetInstances(GetRuntimeRequest) returns (GetRuntimeResponse);
+  rpc GetErrorGroups(GetErrorGroupsRequest) returns (GetErrorGroupsResponse);
+  rpc GetAlertTemplate(GetAlertTemplateRequest) returns (GetAlertTemplateResponse);
+  rpc GetRepositoryBinding(GetRepositoryBindingRequest) returns (RepositoryBindingResponse);
+  rpc PutRepositoryBinding(PutRepositoryBindingRequest) returns (RepositoryBindingResponse);
+  rpc DeleteRepositoryBinding(GetRepositoryBindingRequest) returns (RepositoryBindingResponse);
+}
+
+// /api/v1/apm/repository-binding uses the complete service identity, without a time window.
+message RepositoryBinding {
+  ServiceIdentity identity = 1;
+  uint64 repo_id = 2;
+  string source_directory = 3;
+  // Exactly one {version}; for example {version}, v{version}, or orders/{version}.
+  string tag_pattern = 4;
+  // Read-only, resolved from the registered repository.
+  string repo_url = 5;
+  string synced_ref = 6;
+  bool repo_missing = 7;
+}
+message GetRepositoryBindingRequest { ServiceIdentity identity = 1; }
+message PutRepositoryBindingRequest {
+  ServiceIdentity identity = 1;
+  uint64 repo_id = 2;
+  string source_directory = 3;
+  string tag_pattern = 4;
+}
+message RepositoryBindingResponse {
+  int32 code = 1;
+  string message = 2;
+  RepositoryBinding data = 3;
+}
+
+message ServiceIdentity {
+  string service_name = 1;
+  string service_namespace = 2;
+  string environment = 3;
+}
+
+message Query {
+  google.protobuf.Timestamp start = 1;
+  google.protobuf.Timestamp end = 2;
+  // Missing means all, present empty means missing/empty resource attribute.
+  optional string environment = 3;
+  optional string service_namespace = 4;
+  string service_name = 5;
+  string operation = 6;
+  // server (default) or consumer. The two populations are never added together.
+  string span_kind = 7;
+  uint32 page = 8;
+  uint32 page_size = 9;
+  // rps (total), error_rate (request-weighted), p95_ms (highest protocol P95), name.
+  string sort = 10;
+  string search = 11;
+  // application_metrics (default, HTTP falls back to labelled Trace samples when absent)
+  // or tempo_spanmetrics. Native and sampled populations are never added together.
+  string metric_source = 12;
+  // http (default) or rpc; services also accept all to group both protocols.
+  // Protocol-specific percentiles remain separate. Traces retain span_kind.
+  string protocol = 13;
+  // otel (default) or legacy. Query one metric family to avoid dual-export double counting.
+  string metric_format = 14;
+  // Exact resource filters; absent/empty means all versions or instances.
+  string service_version = 15;
+  string instance_id = 16;
+  // Exact OpsPilot resource IDs; absent/empty means all devices or clusters.
+  string device_id = 17;
+  string cluster_id = 18;
+  // Unified topology cluster ID. Resolved to current member devices for
+  // device enrollment, or to the Kubernetes telemetry cluster ID.
+  uint64 cluster_node_id = 19;
+  // Error groups only: reuse an exact query snapshot for pagination.
+  // Omit on refresh to include newly ingested spans.
+  string snapshot_id = 20;
+}
+
+message Summary {
+  ServiceIdentity identity = 1;
+  string operation = 2;
+  optional double rps = 3;
+  optional double error_rate = 4;
+  optional double p50_ms = 5;
+  optional double p95_ms = 6;
+  optional double p99_ms = 7;
+  optional double requests = 8;
+  // traces_only means server spans exist without HTTP dimensions for RED.
+  string data_status = 9;
+  // Populated for protocol=all services. Top-level RPS and error rate cover all
+  // observed protocols; percentiles are only exposed per protocol.
+  repeated ProtocolMetrics protocols = 10;
+  // Distinct telemetry.sdk.language values observed in request metrics or traces.
+  repeated string languages = 11;
+  // application_metrics or tempo_spanmetrics, per row in a mixed services list.
+  string metric_source = 12;
+}
+
+message ProtocolMetrics {
+  string protocol = 1;
+  optional double rps = 2;
+  optional double error_rate = 3;
+  optional double p95_ms = 4;
+  string data_status = 5;
+}
+
+message QueryMetadata {
+  google.protobuf.Timestamp start = 1;
+  google.protobuf.Timestamp end = 2;
+  string metric_source = 3;
+  string sampling = 4;
+  string span_kind = 5;
+  string protocol = 6;
+  string metric_format = 7;
+  // Resolved resource scope for Trace navigation; present for cluster_node_id.
+  ResourceScope resource_scope = 8;
+}
+
+message ResourceScope {
+  string cluster_id = 1;
+  // For device clusters, an empty list matches no devices; for Kubernetes
+  // clusters, cluster_id takes precedence.
+  repeated string device_ids = 2;
+  // Internal Kubernetes identity, also used to scope pre-unification telemetry.
+  string k8s_cluster_id = 3;
+}
+
+message ListServicesRequest { Query query = 1; }
+message ListServicesData {
+  repeated Summary items = 1;
+  uint32 total = 2;
+  uint32 page = 3;
+  uint32 page_size = 4;
+  QueryMetadata metadata = 5;
+  repeated string environments = 6;
+  repeated string service_namespaces = 7;
+}
+message ListServicesResponse { int32 code = 1; string message = 2; ListServicesData data = 3; }
+
+message Point {
+  double timestamp = 1;
+  optional double rps = 2;
+  optional double error_rate = 3;
+  optional double p50_ms = 4;
+  optional double p95_ms = 5;
+  optional double p99_ms = 6;
+}
+message GetOverviewRequest { Query query = 1; }
+message GetOverviewData { Summary summary = 1; repeated Point points = 2; QueryMetadata metadata = 3; }
+message GetOverviewResponse { int32 code = 1; string message = 2; GetOverviewData data = 3; }
+
+message ListOperationsRequest { Query query = 1; }
+message ListOperationsData { repeated Summary items = 1; uint32 total = 2; QueryMetadata metadata = 3; uint32 page = 4; uint32 page_size = 5; }
+message ListOperationsResponse { int32 code = 1; string message = 2; ListOperationsData data = 3; }
+
+message Dependency {
+  ServiceIdentity client = 1;
+  ServiceIdentity server = 2;
+  string connection_type = 3;
+  optional double rps = 4;
+  optional double error_rate = 5;
+  optional double p95_ms = 6;
+}
+message GetDependenciesRequest { Query query = 1; }
+message GetDependenciesData { repeated Dependency items = 1; QueryMetadata metadata = 2; bool truncated = 3; }
+message GetDependenciesResponse { int32 code = 1; string message = 2; GetDependenciesData data = 3; }
+
+// Checks describe observations in the selected window, not deployment coverage.
+// Status: observed, not_observed, incomplete, unknown, unavailable.
+message DiagnosticCheck { string key = 1; string status = 2; string detail = 3; }
+message ObservedInstance {
+  // Observed in native request metrics or sampled traces within the query
+  // window; this is not an inventory of every deployed application instance.
+  string instance_id = 1;
+  string device_id = 2;
+  string cluster_id = 3;
+  string pod = 4;
+  string version = 5;
+  string namespace = 6; // Kubernetes namespace; independent of service.namespace.
+  string k8s_cluster_id = 7; // Present when cluster_id is the unified topology ID.
+}
+message GetDiagnosticsRequest { Query query = 1; }
+message GetDiagnosticsData {
+  repeated DiagnosticCheck checks = 1;
+  repeated ObservedInstance instances = 2; // Includes metric-only, unsampled instances.
+  repeated string trace_ids = 3;
+  uint32 sampled_traces = 4;
+  QueryMetadata metadata = 5;
+  // Latest Prometheus sample within its lookback at query.end, Unix seconds.
+  // Not the last application request or a guarantee of complete ingestion.
+  optional double last_metric_timestamp = 6;
+}
+message GetDiagnosticsResponse { int32 code = 1; string message = 2; GetDiagnosticsData data = 3; }
+
+message RuntimePoint { double timestamp = 1; optional double value = 2; }
+message RuntimeMetric {
+  string name = 1; string unit = 2; string instance_id = 3; optional double value = 4;
+  string version = 5;
+  repeated RuntimePoint points = 6;
+}
+message GetRuntimeRequest { Query query = 1; }
+message GetRuntimeData {
+  repeated RuntimeMetric items = 1;
+  QueryMetadata metadata = 2;
+  // Service-wide options in the selected window, independent of version/instance filters.
+  repeated ObservedInstance instances = 3;
+}
+message GetRuntimeResponse { int32 code = 1; string message = 2; GetRuntimeData data = 3; }
+
+// Groups matching error spans from at most 50 recently sampled traces per
+// protocol, not all failed requests. First/last timestamps describe this sample.
+message GetErrorGroupsRequest { Query query = 1; }
+message ErrorGroup {
+  string fingerprint = 1;
+  string operation = 2;
+  string error_type = 3;
+  string status_code = 4;
+  string stack_trace = 5;
+  uint32 count = 6;
+  double first_seen = 7; // Unix seconds of matching spans.
+  double last_seen = 8;
+  repeated string versions = 9;
+  repeated string instances = 10;
+  string trace_id = 11; // Representative trace containing a matching error span.
+  string span_id = 12;
+  string representative_version = 13;
+  string representative_instance = 14;
+}
+message GetErrorGroupsData {
+  repeated ErrorGroup items = 1;
+  uint32 total = 2;
+  uint32 page = 3;
+  uint32 page_size = 4;
+  uint32 sampled_traces = 5;
+  uint32 failed_traces = 6;
+  bool truncated = 7;
+  QueryMetadata metadata = 8;
+  string snapshot_id = 9;
+}
+message GetErrorGroupsResponse { int32 code = 1; string message = 2; GetErrorGroupsData data = 3; }
+
+message GetAlertTemplateRequest {
+  Query query = 1;
+  string metric = 2;
+  double threshold = 3;
+  double min_requests = 4;
+  uint32 for_seconds = 5;
+}
+message GetAlertTemplateData { string expr = 1; string metric = 2; string runbook_path = 3; }
+message GetAlertTemplateResponse { int32 code = 1; string message = 2; GetAlertTemplateData data = 3; }

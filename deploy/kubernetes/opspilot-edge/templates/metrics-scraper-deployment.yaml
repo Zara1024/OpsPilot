@@ -1,0 +1,168 @@
+{{- $mode := include "opspilot-edge.kubernetesMetricsMode" . -}}
+{{- $enabled := eq (include "opspilot-edge.kubernetesMetricsEnabled" .) "true" -}}
+{{- if and $enabled (eq $mode "scraper") }}
+{{- $metrics := default dict .Values.kubernetesMetrics -}}
+{{- $endpoint := include "opspilot-edge.kubernetesMetricsEndpoint" . -}}
+{{- $appDiscoveryEnabled := eq (include "opspilot-edge.kubernetesAppMetricsDiscoveryEnabled" .) "true" -}}
+{{- if ne (int (default 1 $metrics.replicas)) 1 -}}
+{{- fail "kubernetesMetrics.replicas must be 1 until scraper leader election or target sharding is implemented" -}}
+{{- end -}}
+{{- if or (lt (int (default 3 $metrics.maxRetries)) 1) (gt (int (default 3 $metrics.maxRetries)) 10) -}}
+{{- fail "kubernetesMetrics.maxRetries must be between 1 and 10" -}}
+{{- end -}}
+{{- if and (not $endpoint) (not $appDiscoveryEnabled) -}}
+{{- fail "kubernetesMetrics.mode=scraper requires an endpoint, kubeStateMetrics, or app discovery" -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "opspilot-edge.fullname" . }}-metrics-scraper
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "opspilot-edge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics-scraper
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "opspilot-edge.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: metrics-scraper
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      labels:
+        {{- include "opspilot-edge.labels" . | nindent 8 }}
+        app.kubernetes.io/component: metrics-scraper
+    spec:
+      serviceAccountName: {{ include "opspilot-edge.metricsScraperServiceAccount" . }}
+      automountServiceAccountToken: {{ $appDiscoveryEnabled }}
+      terminationGracePeriodSeconds: 30
+      {{- with .Values.image.architecture }}
+      nodeSelector:
+        kubernetes.io/arch: {{ . | quote }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: {{ .Values.podSecurity.runAsNonRoot }}
+        runAsUser: {{ .Values.podSecurity.runAsUser }}
+        runAsGroup: {{ .Values.podSecurity.runAsGroup }}
+        fsGroup: {{ .Values.podSecurity.fsGroup }}
+      containers:
+        - name: metrics-scraper
+          image: {{ include "opspilot-edge.image" . | quote }}
+          imagePullPolicy: {{ default "IfNotPresent" .Values.image.pullPolicy }}
+          workingDir: /
+          ports:
+            - name: diagnostics
+              containerPort: 9101
+              protocol: TCP
+          env:
+            - name: OPSPILOT_EDGE_MODE
+              value: k8s-metrics-scraper
+            - name: OPSPILOT_K8S_TELEMETRY_SECRET_DIR
+              value: /var/run/opspilot-telemetry
+            - name: OPSPILOT_K8S_METRICS_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: k8s-metrics-endpoint
+            - name: OPSPILOT_K8S_METRICS_INTERVAL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: k8s-metrics-interval
+            - name: OPSPILOT_K8S_METRICS_TIMEOUT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: k8s-metrics-timeout
+            - name: OPSPILOT_K8S_METRICS_PUSH_TIMEOUT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: k8s-metrics-push-timeout
+            - name: OPSPILOT_K8S_METRICS_SAMPLE_LIMIT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: k8s-metrics-sample-limit
+            - name: OPSPILOT_K8S_METRICS_BATCH_SAMPLE_LIMIT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: k8s-metrics-batch-sample-limit
+            - name: OPSPILOT_K8S_METRICS_BATCH_BYTE_LIMIT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: k8s-metrics-batch-byte-limit
+            - name: OPSPILOT_K8S_METRICS_MAX_RETRIES
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: k8s-metrics-max-retries
+            - name: OPSPILOT_K8S_METRICS_RETRY_BACKOFF
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: k8s-metrics-retry-backoff
+            - name: OPSPILOT_K8S_APP_METRICS_DISCOVERY
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "opspilot-edge.fullname" . }}-config
+                  key: k8s-app-metrics-discovery
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: diagnostics
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: diagnostics
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 60
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: diagnostics
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+          resources:
+            {{- toYaml $metrics.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: telemetry-credentials
+              mountPath: /var/run/opspilot-telemetry
+              readOnly: true
+      volumes:
+        - name: telemetry-credentials
+          secret:
+            secretName: {{ include "opspilot-edge.telemetryCredentialSecretName" . }}
+            items:
+              - key: telemetry-cluster-id
+                path: telemetry-cluster-id
+              - key: telemetry-remote-write-endpoint
+                path: telemetry-remote-write-endpoint
+              - key: telemetry-remote-write-bearer
+                path: telemetry-remote-write-bearer
+              - key: telemetry-remote-write-basic-user
+                path: telemetry-remote-write-basic-user
+              - key: telemetry-remote-write-basic-pass
+                path: telemetry-remote-write-basic-pass
+              - key: telemetry-remote-write-tls-insecure
+                path: telemetry-remote-write-tls-insecure
+              - key: telemetry-remote-write-ca.pem
+                path: telemetry-remote-write-ca.pem
+{{- end }}

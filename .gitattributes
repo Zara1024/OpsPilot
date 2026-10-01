@@ -1,0 +1,28 @@
+# Normalize line endings for everything tracked here.
+#
+# The build/test/release pipeline runs on Linux (GitHub Actions runners and
+# the containers built from this tree). Shell scripts, the Makefile, Docker
+# files and systemd units break outright if they pick up CRLF: the kernel
+# reads `#!/usr/bin/env bash\r` as an interpreter path that does not exist,
+# and `make` chokes on the trailing `\r` in every rule.
+#
+# This repo is also edited from Windows checkouts, where `core.autocrlf=true`
+# is a common global default. Pinning `text=auto` here makes Git store LF in
+# the repository regardless of the local setting, so a Windows edit can no
+# longer silently rewrite a script. Keep this file in sync with the toolchain
+# expectations of the release workflow.
+* text=auto eol=lf
+
+# Binary assets must never be line-ending converted.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.xz   binary
+*.gz   binary
+*.tgz  binary
+*.zip  binary
+*.so   binary
+*.onnx binary
