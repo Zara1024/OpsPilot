@@ -43,7 +43,7 @@ func (Session) TableName() string { return "webshell_sessions" }
 // write-only at the API boundary and encrypted before it reaches the DB.
 type Credential struct {
 	ID                 uint64 `gorm:"primaryKey;autoIncrement"`
-	OpsPilotUserID     uint64 `gorm:"not null;uniqueIndex:uk_webshell_credential_owner_label,priority:1"`
+	OpsPilotUserID     uint64 `gorm:"not null;column:opspilot_user_id;uniqueIndex:uk_webshell_credential_owner_label,priority:1"`
 	DeviceID           uint64 `gorm:"not null;uniqueIndex:uk_webshell_credential_owner_label,priority:2;index"`
 	Label              string `gorm:"size:64;not null;uniqueIndex:uk_webshell_credential_owner_label,priority:3"`
 	SSHUser            string `gorm:"size:64;not null"`
@@ -59,7 +59,7 @@ func (Credential) TableName() string { return "webshell_credentials" }
 // KnownHost pins one SSH host key per user/device/port (TOFU).
 type KnownHost struct {
 	ID             uint64 `gorm:"primaryKey;autoIncrement"`
-	OpsPilotUserID uint64 `gorm:"not null;uniqueIndex:uk_webshell_known_host,priority:1"`
+	OpsPilotUserID uint64 `gorm:"not null;column:opspilot_user_id;uniqueIndex:uk_webshell_known_host,priority:1"`
 	DeviceID       uint64 `gorm:"not null;uniqueIndex:uk_webshell_known_host,priority:2"`
 	SSHPort        uint16 `gorm:"not null;uniqueIndex:uk_webshell_known_host,priority:3"`
 	Fingerprint    string `gorm:"size:128;not null"`
