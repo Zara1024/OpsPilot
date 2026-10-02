@@ -314,6 +314,7 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./certs:/etc/nginx/certs:ro
+      - /var/www/certbot:/var/www/certbot:ro
       # Public edge artifact dir: install.sh + cross-arch binaries served
       # at https://<host>/install.sh and /edge/<file>.
       - ./edge:/usr/share/nginx/html/edge:ro

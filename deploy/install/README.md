@@ -285,6 +285,10 @@ sudo docker compose -f /opt/opspilot/docker-compose.yml restart nginx
 
 `nginx.conf` 也是 bind-mount 的，运维要改路由 / 调超时直接编辑 `/opt/opspilot/nginx.conf` 后 `restart nginx` 即可。
 
+### 域名修改与自动续签最佳实践
+- **更换域名**：编辑 `/opt/opspilot/.env` 修改 `OPSPILOT_PUBLIC_URL=https://<新域名>` 即可。Nginx 内部配置采用泛匹配模式（`server_name _;`），无需手动修改 Nginx 规则。
+- **自动续签**：Nginx 已原生挂载 `/var/www/certbot`，Certbot 续签直接走 `--webroot -w /var/www/certbot` 模式，零停机无缝完成验证，续签后通过 `docker exec opspilot-nginx nginx -s reload` 热生效。
+
 ## Grafana
 
 Grafana 现在和 Prometheus 一起随 compose 启动，但默认不直接暴露 host `3000` 端口；推荐统一从 nginx 同源入口访问：

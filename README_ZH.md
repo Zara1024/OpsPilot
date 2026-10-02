@@ -85,6 +85,63 @@ wget https://opspilot.cloud/dl/opspilot-v0.17.6-linux-amd64.tar.xz
 wget https://opspilot.cloud/dl/opspilot-v0.17.6-linux-arm64.tar.xz
 ```
 
+### 域名配置与 SSL 证书自动续签
+
+OpsPilot 支持绑定任意自定义独立域名，并在 Nginx 80 端口原生集成了 ACME 验证挑战穿透路径，可实现 **零停机、无感自动续签**。
+
+#### 1. 域名 DNS 解析
+在您的域名服务商后台（如阿里云、腾讯云、Cloudflare、DNSPod 等）添加一条 **A 记录**，将您的域名（例如 `opspilot.example.com`）解析至部署服务器的公网 IP。
+
+#### 2. 修改配置文件 (`.env`)
+在解压安装目录或 `/opt/opspilot/.env` 中配置您的真实域名：
+```bash
+# 对外公开的基础 URL（Edge 边缘客户端将使用此地址上报遥测与日志）
+OPSPILOT_PUBLIC_URL=https://opspilot.example.com
+
+# 管理员账号邮箱（可选）
+OPSPILOT_ADMIN_EMAIL=admin@opspilot.example.com
+```
+> **提示**：`OPSPILOT_TUNNEL_ADDR` 保持留空即可，系统会自动识别 `OPSPILOT_PUBLIC_URL` 中的域名并自动拼接 `40012` 隧道端口。
+
+#### 3. 申请正式 SSL 证书与配置自动续签
+使用 Certbot 申请 Let's Encrypt 免费证书并建立全自动续签链条：
+
+```bash
+# 1. 安装 certbot 工具（Ubuntu / Debian）
+sudo apt update && sudo apt install -y certbot
+
+# 2. 申请域名 SSL 证书（利用预置的 Webroot 验证路径）
+sudo mkdir -p /var/www/certbot
+sudo certbot certonly --webroot -w /var/www/certbot -d opspilot.example.com --non-interactive --agree-tos --email 您的邮箱@example.com
+
+# 3. 复制证书至 OpsPilot 证书挂载目录
+sudo mkdir -p /opt/opspilot/certs
+sudo cp -L /etc/letsencrypt/live/opspilot.example.com/fullchain.pem /opt/opspilot/certs/tls.crt
+sudo cp -L /etc/letsencrypt/live/opspilot.example.com/privkey.pem /opt/opspilot/certs/tls.key
+sudo chmod 644 /opt/opspilot/certs/tls.crt && sudo chmod 600 /opt/opspilot/certs/tls.key
+
+# 4. 配置证书自动续签与热重载 Hook
+sudo tee /etc/letsencrypt/renewal-hooks/deploy/opspilot-deploy.sh > /dev/null << 'EOF'
+#!/bin/bash
+CERT_DIR="${RENEWED_LINEAGE:-/etc/letsencrypt/live/opspilot.example.com}"
+DEST_DIR="/opt/opspilot/certs"
+if [ -d "$DEST_DIR" ]; then
+    cp -L "$CERT_DIR/fullchain.pem" "$DEST_DIR/tls.crt"
+    cp -L "$CERT_DIR/privkey.pem" "$DEST_DIR/tls.key"
+    chmod 644 "$DEST_DIR/tls.crt" && chmod 600 "$DEST_DIR/tls.key"
+    docker exec opspilot-nginx nginx -s reload 2>/dev/null || true
+fi
+EOF
+sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/opspilot-deploy.sh
+```
+
+#### 4. 重启服务生效
+```bash
+cd /opt/opspilot
+sudo docker compose restart nginx
+```
+> **架构说明**：OpsPilot 的 Nginx 内部配置采用泛匹配模式（`server_name _;`），更换域名时**无需手动修改 Nginx 配置文件**，仅需在 `.env` 中更新 `OPSPILOT_PUBLIC_URL` 并替换 `/opt/opspilot/certs/` 下的证书公私钥即可。
+
 ## 产品导览
 
 ### 根因分析

@@ -85,6 +85,62 @@ wget https://opspilot.cloud/dl/opspilot-v0.17.6-linux-amd64.tar.xz
 wget https://opspilot.cloud/dl/opspilot-v0.17.6-linux-arm64.tar.xz
 ```
 
+### Custom Domain & SSL Automatic Renewal
+
+OpsPilot supports binding any custom domain name with native Nginx ACME challenge passthrough for **zero-downtime, automated SSL renewal**.
+
+#### 1. DNS Resolution
+Add an **A Record** pointing your domain (e.g. `opspilot.example.com`) to the target server's public IP address.
+
+#### 2. Configure Environment (`.env`)
+Edit `/opt/opspilot/.env` with your domain:
+```bash
+# Public canonical base URL (Edge agents use this to report metrics and logs)
+OPSPILOT_PUBLIC_URL=https://opspilot.example.com
+
+# Admin notification email (optional)
+OPSPILOT_ADMIN_EMAIL=admin@opspilot.example.com
+```
+
+#### 3. Issue SSL Certificate & Configure Renewal
+Issue a free Let's Encrypt certificate with Certbot webroot mode:
+
+```bash
+# 1. Install certbot (Ubuntu / Debian)
+sudo apt update && sudo apt install -y certbot
+
+# 2. Request certificate via pre-wired webroot challenge path
+sudo mkdir -p /var/www/certbot
+sudo certbot certonly --webroot -w /var/www/certbot -d opspilot.example.com --non-interactive --agree-tos --email admin@example.com
+
+# 3. Copy certificates to OpsPilot mount directory
+sudo mkdir -p /opt/opspilot/certs
+sudo cp -L /etc/letsencrypt/live/opspilot.example.com/fullchain.pem /opt/opspilot/certs/tls.crt
+sudo cp -L /etc/letsencrypt/live/opspilot.example.com/privkey.pem /opt/opspilot/certs/tls.key
+sudo chmod 644 /opt/opspilot/certs/tls.crt && sudo chmod 600 /opt/opspilot/certs/tls.key
+
+# 4. Set up auto-deploy reload hook
+sudo tee /etc/letsencrypt/renewal-hooks/deploy/opspilot-deploy.sh > /dev/null << 'EOF'
+#!/bin/bash
+CERT_DIR="${RENEWED_LINEAGE:-/etc/letsencrypt/live/opspilot.example.com}"
+DEST_DIR="/opt/opspilot/certs"
+if [ -d "$DEST_DIR" ]; then
+    cp -L "$CERT_DIR/fullchain.pem" "$DEST_DIR/tls.crt"
+    cp -L "$CERT_DIR/privkey.pem" "$DEST_DIR/tls.key"
+    chmod 644 "$DEST_DIR/tls.crt" && chmod 600 "$DEST_DIR/tls.key"
+    docker exec opspilot-nginx nginx -s reload 2>/dev/null || true
+fi
+EOF
+sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/opspilot-deploy.sh
+```
+
+#### 4. Restart Nginx
+```bash
+cd /opt/opspilot
+sudo docker compose restart nginx
+```
+> **Architecture Note**: Nginx routes use wildcard catch-all (`server_name _;`). Changing your domain requires **no changes to nginx.conf**, only updating `OPSPILOT_PUBLIC_URL` in `.env` and refreshing certificates in `/opt/opspilot/certs/`.
+
 ## Product Tour
 
 ### Root Cause Analysis
