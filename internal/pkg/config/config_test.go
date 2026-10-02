@@ -368,3 +368,26 @@ func TestLoadOverrides(t *testing.T) {
 		t.Errorf("FrontierClient.ServiceName = %q", cfg.FrontierClient.ServiceName)
 	}
 }
+
+// TestLegacyPrefixFallback 验证当仅提供 ONGRID_* 旧前缀环境变量时，能无缝回退并正确加载
+func TestLegacyPrefixFallback(t *testing.T) {
+	// 设置 ONGRID_* 格式的环境变量
+	t.Setenv("ONGRID_DB_DIALECT", "mysql")
+	t.Setenv("ONGRID_DB_DSN", "opspilot:pass@tcp(mysql:3306)/opspilot")
+	t.Setenv("ONGRID_JWT_SECRET", "custom-ongrid-jwt-secret")
+	t.Setenv("ONGRID_PUBLIC_URL", "https://opspilot.example.com")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load 失败: %v", err)
+	}
+	if cfg.DB.DSN != "opspilot:pass@tcp(mysql:3306)/opspilot" {
+		t.Errorf("DB.DSN 回退解析错误: 期望 %q, 实际得到 %q", "opspilot:pass@tcp(mysql:3306)/opspilot", cfg.DB.DSN)
+	}
+	if cfg.JWT.Secret != "custom-ongrid-jwt-secret" {
+		t.Errorf("JWT.Secret 回退解析错误: 期望 %q, 实际得到 %q", "custom-ongrid-jwt-secret", cfg.JWT.Secret)
+	}
+	if cfg.PublicURL != "https://opspilot.example.com" {
+		t.Errorf("PublicURL 回退解析错误: 期望 %q, 实际得到 %q", "https://opspilot.example.com", cfg.PublicURL)
+	}
+}

@@ -600,10 +600,30 @@ func Load() (*Config, error) {
 	return c, nil
 }
 
-// getEnvBool parses a boolean env var. Accepts the usual strconv.ParseBool
-// values (1/0, t/f, true/false, TRUE/FALSE …); any other value returns def.
+// lookupEnv 环境变量查找辅助函数，支持 OPSPILOT_ 与 ONGRID_ 双向平滑兼容
+func lookupEnv(key string) (string, bool) {
+	// 1. 优先查找当前指定的环境变量名
+	if v, ok := os.LookupEnv(key); ok && strings.TrimSpace(v) != "" {
+		return strings.TrimSpace(v), true
+	}
+	// 2. 如果未找到或值为空，尝试在前缀之间进行平滑回退
+	var altKey string
+	if strings.HasPrefix(key, "OPSPILOT_") {
+		altKey = strings.Replace(key, "OPSPILOT_", "ONGRID_", 1)
+	} else if strings.HasPrefix(key, "ONGRID_") {
+		altKey = strings.Replace(key, "ONGRID_", "OPSPILOT_", 1)
+	}
+	if altKey != "" {
+		if v, ok := os.LookupEnv(altKey); ok && strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v), true
+		}
+	}
+	return "", false
+}
+
+// getEnvBool 解析布尔型环境变量
 func getEnvBool(key string, def bool) bool {
-	v, ok := os.LookupEnv(key)
+	v, ok := lookupEnv(key)
 	if !ok || v == "" {
 		return def
 	}
@@ -613,15 +633,17 @@ func getEnvBool(key string, def bool) bool {
 	return def
 }
 
+// getEnv 获取字符串型环境变量
 func getEnv(key, def string) string {
-	if v, ok := os.LookupEnv(key); ok && v != "" {
+	if v, ok := lookupEnv(key); ok && v != "" {
 		return v
 	}
 	return def
 }
 
+// getOptionalURL 获取可选的 URL 地址环境变量
 func getOptionalURL(key, def string) string {
-	v, ok := os.LookupEnv(key)
+	v, ok := lookupEnv(key)
 	if !ok || strings.TrimSpace(v) == "" {
 		return def
 	}
@@ -659,8 +681,9 @@ func splitProviderModels(raw string) []string {
 	return out
 }
 
+// getEnvCSV 获取逗号/分号分隔的字符串列表环境变量
 func getEnvCSV(key string, def []string) []string {
-	v, ok := os.LookupEnv(key)
+	v, ok := lookupEnv(key)
 	if !ok || v == "" {
 		return def
 	}
@@ -680,8 +703,9 @@ func getEnvCSV(key string, def []string) []string {
 	return out
 }
 
+// getEnvInt 获取整型环境变量
 func getEnvInt(key string, def int) int {
-	v, ok := os.LookupEnv(key)
+	v, ok := lookupEnv(key)
 	if !ok || v == "" {
 		return def
 	}
@@ -691,8 +715,9 @@ func getEnvInt(key string, def int) int {
 	return def
 }
 
+// getEnvFloat 获取浮点型环境变量
 func getEnvFloat(key string, def float64) float64 {
-	v, ok := os.LookupEnv(key)
+	v, ok := lookupEnv(key)
 	if !ok || v == "" {
 		return def
 	}
@@ -702,15 +727,16 @@ func getEnvFloat(key string, def float64) float64 {
 	return def
 }
 
+// getEnvDuration 获取时间间隔环境变量
 func getEnvDuration(key string, def time.Duration) time.Duration {
-	v, ok := os.LookupEnv(key)
+	v, ok := lookupEnv(key)
 	if !ok || v == "" {
 		return def
 	}
 	if d, err := time.ParseDuration(v); err == nil {
 		return d
 	}
-	// Fall back to integer seconds for convenience.
+	// 兜底回退为按秒解析
 	if n, err := strconv.Atoi(v); err == nil {
 		return time.Duration(n) * time.Second
 	}
