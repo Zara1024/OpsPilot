@@ -187,7 +187,7 @@ func (h *Handler) RegisterProtected(r chi.Router) {
 type registerReq struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
-	Role     string `json:"role,omitempty"`
+	// 安全加固（C-6/H-11）：公网注册严禁指定角色，移除并忽略客户端传入角色
 }
 
 type userDTO struct {
@@ -296,7 +296,8 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	u, err := h.svc.Register(r.Context(), in.Email, in.Password, in.Role)
+	// 安全加固（C-6/H-11）：强制赋予默认安全普通角色，严禁透传客户端传入角色
+	u, err := h.svc.Register(r.Context(), in.Email, in.Password, "")
 	if err != nil {
 		writeErr(w, err)
 		return
