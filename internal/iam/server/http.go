@@ -5,6 +5,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -224,6 +225,11 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	// 安全加固（LOW-01）：登录入口前置长度校验，超长直接返回 400 Bad Request，防止算力消耗
+	if len(in.Password) > 128 || len(in.Email) > 128 {
+		writeErr(w, fmt.Errorf("%w: password or email exceeds max length of 128 characters", errs.ErrInvalid))
+		return
+	}
 	ip := clientIP(r)
 	emailKey := strings.ToLower(strings.TrimSpace(in.Email))
 	if err := h.throttle.check(ip, emailKey); err != nil {
@@ -434,5 +440,10 @@ func writeJSON(w http.ResponseWriter, code int, body any) {
 }
 
 func writeErr(w http.ResponseWriter, err error) {
-	http.Error(w, err.Error(), errs.HTTPStatus(err))
+	status := errs.HTTPStatus(err)
+	if status == http.StatusTooManyRequests {
+		// 安全加固（429无Retry-After）：当触发频率限制时，标准注入 Retry-After 响应头，指示客户端 60 秒后重试
+		w.Header().Set("Retry-After", "60")
+	}
+	http.Error(w, err.Error(), status)
 }

@@ -84,13 +84,13 @@ func (u *Usecase) Login(ctx context.Context, email, password string) (*TokenPair
 		return nil, fmt.Errorf("%w: email and password required", errs.ErrInvalid)
 	}
 
-	// 安全加固（LOW-01）：限制密码长度上限为 128 字符，防止超长密码引发 CPU 算力耗尽拒绝服务攻击
+	// 安全加固（LOW-01）：限制密码长度上限为 128 字符，防止超长密码引发 CPU 算力耗尽拒绝服务攻击，不合法直接返回 400 Bad Request
 	if len(password) > 128 {
-		return nil, errs.ErrUnauthorized
+		return nil, fmt.Errorf("%w: password exceeds max length of 128 characters", errs.ErrInvalid)
 	}
 
-	// 预设结构合法的虚拟 Argon2id 哈希，用于用户不存在或停用时执行等时计算，抹平时序侧信道（HIGH-01）
-	const dummyHash = "$argon2id$v=19$m=65536,t=1,p=4$dHVtbXlzYWx0MTIzNDU2Nw$dummyhashdummyhashdummyhashdummyhashdummyh"
+	// 预设结构与参数完全匹配的标准 Argon2id 虚拟哈希，用于用户不存在或停用时执行等时计算，彻底抹平时序侧信道（HIGH-01）
+	const dummyHash = "$argon2id$v=19$m=65536,t=1,p=4$vMDBeCJ3bhBGkkDL1b+egw$o/enaT0GzKXtNduUcTTE4+9MlYd2weKWm/lbFw2zkH4"
 
 	user, err := u.repo.GetByEmail(ctx, email)
 	if err != nil {
