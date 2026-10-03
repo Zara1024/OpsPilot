@@ -616,6 +616,7 @@ chown -R 65532:65532 "$OPSPILOT_DATA_DIR/skills" 2>/dev/null || true
 # cloud_bash fails "mkdir session" (workspace) + can't install tools.
 chown -R 65532:65532 "$OPSPILOT_DATA_DIR/pages" 2>/dev/null || true
 chown -R 65532:65532 "$OPSPILOT_DATA_DIR/packet-captures" 2>/dev/null || true
+chown -R 65532:65532 "$OPSPILOT_DATA_DIR/chat-attachments" 2>/dev/null || true
 chown -R 65532:65532 "$OPSPILOT_DATA_DIR/workspace" 2>/dev/null || true
 chown -R 65532:65532 "$OPSPILOT_DATA_DIR/tools" 2>/dev/null || true
 
