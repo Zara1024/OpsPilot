@@ -77,20 +77,33 @@ func (u *Usecase) Register(ctx context.Context, email, password, role string) (*
 	return user, nil
 }
 
-// Login verifies credentials and returns a fresh access/refresh pair.
+// Login 验证用户凭据并颁发全新的访问与刷新令牌对
 func (u *Usecase) Login(ctx context.Context, email, password string) (*TokenPair, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	if email == "" || password == "" {
 		return nil, fmt.Errorf("%w: email and password required", errs.ErrInvalid)
 	}
+
+	// 安全加固（LOW-01）：限制密码长度上限为 128 字符，防止超长密码引发 CPU 算力耗尽拒绝服务攻击
+	if len(password) > 128 {
+		return nil, errs.ErrUnauthorized
+	}
+
+	// 预设结构合法的虚拟 Argon2id 哈希，用于用户不存在或停用时执行等时计算，抹平时序侧信道（HIGH-01）
+	const dummyHash = "$argon2id$v=19$m=65536,t=1,p=4$dHVtbXlzYWx0MTIzNDU2Nw$dummyhashdummyhashdummyhashdummyhashdummyh"
+
 	user, err := u.repo.GetByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, errs.ErrNotFound) {
+			// 即使用户不存在，也执行一次完整的哈希计算，消耗等额时间，防止攻击者通过响应时间枚举用户名
+			_ = verifyPassword(password, dummyHash)
 			return nil, errs.ErrUnauthorized
 		}
 		return nil, err
 	}
 	if user.Status != model.StatusActive {
+		// 账号停用时同样执行等时哈希比对
+		_ = verifyPassword(password, dummyHash)
 		return nil, errs.ErrUnauthorized
 	}
 	if !verifyPassword(password, user.PassHash) {
