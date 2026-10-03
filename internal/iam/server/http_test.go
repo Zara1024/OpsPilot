@@ -68,3 +68,25 @@ func TestLogin_RateLimit_ContainsRetryAfter(t *testing.T) {
 		t.Fatalf("expected Retry-After: 60, got %q", retryAfter)
 	}
 }
+
+// 测试未授权请求注册接口返回 401 且不泄露信息
+func TestRegister_UnauthorizedWithoutAdmin(t *testing.T) {
+	h := NewHandler(&service.Service{}, nil)
+	r := chi.NewRouter()
+	h.RegisterProtected(r)
+
+	reqBody, _ := json.Marshal(registerReq{
+		Email:    "newuser@example.com",
+		Password: "password123",
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/register", bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d; body: %s", w.Code, w.Body.String())
+	}
+}

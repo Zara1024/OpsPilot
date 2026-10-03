@@ -302,6 +302,11 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	// 安全加固（LOW-03）：注册接口入参严格长度校验，防止超长数据探测与拒绝服务
+	if len(in.Password) > 128 || len(in.Email) > 128 {
+		writeErr(w, fmt.Errorf("%w: password or email exceeds max length of 128 characters", errs.ErrInvalid))
+		return
+	}
 	// 安全加固（C-6/H-11）：强制赋予默认安全普通角色，严禁透传客户端传入角色
 	u, err := h.svc.Register(r.Context(), in.Email, in.Password, "")
 	if err != nil {
