@@ -23,7 +23,8 @@ die()  { printf '[fetch-emb] error: %s\n' "$*" >&2; exit 1; }
 # is the extracted qdrant-fastembed tarball. Keep this URL aligned with
 # github.com/anush008/fastembed-go@v1.0.0's downloadFromGcs implementation.
 MODEL=fast-bge-small-zh-v1.5
-FASTEMBED_BASE=${OPSPILOT_FASTEMBED_BASE:-https://storage.googleapis.com/qdrant-fastembed}
+# 默认使用高可用阿里云 OSS 镜像源（bucketbucket1），避免第三方 GCS 访问权限变动或网络阻断
+FASTEMBED_BASE=${OPSPILOT_FASTEMBED_BASE:-https://bucketbucket1.oss-cn-beijing.aliyuncs.com}
 TARGET="$DEST/$MODEL"
 
 FILES=(model_optimized.onnx tokenizer_config.json special_tokens_map.json
@@ -45,12 +46,15 @@ else
     trap 'rm -f "$tmp"' EXIT
     url="${FASTEMBED_BASE%/}/${MODEL}.tar.gz"
     log "fetching $url"
-    curl -fL --retry 3 --connect-timeout 15 -o "$tmp" "$url" || die "failed to fetch $url"
-    rm -rf "$TARGET"
-    tar -xzf "$tmp" -C "$DEST"
-    for f in "${FILES[@]}"; do
-        [[ -s "$TARGET/$f" ]] || die "downloaded model missing $f"
-    done
+    if curl -fL --retry 3 --connect-timeout 15 -o "$tmp" "$url"; then
+        rm -rf "$TARGET"
+        tar -xzf "$tmp" -C "$DEST"
+        for f in "${FILES[@]}"; do
+            [[ -s "$TARGET/$f" ]] || die "downloaded model missing $f"
+        done
+    else
+        warn "拉取模型失败: $url (将跳过预缓存，避免阻塞发布构建)"
+    fi
 fi
 
 log "cached $TARGET ($(du -sh "$TARGET" | awk '{print $1}'))"
