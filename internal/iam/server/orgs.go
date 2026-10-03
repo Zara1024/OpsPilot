@@ -457,7 +457,12 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 		if orgs := h.svc.Orgs(); orgs != nil {
 			ms := h.svc.Memberships()
 			if seed, err := orgs.EnsureSeed(r.Context(), "默认组织", ""); err == nil && seed != nil && ms != nil {
-				if _, mErr := ms.AddOrUpdate(r.Context(), u.ID, seed.ID, "member"); mErr != nil {
+				// 组织成员角色联动系统角色：如果是 viewer，组织内赋予 viewer 角色；其他赋予 member 角色
+				orgRole := "member"
+				if u.Role == model.RoleViewer {
+					orgRole = "viewer"
+				}
+				if _, mErr := ms.AddOrUpdate(r.Context(), u.ID, seed.ID, orgRole); mErr != nil {
 					h.log.Warn("iam: auto-join default org",
 						"user_id", u.ID,
 						"err", mErr)

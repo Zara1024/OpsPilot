@@ -394,6 +394,16 @@ func (h *Handler) setRole(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	// 联动同步组织成员角色及 Casbin 权限：当降级为 viewer 时，组织角色同步调整为 viewer
+	if in.Role == model.RoleViewer {
+		if ms := h.svc.Memberships(); ms != nil {
+			if userMemberships, err := ms.ListByUser(r.Context(), id); err == nil {
+				for _, m := range userMemberships {
+					_, _ = ms.AddOrUpdate(r.Context(), id, m.OrgID, "viewer")
+				}
+			}
+		}
+	}
 	auditmw.SetAuditEvent(r, bizaudit.Event{
 		Action:       auditmodel.ActionUserUpdate,
 		ResourceType: auditmodel.ResourceUser,

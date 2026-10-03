@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	defaultReleaseMetadataURL = "https://opspilot.cloud/dl/latest.json"
+	// 优先使用官方 GitHub Releases API，保障最新版本秒级查询响应
 	defaultGitHubReleaseURL   = "https://api.github.com/repos/Zara1024/OpsPilot/releases/latest"
+	defaultReleaseMetadataURL = "https://opspilot.cloud/dl/latest.json"
 	defaultDownloadBase       = "https://opspilot.cloud/dl"
 	maxReleaseMetadataBytes   = 1 << 20
 )
@@ -209,7 +210,7 @@ func normalizeReleaseURLs(cfg Config) []string {
 		urls = []string{cfg.ReleaseAPIURL}
 	}
 	if len(urls) == 0 {
-		urls = []string{defaultReleaseMetadataURL, defaultGitHubReleaseURL}
+		urls = []string{defaultGitHubReleaseURL, defaultReleaseMetadataURL}
 	}
 	out := make([]string, 0, len(urls))
 	for _, sourceURL := range urls {
@@ -219,7 +220,7 @@ func normalizeReleaseURLs(cfg Config) []string {
 		}
 	}
 	if len(out) == 0 {
-		return []string{defaultReleaseMetadataURL, defaultGitHubReleaseURL}
+		return []string{defaultGitHubReleaseURL, defaultReleaseMetadataURL}
 	}
 	return out
 }

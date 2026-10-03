@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 
@@ -14,6 +15,29 @@ import (
 	"github.com/Zara1024/OpsPilot/internal/pkg/auth"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 )
+
+var (
+	// 邮箱正则：符合标准邮箱格式
+	emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	// 手机号正则：支持中国大陆11位手机号（含可选+86前缀）以及通用国际E.164格式（7至15位数字）
+	phoneRegex = regexp.MustCompile(`^(?:\+?86)?1[3-9]\d{9}$|^\+[1-9]\d{6,14}$`)
+)
+
+// 校验邮箱格式
+func validateEmail(email string) bool {
+	if len(email) < 3 || len(email) > 254 {
+		return false
+	}
+	return emailRegex.MatchString(email)
+}
+
+// 校验手机号格式（选填，为空则跳过）
+func validatePhone(phone string) bool {
+	if phone == "" {
+		return true
+	}
+	return phoneRegex.MatchString(phone)
+}
 
 // Usecase is the iam/user biz facade. It owns the authentication flows and
 // the admin-side user management operations.
@@ -44,6 +68,9 @@ func (u *Usecase) Register(ctx context.Context, email, password, role string) (*
 	email = strings.TrimSpace(strings.ToLower(email))
 	if email == "" || password == "" {
 		return nil, fmt.Errorf("%w: email and password required", errs.ErrInvalid)
+	}
+	if !validateEmail(email) {
+		return nil, fmt.Errorf("%w: 邮箱格式不正确", errs.ErrInvalid)
 	}
 	if role == "" {
 		role = model.RoleUser
@@ -230,6 +257,9 @@ func (u *Usecase) UpdateProfile(ctx context.Context, id uint64, displayName, pho
 	if len(phone) > 32 {
 		return fmt.Errorf("%w: phone too long (max 32)", errs.ErrInvalid)
 	}
+	if phone != "" && !validatePhone(phone) {
+		return fmt.Errorf("%w: 手机号码格式不正确", errs.ErrInvalid)
+	}
 	return u.repo.UpdateProfile(ctx, id, displayName, phone)
 }
 
@@ -278,6 +308,13 @@ func (u *Usecase) Create(ctx context.Context, in CreateInput) (*model.User, erro
 	email := strings.TrimSpace(strings.ToLower(in.Email))
 	if email == "" {
 		return nil, fmt.Errorf("%w: email required", errs.ErrInvalid)
+	}
+	if !validateEmail(email) {
+		return nil, fmt.Errorf("%w: 邮箱格式不正确", errs.ErrInvalid)
+	}
+	phone := strings.TrimSpace(in.Phone)
+	if phone != "" && !validatePhone(phone) {
+		return nil, fmt.Errorf("%w: 手机号码格式不正确", errs.ErrInvalid)
 	}
 	if in.Password == "" {
 		return nil, fmt.Errorf("%w: password required", errs.ErrInvalid)

@@ -209,6 +209,23 @@ import (
 // version is overwritten at build time via -ldflags.
 var version = "dev"
 
+func init() {
+	// 如果编译时未通过 ldflags 注入版本号，优先从环境变量 OPSPILOT_VERSION 或 VERSION 文件兜底读取
+	if version == "dev" || version == "" {
+		if v := strings.TrimSpace(os.Getenv("OPSPILOT_VERSION")); v != "" {
+			version = v
+		} else if b, err := os.ReadFile("VERSION"); err == nil {
+			if v := strings.TrimSpace(string(b)); v != "" {
+				version = v
+			}
+		} else if b, err := os.ReadFile("/opt/opspilot/VERSION"); err == nil {
+			if v := strings.TrimSpace(string(b)); v != "" {
+				version = v
+			}
+		}
+	}
+}
+
 func main() {
 	fmt.Fprintf(os.Stderr, "opspilot %s starting\n", version)
 

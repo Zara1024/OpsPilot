@@ -85,6 +85,15 @@ func (m *Middleware) Require(obj, act string) func(http.Handler) http.Handler {
 				http.Error(w, errs.ErrForbidden.Error(), http.StatusForbidden)
 				return
 			}
+			// 安全加固：系统角色为 viewer 的只读用户严禁执行任何写入/修改/删除等破坏性操作
+			if t.Role == "viewer" && act != "read" {
+				m.log.Info("authz: viewer role rejected for non-read action",
+					slog.Uint64("user", t.UserID),
+					slog.String("obj", obj),
+					slog.String("act", act))
+				http.Error(w, errs.ErrForbidden.Error(), http.StatusForbidden)
+				return
+			}
 			if m.z.AllowAnyOrg(r.Context(), t.UserID, obj, act) {
 				next.ServeHTTP(w, r)
 				return

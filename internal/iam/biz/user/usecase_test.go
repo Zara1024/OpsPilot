@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -181,3 +182,41 @@ func TestRegisterRejectsDuplicateEmail(t *testing.T) {
 		t.Fatalf("want ErrConflict, got %v", err)
 	}
 }
+
+// 测试邮箱与手机号合法性校验
+func TestValidateEmailAndPhone(t *testing.T) {
+	uc := newTestUsecase(t)
+	ctx := context.Background()
+
+	// 非法邮箱测试
+	badEmails := []string{"invalid", "user@", "@domain.com", "user@domain", "user space@domain.com"}
+	for _, em := range badEmails {
+		_, err := uc.Create(ctx, CreateInput{Email: em, Password: "password123"})
+		if err == nil {
+			t.Errorf("期望拒绝非法邮箱 %q，但校验通过", em)
+		}
+	}
+
+	// 合法邮箱与非法手机号测试
+	badPhones := []string{"123", "abcdef", "12345678901", "1380013800a"}
+	for _, ph := range badPhones {
+		_, err := uc.Create(ctx, CreateInput{Email: "valid@example.com", Password: "password123", Phone: ph})
+		if err == nil {
+			t.Errorf("期望拒绝非法手机号 %q，但校验通过", ph)
+		}
+	}
+
+	// 合法邮箱与合法手机号测试
+	goodPhones := []string{"", "13800138000", "+8613800138000", "+12025550123"}
+	for i, ph := range goodPhones {
+		email := fmt.Sprintf("valid%d@example.com", i)
+		u, err := uc.Create(ctx, CreateInput{Email: email, Password: "password123", Phone: ph})
+		if err != nil {
+			t.Errorf("期望允许合法手机号 %q 与邮箱 %q，但报错: %v", ph, email, err)
+		}
+		if u == nil {
+			t.Errorf("期望返回创建的用户对象，但为 nil")
+		}
+	}
+}
+

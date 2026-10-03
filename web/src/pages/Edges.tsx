@@ -649,14 +649,16 @@ export default function EdgesPage() {
                 >
                   <Copy size={12} /> {tr("批量安装", "Batch install")}
                 </Button>
-                <Button variant="primary" size="sm"
-                  type="button"
-                  onClick={() => setCreateOpen(true)}
-                  aria-label={tr("新建设备", "New device")}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 font-medium text-accent-fg"
-                >
-                  <Plus size={12} /> {tr("新建", "New")}
-                </Button>
+                {canMutate && (
+                  <Button variant="primary" size="sm"
+                    type="button"
+                    onClick={() => setCreateOpen(true)}
+                    aria-label={tr("新建设备", "New device")}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 font-medium text-accent-fg"
+                  >
+                    <Plus size={12} /> {tr("新建", "New")}
+                  </Button>
+                )}
               </>
           </div>
           )}
