@@ -35,7 +35,8 @@ SECRET_KEY=""
 ENROLLMENT_TOKEN=""
 SERVER_EDGE_ADDR=""
 SERVER_HTTP_ADDR=""
-ASSET_URL="${OPSPILOT_ASSET_URL:-}"
+DEFAULT_ASSET_URL="https://bucket01-1325282128.cos.ap-beijing.myqcloud.com/opspilot"
+ASSET_URL="${OPSPILOT_ASSET_URL:-$DEFAULT_ASSET_URL}"
 TLS_INSECURE=0
 
 INSTALL_DIR="/usr/local/bin"
@@ -166,7 +167,9 @@ if [[ "$OS" != "linux" ]]; then
     exit 1
 fi
 
-if [[ -n "$ASSET_URL" ]]; then
+if [[ "$ASSET_URL" == "local" || "$ASSET_URL" == "self" ]]; then
+    ASSET_BASE_URL="https://${SERVER_HTTP_ADDR}/edge"
+elif [[ -n "$ASSET_URL" ]]; then
     ASSET_BASE_URL="${ASSET_URL%/}"
 else
     ASSET_BASE_URL="https://${SERVER_HTTP_ADDR}/edge"
@@ -174,6 +177,7 @@ fi
 
 BINARY="opspilot-edge-${OS}-${ARCH}"
 URL="${ASSET_BASE_URL}/${BINARY}"
+FALLBACK_URL="https://${SERVER_HTTP_ADDR}/edge/${BINARY}"
 
 # --- download ----------------------------------------------------------------
 
@@ -182,10 +186,20 @@ TMP_BIN=$(mktemp /tmp/opspilot-edge.XXXXXX)
 PENDING_ENV_FILE=""
 trap 'rm -f "${TMP_BIN:-}"; if [[ -n "${PENDING_ENV_FILE:-}" ]]; then rm -f "$PENDING_ENV_FILE"; fi; log_error "install failed at line $LINENO (exit $?)"' ERR
 if ! curl -fLk --retry 3 --retry-delay 2 -o "$TMP_BIN" "$URL"; then
-    log_error "download failed: ${URL}"
-    log_error "  - check that the http endpoint is correct and reachable"
-    log_error "  - try: curl -kI https://${SERVER_HTTP_ADDR}/install.sh"
-    rm -f "$TMP_BIN"; exit 1
+    if [[ "$URL" != "$FALLBACK_URL" ]]; then
+        log_warn "download from primary URL failed, falling back to ${FALLBACK_URL}..."
+        if ! curl -fLk --retry 3 --retry-delay 2 -o "$TMP_BIN" "$FALLBACK_URL"; then
+            log_error "download failed: ${FALLBACK_URL}"
+            log_error "  - check that the http endpoint is correct and reachable"
+            log_error "  - try: curl -kI https://${SERVER_HTTP_ADDR}/install.sh"
+            rm -f "$TMP_BIN"; exit 1
+        fi
+    else
+        log_error "download failed: ${URL}"
+        log_error "  - check that the http endpoint is correct and reachable"
+        log_error "  - try: curl -kI https://${SERVER_HTTP_ADDR}/install.sh"
+        rm -f "$TMP_BIN"; exit 1
+    fi
 fi
 if [[ ! -s "$TMP_BIN" ]]; then
     log_error "downloaded binary is empty: $TMP_BIN"
@@ -236,10 +250,16 @@ TMP_BIN=""
 APPLY_HOOK_DIR=/usr/local/lib/opspilot-edge
 APPLY_HOOK="${APPLY_HOOK_DIR}/apply-pending-upgrade.sh"
 APPLY_URL="${ASSET_BASE_URL}/apply-pending-upgrade.sh"
+FALLBACK_APPLY_URL="https://${SERVER_HTTP_ADDR}/edge/apply-pending-upgrade.sh"
 log_info "installing ${APPLY_HOOK}"
 mkdir -p "$APPLY_HOOK_DIR"
 TMP_HOOK=$(mktemp /tmp/apply-pending-upgrade.XXXXXX)
-if curl -fLk --retry 3 --retry-delay 2 -o "$TMP_HOOK" "$APPLY_URL"; then
+if ! curl -fLk --retry 3 --retry-delay 2 -o "$TMP_HOOK" "$APPLY_URL"; then
+    if [[ "$APPLY_URL" != "$FALLBACK_APPLY_URL" ]]; then
+        curl -fLk --retry 3 --retry-delay 2 -o "$TMP_HOOK" "$FALLBACK_APPLY_URL" || true
+    fi
+fi
+if [[ -s "$TMP_HOOK" ]]; then
     install -m 0755 -o root -g root "$TMP_HOOK" "$APPLY_HOOK"
 else
     log_warn "could not fetch ${APPLY_URL}; ADR-024 whole-bundle upgrade won't apply"
@@ -262,6 +282,7 @@ rm -f "$TMP_HOOK"
 fetch_plugin_bin() {
     local name="$1" dest="${APPLY_HOOK_DIR}/$1"
     local url="${ASSET_BASE_URL}/${name}-${OS}-${ARCH}"
+    local fallback_url="https://${SERVER_HTTP_ADDR}/edge/${name}-${OS}-${ARCH}"
     local tmp
     tmp=$(mktemp "/tmp/${name}.XXXXXX")
     local success=0
@@ -271,6 +292,15 @@ fetch_plugin_bin() {
             log_info "installed plugin binary: ${name}"
             success=1
             break
+        fi
+        if [[ "$url" != "$fallback_url" && $attempt -ge 2 ]]; then
+            log_warn "downloading ${name} from primary URL interrupted, trying fallback ${fallback_url}..."
+            if curl -fLk -C - --retry 2 --retry-delay 2 -o "$tmp" "$fallback_url" && [[ -s "$tmp" ]]; then
+                install -m 0755 -o root -g root "$tmp" "$dest"
+                log_info "installed plugin binary: ${name} (from fallback)"
+                success=1
+                break
+            fi
         fi
         log_warn "downloading ${name} interrupted, resuming (attempt ${attempt}/5)..."
         sleep 2
