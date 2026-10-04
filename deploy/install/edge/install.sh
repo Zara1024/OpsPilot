@@ -35,6 +35,7 @@ SECRET_KEY=""
 ENROLLMENT_TOKEN=""
 SERVER_EDGE_ADDR=""
 SERVER_HTTP_ADDR=""
+ASSET_URL="${OPSPILOT_ASSET_URL:-}"
 TLS_INSECURE=0
 
 INSTALL_DIR="/usr/local/bin"
@@ -90,6 +91,7 @@ Required (install, choose one credential mode):
 
 Other:
   --minimal                        minimal install (agent + node_exporter + process_exporter only, ~50MB)
+  --asset-url=URL                  custom asset base URL for downloading binaries (e.g. COS/OSS/CDN)
   --tls-insecure                   skip TLS verification for enrollment (self-signed only)
   --uninstall                      stop + remove opspilot-edge (keeps /var/log)
   -h, --help                       this help
@@ -97,6 +99,7 @@ Other:
 Env:
   OPSPILOT_INSTALL_WAIT=20           seconds to poll journal for connect-success (default 20)
   OPSPILOT_MINIMAL=1               enable minimal install mode via environment variable
+  OPSPILOT_ASSET_URL=URL           custom asset base URL via environment variable
   NO_COLOR=1                       disable ANSI colors
 EOF
 }
@@ -108,6 +111,7 @@ for arg in "$@"; do
         --enrollment-token=*)  ENROLLMENT_TOKEN="${arg#*=}" ;;
         --server-edge-addr=*)  SERVER_EDGE_ADDR="${arg#*=}" ;;
         --server-http-addr=*)  SERVER_HTTP_ADDR="${arg#*=}" ;;
+        --asset-url=*)         ASSET_URL="${arg#*=}" ;;
         --minimal)             MINIMAL=1 ;;
         --tls-insecure)        TLS_INSECURE=1 ;;
         --uninstall)           UNINSTALL=1 ;;
@@ -162,8 +166,14 @@ if [[ "$OS" != "linux" ]]; then
     exit 1
 fi
 
+if [[ -n "$ASSET_URL" ]]; then
+    ASSET_BASE_URL="${ASSET_URL%/}"
+else
+    ASSET_BASE_URL="https://${SERVER_HTTP_ADDR}/edge"
+fi
+
 BINARY="opspilot-edge-${OS}-${ARCH}"
-URL="https://${SERVER_HTTP_ADDR}/edge/${BINARY}"
+URL="${ASSET_BASE_URL}/${BINARY}"
 
 # --- download ----------------------------------------------------------------
 
@@ -225,7 +235,7 @@ TMP_BIN=""
 # upgrades are silently no-ops. Anonymous /edge/ static path serves it.
 APPLY_HOOK_DIR=/usr/local/lib/opspilot-edge
 APPLY_HOOK="${APPLY_HOOK_DIR}/apply-pending-upgrade.sh"
-APPLY_URL="https://${SERVER_HTTP_ADDR}/edge/apply-pending-upgrade.sh"
+APPLY_URL="${ASSET_BASE_URL}/apply-pending-upgrade.sh"
 log_info "installing ${APPLY_HOOK}"
 mkdir -p "$APPLY_HOOK_DIR"
 TMP_HOOK=$(mktemp /tmp/apply-pending-upgrade.XXXXXX)
@@ -251,7 +261,7 @@ rm -f "$TMP_HOOK"
 # plugin, surfaced loudly in the self-check below.
 fetch_plugin_bin() {
     local name="$1" dest="${APPLY_HOOK_DIR}/$1"
-    local url="https://${SERVER_HTTP_ADDR}/edge/${name}-${OS}-${ARCH}"
+    local url="${ASSET_BASE_URL}/${name}-${OS}-${ARCH}"
     local tmp
     tmp=$(mktemp "/tmp/${name}.XXXXXX")
     local success=0
