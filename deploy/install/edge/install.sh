@@ -48,6 +48,7 @@ SERVICE_USER="opspilot-edge"
 SERVICE_GROUP="opspilot-edge"
 
 UNINSTALL=0
+MINIMAL="${OPSPILOT_MINIMAL:-0}"
 
 # Wait up to N seconds for systemd-managed agent to log "registered with cloud"
 # before declaring success. Connect handshake is sub-second on a healthy box;
@@ -88,12 +89,14 @@ Required (install, choose one credential mode):
   --server-http-addr=HOST[:PORT]   http endpoint, e.g. opspilot.example.com:8443
 
 Other:
+  --minimal                        minimal install (agent + node_exporter + process_exporter only, ~50MB)
   --tls-insecure                   skip TLS verification for enrollment (self-signed only)
   --uninstall                      stop + remove opspilot-edge (keeps /var/log)
   -h, --help                       this help
 
 Env:
   OPSPILOT_INSTALL_WAIT=20           seconds to poll journal for connect-success (default 20)
+  OPSPILOT_MINIMAL=1               enable minimal install mode via environment variable
   NO_COLOR=1                       disable ANSI colors
 EOF
 }
@@ -105,6 +108,7 @@ for arg in "$@"; do
         --enrollment-token=*)  ENROLLMENT_TOKEN="${arg#*=}" ;;
         --server-edge-addr=*)  SERVER_EDGE_ADDR="${arg#*=}" ;;
         --server-http-addr=*)  SERVER_HTTP_ADDR="${arg#*=}" ;;
+        --minimal)             MINIMAL=1 ;;
         --tls-insecure)        TLS_INSECURE=1 ;;
         --uninstall)           UNINSTALL=1 ;;
         -h|--help)             usage; exit 0 ;;
@@ -250,15 +254,29 @@ fetch_plugin_bin() {
     local url="https://${SERVER_HTTP_ADDR}/edge/${name}-${OS}-${ARCH}"
     local tmp
     tmp=$(mktemp "/tmp/${name}.XXXXXX")
-    if curl -fLk --retry 3 --retry-delay 2 -o "$tmp" "$url" && [[ -s "$tmp" ]]; then
-        install -m 0755 -o root -g root "$tmp" "$dest"
-        log_info "installed plugin binary: ${name}"
-    else
+    local success=0
+    for attempt in 1 2 3 4 5; do
+        if curl -fLk -C - --retry 3 --retry-delay 2 -o "$tmp" "$url" && [[ -s "$tmp" ]]; then
+            install -m 0755 -o root -g root "$tmp" "$dest"
+            log_info "installed plugin binary: ${name}"
+            success=1
+            break
+        fi
+        log_warn "downloading ${name} interrupted, resuming (attempt ${attempt}/5)..."
+        sleep 2
+    done
+    if [[ $success -ne 1 ]]; then
         log_warn "could not fetch ${url}; the ${name} plugin will not run until present"
     fi
     rm -f "$tmp"
 }
-for pbin in obi obi.NOTICES node_exporter process_exporter otelcol-contrib mysqld_exporter postgres_exporter redis_exporter mongodb_exporter; do
+if [[ "$MINIMAL" == "1" ]]; then
+    log_info "minimal install mode: downloading basic host plugins only (~50MB total)"
+    PLUGINS_TO_FETCH=(node_exporter process_exporter)
+else
+    PLUGINS_TO_FETCH=(obi obi.NOTICES node_exporter process_exporter otelcol-contrib mysqld_exporter postgres_exporter redis_exporter mongodb_exporter)
+fi
+for pbin in "${PLUGINS_TO_FETCH[@]}"; do
     fetch_plugin_bin "$pbin"
 done
 if [[ -f "${APPLY_HOOK_DIR}/obi.NOTICES" ]]; then chmod 0644 "${APPLY_HOOK_DIR}/obi.NOTICES"; fi
@@ -486,7 +504,12 @@ printf '\n'
 echo
 echo "${C_BOLD}${C_CYAN}--- self-check ---${C_RESET}"
 SELFCHECK_FAIL=0
-for tool in obi otelcol-contrib node_exporter process_exporter mysqld_exporter postgres_exporter redis_exporter mongodb_exporter; do
+if [[ "$MINIMAL" == "1" ]]; then
+    CHECK_TOOLS=(node_exporter process_exporter)
+else
+    CHECK_TOOLS=(obi otelcol-contrib node_exporter process_exporter mysqld_exporter postgres_exporter redis_exporter mongodb_exporter)
+fi
+for tool in "${CHECK_TOOLS[@]}"; do
     if [[ -x "${APPLY_HOOK_DIR}/${tool}" ]]; then
         log_ok "plugin binary present: ${tool}"
     else
@@ -494,6 +517,9 @@ for tool in obi otelcol-contrib node_exporter process_exporter mysqld_exporter p
         SELFCHECK_FAIL=1
     fi
 done
+if [[ "$MINIMAL" == "1" ]]; then
+    log_info "minimal mode active: heavy telemetry plugins (obi, otelcol, db exporters) skipped"
+fi
 # State dir must exist and be writable by the service user. On systemd < 235
 # (CentOS/RHEL 7) the unit's StateDirectory= is silently ignored, so this is
 # the probe that catches the "online but no data" failure: without a writable
