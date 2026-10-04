@@ -54,8 +54,8 @@ MINIMAL="${OPSPILOT_MINIMAL:-0}"
 
 # Wait up to N seconds for systemd-managed agent to log "registered with cloud"
 # before declaring success. Connect handshake is sub-second on a healthy box;
-# 20s leaves headroom for slow DNS / network. Set OPSPILOT_INSTALL_WAIT to override.
-WAIT_SECS="${OPSPILOT_INSTALL_WAIT:-20}"
+# 40s leaves headroom for slow DNS / cross-cloud network. Set OPSPILOT_INSTALL_WAIT to override.
+WAIT_SECS="${OPSPILOT_INSTALL_WAIT:-40}"
 
 # --- pretty-print helpers ----------------------------------------------------
 
