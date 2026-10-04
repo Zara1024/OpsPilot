@@ -250,13 +250,14 @@ func (e *PipelineEvaluator) refreshDeviceStalenessGauge(ctx context.Context, now
 	// device_id values doesn't double-up the series.
 	current := make(map[string]string, len(edges))
 	for _, edge := range edges {
-		var lastSeen time.Time
-		if edge.LastSeenAt != nil {
-			lastSeen = *edge.LastSeenAt
-		} else {
-			lastSeen = edge.CreatedAt
+		// Only evaluate staleness for edges that have reported heartbeats at least once.
+		// Edges with LastSeenAt == nil are pending enrollment / not yet connected;
+		// falling back to CreatedAt causes spurious "device_offline" alerts before
+		// the edge has even enrolled or when enrollment was abandoned.
+		if edge.LastSeenAt == nil {
+			continue
 		}
-		secs := now.Sub(lastSeen).Seconds()
+		secs := now.Sub(*edge.LastSeenAt).Seconds()
 		if secs < 0 {
 			secs = 0
 		}

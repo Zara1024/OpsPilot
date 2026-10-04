@@ -1,6 +1,6 @@
 # <img src="web/public/opspilot-logo.svg" alt="" width="40" align="absmiddle" style="vertical-align: middle;" /> OpsPilot
 
-> **An ops AI Agent that understands your infrastructure, finds the root cause, and fixes it — right from Slack or Telegram.**
+> **An ops AI Agent that understands your infrastructure, finds the root cause, and fixes it �?right from Slack or Telegram.**
 
 *Metrics · logs · traces · topology blast-radius · root-cause correlation · remote execution · alert-driven auto-investigation · RAG knowledge & code search · specialist agents & skills.*
 
@@ -36,24 +36,24 @@ English | [简体中文](./README_ZH.md) | [日本語](./README_JA.md) | [한국
 
 <div align="center">
 
-[Features](#features) • [Install](#install) • [Integrations](#integrations) • [License](#license)
+[Features](#features) �?[Install](#install) �?[Integrations](#integrations) �?[License](#license)
 
 </div>
 
 ## Features
 
-- 🤖 **Coordinator + Specialist agents** — coordinator dispatches to SRE / network / DB sub-agents
-- 🚨 **Auto-investigate on alert** — investigator spawns an RCA worker, writes the cause back to chat
-- 🔍 **Root-cause RCA** — walks topology, correlates m/l/t, pins the "why" to a source-code line
-- 🔒 **Zero inbound ports** — edge dials out; no port 22 / 80 / 443 on hosts
-- 💻 **Browser SSH** — reverse-tunnel shell into any host; no keys, no jumpbox, all audited
-- 🐳 **Self-host in one command** — `install.sh` brings up the full stack
-- 📊 **Built-in observability** — Prometheus + Loki + Tempo + Grafana wired; the agent writes the queries
-- 🧠 **Bring your own model** — Anthropic / OpenAI / GLM / DeepSeek / Gemini / Kimi, hot routing
-- 💬 **Two-way IM channels** — Slack / Telegram / Larksuite / DingTalk / WeCom, per-channel locale
-- 🛠️ **Read-only host tools** — bash sandbox + 26+ inspection tools; every call audited
-- ☸️ **Kubernetes lifecycle** — enroll clusters, inspect workloads and events, manage upgrades, and mirror Kubernetes resources into topology
-- 🌐 **Network device management** — discover neighbors from Edge hosts, verify with SNMP, poll interfaces, and map host-to-network-device links
+- 🤖 **Coordinator + Specialist agents** �?coordinator dispatches to SRE / network / DB sub-agents
+- 🚨 **Auto-investigate on alert** �?investigator spawns an RCA worker, writes the cause back to chat
+- 🔍 **Root-cause RCA** �?walks topology, correlates m/l/t, pins the "why" to a source-code line
+- 🔒 **Zero inbound ports** �?edge dials out; no port 22 / 80 / 443 on hosts
+- 💻 **Browser SSH** �?reverse-tunnel shell into any host; no keys, no jumpbox, all audited
+- 🐳 **Self-host in one command** �?`install.sh` brings up the full stack
+- 📊 **Built-in observability** �?Prometheus + Loki + Tempo + Grafana wired; the agent writes the queries
+- 🧠 **Bring your own model** �?Anthropic / OpenAI / GLM / DeepSeek / Gemini / Kimi, hot routing
+- 💬 **Two-way IM channels** �?Slack / Telegram / Larksuite / DingTalk / WeCom, per-channel locale
+- 🛠�?**Read-only host tools** �?bash sandbox + 26+ inspection tools; every call audited
+- ☸️ **Kubernetes lifecycle** �?enroll clusters, inspect workloads and events, manage upgrades, and mirror Kubernetes resources into topology
+- 🌐 **Network device management** �?discover neighbors from Edge hosts, verify with SNMP, poll interfaces, and map host-to-network-device links
 
 ## Install
 
@@ -63,26 +63,26 @@ Choose the command for your server architecture:
 
 **AMD64**
 ```bash
-wget https://github.com/Zara1024/OpsPilot/releases/download/v1.0.4/opspilot-v1.0.4-linux-amd64.tar.xz
-tar -xf opspilot-v1.0.4-linux-amd64.tar.xz && cd opspilot-v1.0.4-linux-amd64
+wget https://github.com/Zara1024/OpsPilot/releases/download/v1.0.5/opspilot-v1.0.5-linux-amd64.tar.xz
+tar -xf opspilot-v1.0.5-linux-amd64.tar.xz && cd opspilot-v1.0.5-linux-amd64
 sudo ./install.sh
 ```
 
 **ARM64**
 ```bash
-wget https://github.com/Zara1024/OpsPilot/releases/download/v1.0.4/opspilot-v1.0.4-linux-arm64.tar.xz
-tar -xf opspilot-v1.0.4-linux-arm64.tar.xz && cd opspilot-v1.0.4-linux-arm64
+wget https://github.com/Zara1024/OpsPilot/releases/download/v1.0.5/opspilot-v1.0.5-linux-arm64.tar.xz
+tar -xf opspilot-v1.0.5-linux-arm64.tar.xz && cd opspilot-v1.0.5-linux-arm64
 sudo ./install.sh
 ```
 
-**🇨🇳 Mainland China** — if GitHub is slow, use the matching CDN mirror URL instead:
+**🇨🇳 Mainland China** �?if GitHub is slow, use the matching CDN mirror URL instead:
 
 ```bash
 # AMD64
-wget https://mirror.ghproxy.com/https://github.com/Zara1024/OpsPilot/releases/download/v1.0.4/opspilot-v1.0.4-linux-amd64.tar.xz
+wget https://mirror.ghproxy.com/https://github.com/Zara1024/OpsPilot/releases/download/v1.0.5/opspilot-v1.0.5-linux-amd64.tar.xz
 
 # ARM64
-wget https://mirror.ghproxy.com/https://github.com/Zara1024/OpsPilot/releases/download/v1.0.4/opspilot-v1.0.4-linux-arm64.tar.xz
+wget https://mirror.ghproxy.com/https://github.com/Zara1024/OpsPilot/releases/download/v1.0.5/opspilot-v1.0.5-linux-arm64.tar.xz
 ```
 
 ### Custom Domain & SSL Automatic Renewal
@@ -239,7 +239,7 @@ Drop-in for the observability, channel, and model stacks your team already uses.
 
 ## License
 
-AGPLv3 — see [LICENSE](LICENSE).
+AGPLv3 �?see [LICENSE](LICENSE).
 
 OpsPilot brand assets are not licensed under AGPLv3. See
 [TRADEMARK.md](TRADEMARK.md).

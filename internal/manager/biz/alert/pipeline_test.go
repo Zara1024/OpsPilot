@@ -352,3 +352,43 @@ func vectorUp(samples map[string]string) *promquery.InstantResult {
 	raw, _ := json.Marshal(entries)
 	return &promquery.InstantResult{ResultType: "vector", Result: raw}
 }
+
+func TestRefreshDeviceStalenessGaugeSkipsUnenrolledEdges(t *testing.T) {
+	now := time.Date(2026, 5, 2, 12, 0, 0, 0, time.UTC)
+	lastSeen := now.Add(-30 * time.Second)
+	edgeList := &fakeEdgeLister{
+		edges: []*edgemodel.Edge{
+			{
+				ID:         1,
+				Name:       "unenrolled-edge",
+				CreatedAt:  now.Add(-5 * time.Hour),
+				LastSeenAt: nil, // Pending enrollment / never connected
+			},
+			{
+				ID:         2,
+				Name:       "healthy-edge",
+				CreatedAt:  now.Add(-24 * time.Hour),
+				LastSeenAt: &lastSeen,
+			},
+		},
+	}
+
+	eval := newPipelineEvaluator(t, newFakeRepo(), &fakeNotifier{}, NewStaticRulesProvider(), PipelineEvaluatorOpts{
+		EdgeLister: edgeList,
+		Now:        func() time.Time { return now },
+	})
+
+	eval.refreshDeviceStalenessGauge(context.Background(), now)
+
+	eval.gaugeMu.Lock()
+	defer eval.gaugeMu.Unlock()
+
+	// Only healthy-edge (ID 2) should be tracked in gaugeSnapshot.
+	// unenrolled-edge (ID 1) must be skipped because LastSeenAt is nil.
+	if _, exists := eval.gaugeSnapshot["1"]; exists {
+		t.Errorf("expected unenrolled edge (ID 1) to be skipped from staleness gauge, but found in snapshot")
+	}
+	if name, exists := eval.gaugeSnapshot["2"]; !exists || name != "healthy-edge" {
+		t.Errorf("expected healthy edge (ID 2) to be in snapshot, got exists=%v, name=%q", exists, name)
+	}
+}
