@@ -1700,12 +1700,39 @@ function AgentVersionCell({
   );
 }
 
+const DEFAULT_RECOMMENDED_EDGE_URL =
+  "https://bucket01-1325282128.cos.ap-beijing.myqcloud.com/opspilot/opspilot-edge-linux-amd64";
+const DEFAULT_RECOMMENDED_EDGE_SHA256 =
+  "e76ac8b84a6c8ddf867051dca82863afb3fbf4a4a27163dcccefb7b838b790fd";
+
+async function fetchLatestSha256(targetUrl: string): Promise<string | null> {
+  const origin = window.location.origin.replace(/\/+$/, "");
+  const candidateUrls: string[] = [];
+  if (targetUrl.startsWith("http")) {
+    candidateUrls.push(
+      targetUrl.endsWith(".sha256") ? targetUrl : `${targetUrl}.sha256`,
+    );
+  }
+  candidateUrls.push(`${origin}/edge/opspilot-edge-linux-amd64.sha256`);
+  for (const u of candidateUrls) {
+    try {
+      const resp = await fetch(u);
+      if (resp.ok) {
+        const text = await resp.text();
+        const match = text.trim().match(/^[0-9a-fA-F]{64}/);
+        if (match) return match[0].toLowerCase();
+      }
+    } catch {
+      // ignore & try next
+    }
+  }
+  return null;
+}
+
 // UpgradeModal — operator confirms the upgrade target URL + sha256 and
 // the manager dispatches an agent_upgrade RPC to the edge. The actual
 // swap happens on the edge's next process restart (systemd
-// ExecStartPre swap script). Form is intentionally explicit (URL +
-// sha256 typed in by hand) for v1 — a future revision should let
-// the operator pick from a manager-side artifact registry instead.
+// ExecStartPre swap script).
 function UpgradeModal({
   edge,
   managerVersion,
@@ -1718,16 +1745,38 @@ function UpgradeModal({
   onTriggered(): void;
 }) {
   const { tr } = useI18n();
-  const [url, setUrl] = useState(() => {
-    // Pre-fill with the same-origin manager's edge artifact path. Operators
-    // typically host edge binaries on `/edge/opspilot-edge-linux-amd64`
-    // alongside the install script (deploy/install/edge/ layout).
-    const origin = window.location.origin.replace(/\/+$/, "");
-    return `${origin}/edge/opspilot-edge-linux-amd64`;
-  });
-  const [sha256, setSha256] = useState("");
+  const [url, setUrl] = useState(DEFAULT_RECOMMENDED_EDGE_URL);
+  const [sha256, setSha256] = useState(DEFAULT_RECOMMENDED_EDGE_SHA256);
+  const [fetchingSha, setFetchingSha] = useState(false);
+  const [shaAutoFilled, setShaAutoFilled] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setFetchingSha(true);
+    void fetchLatestSha256(url).then((resolved) => {
+      if (!active) return;
+      setFetchingSha(false);
+      if (resolved) {
+        setSha256(resolved);
+        setShaAutoFilled(true);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [url]);
+
+  const fillLocalSource = () => {
+    const origin = window.location.origin.replace(/\/+$/, "");
+    setUrl(`${origin}/edge/opspilot-edge-linux-amd64`);
+  };
+
+  const fillCosSource = () => {
+    setUrl(DEFAULT_RECOMMENDED_EDGE_URL);
+  };
+
   const submit = async () => {
     if (!url.trim() || sha256.trim().length !== 64) {
       setErr(
@@ -1753,8 +1802,8 @@ function UpgradeModal({
     <Modal
       open
       title={tr(
-        `升级 ${edge.name} (#${edge.id})`,
-        `Upgrade ${edge.name} (#${edge.id})`,
+        `升级 Agent · ${edge.name} (#${edge.id})`,
+        `Upgrade Agent · ${edge.name} (#${edge.id})`,
       )}
       onClose={onClose}
     >
@@ -1774,6 +1823,25 @@ function UpgradeModal({
             )}
           </div>
         </div>
+
+        <div className="flex items-center gap-2 pt-1 text-[11px]">
+          <span className="text-zinc-500">{tr("快捷填充：", "Quick fill:")}</span>
+          <button
+            type="button"
+            onClick={fillCosSource}
+            className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-emerald-300 hover:bg-emerald-500/20"
+          >
+            {tr("官方 COS 高速源 (推荐)", "Official COS Mirror (Recommended)")}
+          </button>
+          <button
+            type="button"
+            onClick={fillLocalSource}
+            className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-zinc-300 hover:bg-zinc-700"
+          >
+            {tr("当前实例源 (/edge/...)", "Current Instance (/edge/...)")}
+          </button>
+        </div>
+
         <Label className="block">
           <span className="mb-1 block text-zinc-500">
             {tr("下载 URL", "Download URL")}
@@ -1786,26 +1854,35 @@ function UpgradeModal({
           />
         </Label>
         <Label className="block">
-          <span className="mb-1 block text-zinc-500">
-            {tr("SHA256（64 位小写 hex）", "SHA256 (64-char lowercase hex)")}
-          </span>
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-zinc-500">
+              {tr("SHA256（64 位小写 hex）", "SHA256 (64-char lowercase hex)")}
+            </span>
+            {fetchingSha ? (
+              <span className="text-[11px] text-zinc-400">
+                {tr("正在检测最新校验和...", "Detecting checksum...")}
+              </span>
+            ) : shaAutoFilled ? (
+              <span className="text-[11px] text-emerald-400">
+                {tr("✓ 已自动匹配最新版本校验和", "✓ Auto-matched latest checksum")}
+              </span>
+            ) : null}
+          </div>
           <Input
             type="text"
             value={sha256}
-            onChange={(e) => setSha256(e.target.value)}
+            onChange={(e) => {
+              setSha256(e.target.value);
+              setShaAutoFilled(false);
+            }}
             placeholder="e.g. 3a7f...  by `sha256sum opspilot-edge-linux-amd64`"
             className="w-full font-mono"
           />
         </Label>
         <p className="text-[11px] text-zinc-500">
           {tr(
-            "edge 会下载、校验 sha256，原子 stage 后干净退出；systemd ExecStartPre 在重启时把新二进制 mv 到 ",
-            "edge downloads, verifies sha256, stages atomically and exits cleanly; on restart systemd ExecStartPre mv's the new binary to ",
-          )}
-          <code className="font-mono">/usr/local/bin/opspilot-edge</code>
-          {tr(
-            "。失败时旧版本保持不变。",
-            ". On failure the old version is left in place.",
+            "默认使用腾讯云 COS 高速源仅更新 Edge Agent（大小约 26MB，耗时 ~10s），下载校验后由 systemd ExecStartPre 原子替换重启生效，失败时自动保留原版本。",
+            "Uses fast COS mirror to update only Edge Agent (~26MB, ~10s). Replaces binary on restart via systemd ExecStartPre; retains previous binary on error.",
           )}
         </p>
         {err && (
@@ -1838,9 +1915,7 @@ function UpgradeModal({
 }
 
 // BatchUpgradeModal — the multi-device equivalent of UpgradeModal. The
-// same URL + sha256 is dispatched to every selected edge. Same explicit
-// URL+sha form (v1); a future revision can pick from an artifact
-// registry instead.
+// same URL + sha256 is dispatched to every selected edge.
 function BatchUpgradeModal({
   count,
   onClose,
@@ -1851,13 +1926,37 @@ function BatchUpgradeModal({
   onSubmit(url: string, sha256: string): Promise<void>;
 }) {
   const { tr } = useI18n();
-  const [url, setUrl] = useState(() => {
-    const origin = window.location.origin.replace(/\/+$/, "");
-    return `${origin}/edge/opspilot-edge-linux-amd64`;
-  });
-  const [sha256, setSha256] = useState("");
+  const [url, setUrl] = useState(DEFAULT_RECOMMENDED_EDGE_URL);
+  const [sha256, setSha256] = useState(DEFAULT_RECOMMENDED_EDGE_SHA256);
+  const [fetchingSha, setFetchingSha] = useState(false);
+  const [shaAutoFilled, setShaAutoFilled] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setFetchingSha(true);
+    void fetchLatestSha256(url).then((resolved) => {
+      if (!active) return;
+      setFetchingSha(false);
+      if (resolved) {
+        setSha256(resolved);
+        setShaAutoFilled(true);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [url]);
+
+  const fillLocalSource = () => {
+    const origin = window.location.origin.replace(/\/+$/, "");
+    setUrl(`${origin}/edge/opspilot-edge-linux-amd64`);
+  };
+
+  const fillCosSource = () => {
+    setUrl(DEFAULT_RECOMMENDED_EDGE_URL);
+  };
   const submit = async () => {
     if (!url.trim() || sha256.trim().length !== 64) {
       setErr(
@@ -1882,8 +1981,8 @@ function BatchUpgradeModal({
     <Modal
       open
       title={tr(
-        `批量自定义升级 · ${count} 台`,
-        `Batch custom upgrade · ${count} device(s)`,
+        `批量升级 Agent · ${count} 台`,
+        `Batch upgrade Agent · ${count} device(s)`,
       )}
       onClose={onClose}
     >
@@ -1894,6 +1993,25 @@ function BatchUpgradeModal({
             `The same binary is dispatched to all ${count} selected devices. Make sure they share an architecture (default linux-amd64).`,
           )}
         </p>
+
+        <div className="flex items-center gap-2 pt-1 text-[11px]">
+          <span className="text-zinc-500">{tr("快捷填充：", "Quick fill:")}</span>
+          <button
+            type="button"
+            onClick={fillCosSource}
+            className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-emerald-300 hover:bg-emerald-500/20"
+          >
+            {tr("官方 COS 高速源 (推荐)", "Official COS Mirror (Recommended)")}
+          </button>
+          <button
+            type="button"
+            onClick={fillLocalSource}
+            className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-zinc-300 hover:bg-zinc-700"
+          >
+            {tr("当前实例源 (/edge/...)", "Current Instance (/edge/...)")}
+          </button>
+        </div>
+
         <Label className="block">
           <span className="mb-1 block text-zinc-500">
             {tr("下载 URL", "Download URL")}
@@ -1906,13 +2024,27 @@ function BatchUpgradeModal({
           />
         </Label>
         <Label className="block">
-          <span className="mb-1 block text-zinc-500">
-            {tr("SHA256（64 位小写 hex）", "SHA256 (64-char lowercase hex)")}
-          </span>
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-zinc-500">
+              {tr("SHA256（64 位小写 hex）", "SHA256 (64-char lowercase hex)")}
+            </span>
+            {fetchingSha ? (
+              <span className="text-[11px] text-zinc-400">
+                {tr("正在检测最新校验和...", "Detecting checksum...")}
+              </span>
+            ) : shaAutoFilled ? (
+              <span className="text-[11px] text-emerald-400">
+                {tr("✓ 已自动匹配最新版本校验和", "✓ Auto-matched latest checksum")}
+              </span>
+            ) : null}
+          </div>
           <Input
             type="text"
             value={sha256}
-            onChange={(e) => setSha256(e.target.value)}
+            onChange={(e) => {
+              setSha256(e.target.value);
+              setShaAutoFilled(false);
+            }}
             placeholder="e.g. 3a7f...  by `sha256sum opspilot-edge-linux-amd64`"
             className="w-full font-mono"
           />
@@ -2369,7 +2501,16 @@ function RowMenu({
                 {tr("Edge 操作", "Edge actions")}
               </div>
               <DropdownMenuItem
-
+                onClick={() => {
+                  setOpen(false);
+                  onUpgrade();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-200 hover:bg-zinc-800"
+              >
+                <ExternalLink size={13} />{" "}
+                {tr("升级 Agent (推荐 · 快速)", "Upgrade Agent (Recommended · Fast)")}
+              </DropdownMenuItem>
+              <DropdownMenuItem
                 disabled={upgradePackageBusy}
                 onClick={() => {
                   setOpen(false);
@@ -2384,17 +2525,6 @@ function RowMenu({
                       "升级整包（Edge + 插件）",
                       "Upgrade package (edge + plugins)",
                     )}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-
-                onClick={() => {
-                  setOpen(false);
-                  onUpgrade();
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-200 hover:bg-zinc-800"
-              >
-                <ExternalLink size={13} />{" "}
-                {tr("自定义升级 (URL + sha)", "Custom upgrade (URL + sha)")}
               </DropdownMenuItem>
               <DropdownMenuItem
 
