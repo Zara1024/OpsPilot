@@ -77,7 +77,10 @@ func (s *HandoffService) GetCurrentHandoffStatus(ctx context.Context, scheduleID
 				outgoingID = liveStatus.PrimaryUser.UserID
 				outgoingName = liveStatus.PrimaryUser.UserName
 				shiftStart = liveStatus.PrimaryUser.StartTime
-				shiftEnd = liveStatus.PrimaryUser.EndTime
+				shiftEnd = liveStatus.HandoffTime
+				if shiftEnd.IsZero() {
+					shiftEnd = liveStatus.PrimaryUser.EndTime
+				}
 			}
 			if liveStatus.NextShift != nil {
 				incomingID = liveStatus.NextShift.UserID

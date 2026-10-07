@@ -356,6 +356,7 @@ func vectorUp(samples map[string]string) *promquery.InstantResult {
 func TestRefreshDeviceStalenessGaugeSkipsUnenrolledEdges(t *testing.T) {
 	now := time.Date(2026, 5, 2, 12, 0, 0, 0, time.UTC)
 	lastSeen := now.Add(-30 * time.Second)
+	healthyDevID := uint64(2)
 	edgeList := &fakeEdgeLister{
 		edges: []*edgemodel.Edge{
 			{
@@ -366,7 +367,14 @@ func TestRefreshDeviceStalenessGaugeSkipsUnenrolledEdges(t *testing.T) {
 			},
 			{
 				ID:         2,
+				DeviceID:   &healthyDevID,
 				Name:       "healthy-edge",
+				CreatedAt:  now.Add(-24 * time.Hour),
+				LastSeenAt: &lastSeen,
+			},
+			{
+				ID:         3,
+				Name:       "k8s:demo-cluster:controller",
 				CreatedAt:  now.Add(-24 * time.Hour),
 				LastSeenAt: &lastSeen,
 			},
@@ -385,8 +393,12 @@ func TestRefreshDeviceStalenessGaugeSkipsUnenrolledEdges(t *testing.T) {
 
 	// Only healthy-edge (ID 2) should be tracked in gaugeSnapshot.
 	// unenrolled-edge (ID 1) must be skipped because LastSeenAt is nil.
+	// k8s controller edge (ID 3) must be skipped because it is a pod controller without physical DeviceID.
 	if _, exists := eval.gaugeSnapshot["1"]; exists {
 		t.Errorf("expected unenrolled edge (ID 1) to be skipped from staleness gauge, but found in snapshot")
+	}
+	if _, exists := eval.gaugeSnapshot["3"]; exists {
+		t.Errorf("expected k8s controller edge (ID 3) to be skipped from staleness gauge, but found in snapshot")
 	}
 	if name, exists := eval.gaugeSnapshot["2"]; !exists || name != "healthy-edge" {
 		t.Errorf("expected healthy edge (ID 2) to be in snapshot, got exists=%v, name=%q", exists, name)

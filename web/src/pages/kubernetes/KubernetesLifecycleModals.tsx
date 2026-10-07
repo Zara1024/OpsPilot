@@ -3,7 +3,7 @@ import { Check, Clipboard, Trash2 } from 'lucide-react';
 
 import type { KubernetesCluster } from '@/api/kubernetes';
 import { Modal } from '@/components/Modal';
-import { Button, Chip } from '@/components/ui';
+import { Button, Chip, Checkbox, Label } from '@/components/ui';
 import { useI18n } from '@/i18n/locale';
 import { cn } from '@/lib/cn';
 import {
@@ -71,18 +71,37 @@ export function UninstallCommandModal({
   onClose(): void;
 }) {
   const { tr } = useI18n();
+  const [isK3s, setIsK3s] = useState(() => cluster?.name?.toLowerCase().includes('k3s') ?? false);
+  useEffect(() => {
+    if (cluster?.name) {
+      setIsK3s(cluster.name.toLowerCase().includes('k3s'));
+    }
+  }, [cluster?.name]);
   if (!cluster) return null;
+  const rawCmd = kubernetesUninstallCommand(cluster);
+  const command = isK3s ? `export KUBECONFIG=/etc/rancher/k3s/k3s.yaml\n${rawCmd}` : rawCmd;
+
   return (
     <Modal open onClose={onClose} title={tr('Helm 卸载命令', 'Helm uninstall command')} size="lg">
       <div className="space-y-3 text-xs">
         <ClusterIdentity cluster={cluster} />
-        <div className="rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-1.5 text-amber-200">
+        <div className="rounded-md border border-amber-500/20 bg-amber-500/10 px-2.5 py-2 text-amber-200 leading-relaxed">
           {tr(
             '先在目标 Kubernetes 集群执行卸载命令，确认资源清理后再删除 OpsPilot 侧集群记录。',
             'Run the uninstall command in the target Kubernetes cluster before deleting the OpsPilot cluster record.',
           )}
         </div>
-        <CommandBlock label={tr('卸载命令', 'Uninstall command')} command={kubernetesUninstallCommand(cluster)} />
+        <div className="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-amber-800 dark:text-amber-200">
+          <Checkbox
+            id="k3s-uninstall-toggle"
+            checked={isK3s}
+            onCheckedChange={(checked) => setIsK3s(!!checked)}
+          />
+          <Label htmlFor="k3s-uninstall-toggle" className="cursor-pointer text-xs font-medium">
+            {tr('轻量集群 / K3s 环境（自动包含 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml）', 'K3s / Lightweight cluster (include export KUBECONFIG=/etc/rancher/k3s/k3s.yaml)')}
+          </Label>
+        </div>
+        <CommandBlock label={tr('卸载命令', 'Uninstall command')} command={command} />
       </div>
     </Modal>
   );
@@ -96,18 +115,37 @@ export function UpgradeCommandModal({
   onClose(): void;
 }) {
   const { tr } = useI18n();
+  const [isK3s, setIsK3s] = useState(() => cluster?.name?.toLowerCase().includes('k3s') ?? false);
+  useEffect(() => {
+    if (cluster?.name) {
+      setIsK3s(cluster.name.toLowerCase().includes('k3s'));
+    }
+  }, [cluster?.name]);
   if (!cluster) return null;
+  const rawCmd = kubernetesUpgradeCommand(cluster);
+  const command = isK3s ? `export KUBECONFIG=/etc/rancher/k3s/k3s.yaml\n${rawCmd}` : rawCmd;
+
   return (
     <Modal open onClose={onClose} title={tr('一键 Helm 升级', 'One-command Helm upgrade')} size="lg">
       <div className="space-y-3 text-xs">
         <ClusterIdentity cluster={cluster} />
-        <div className="rounded-md border border-sky-500/20 bg-sky-500/10 px-2 py-1.5 text-sky-200">
+        <div className="rounded-md border border-sky-500/20 bg-sky-500/10 px-2.5 py-2 text-sky-200 leading-relaxed">
           {tr(
             '在目标 Kubernetes 集群执行这一条命令即可（需要 Helm 3.14+）。Chart 会先采用新版默认值、再合并现有自定义 values，自动完成必要的数据面迁移和健康检查；失败时自动回滚。仅更新镜像的版本不会重复执行迁移。',
             'Run this single command in the target Kubernetes cluster (Helm 3.14+ required). The chart starts from the new defaults, reapplies existing custom values, performs any required data-plane migration and health checks, and rolls back automatically on failure. Image-only upgrades do not repeat completed migrations.',
           )}
         </div>
-        <CommandBlock label={tr('升级命令', 'Upgrade command')} command={kubernetesUpgradeCommand(cluster)} />
+        <div className="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-amber-800 dark:text-amber-200">
+          <Checkbox
+            id="k3s-upgrade-toggle"
+            checked={isK3s}
+            onCheckedChange={(checked) => setIsK3s(!!checked)}
+          />
+          <Label htmlFor="k3s-upgrade-toggle" className="cursor-pointer text-xs font-medium">
+            {tr('轻量集群 / K3s 环境（自动包含 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml）', 'K3s / Lightweight cluster (include export KUBECONFIG=/etc/rancher/k3s/k3s.yaml)')}
+          </Label>
+        </div>
+        <CommandBlock label={tr('升级命令', 'Upgrade command')} command={command} />
       </div>
     </Modal>
   );

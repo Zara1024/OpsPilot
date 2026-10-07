@@ -24,6 +24,7 @@ type ShiftSlot struct {
 	UserPhone        string    `json:"user_phone"`
 	StartTime        time.Time `json:"start_time"`
 	EndTime          time.Time `json:"end_time"`
+	BaseEndTime      time.Time `json:"base_end_time,omitempty"`
 	IsOverride       bool      `json:"is_override"`
 	OriginalUserID   *uint64   `json:"original_user_id,omitempty"`
 	OriginalUserName string    `json:"original_user_name,omitempty"`
@@ -204,6 +205,7 @@ func (s *Scheduler) computeBaseRotationShifts(sched *model.Schedule, rot *model.
 			UserID:       uid,
 			StartTime:    shiftStart,
 			EndTime:      shiftEnd,
+			BaseEndTime:  shiftEnd,
 			IsOverride:   false,
 		})
 	}
@@ -308,6 +310,7 @@ func (s *Scheduler) GetLiveStatus(ctx context.Context, scheduleID uint64, now ti
 		ScheduleName: sched.Name,
 	}
 
+	var activePrimary *ShiftSlot
 	var upcomingPrimary []*ShiftSlot
 
 	for _, shift := range shifts {
@@ -316,8 +319,7 @@ func (s *Scheduler) GetLiveStatus(ctx context.Context, scheduleID uint64, now ti
 			if shift.Tier == model.TierPrimary && status.PrimaryUser == nil {
 				cp := *shift
 				status.PrimaryUser = &cp
-				status.HandoffTime = shift.EndTime
-				status.RemainingSeconds = int64(shift.EndTime.Sub(now).Seconds())
+				activePrimary = shift
 			} else if shift.Tier == model.TierSecondary && status.SecondaryUser == nil {
 				cp := *shift
 				status.SecondaryUser = &cp
@@ -330,13 +332,34 @@ func (s *Scheduler) GetLiveStatus(ctx context.Context, scheduleID uint64, now ti
 		}
 	}
 
-	if len(upcomingPrimary) > 0 {
-		status.NextShift = upcomingPrimary[0]
-		if status.PrimaryUser == nil {
-			// If not currently in shift, count down to next shift start
-			status.HandoffTime = upcomingPrimary[0].StartTime
-			status.RemainingSeconds = int64(upcomingPrimary[0].StartTime.Sub(now).Seconds())
+	if activePrimary != nil {
+		handoffTime := activePrimary.BaseEndTime
+		if handoffTime.IsZero() {
+			handoffTime = activePrimary.EndTime
 		}
+		status.HandoffTime = handoffTime
+		status.RemainingSeconds = int64(handoffTime.Sub(now).Seconds())
+
+		// Find the next shift in the upcoming rotation (i.e. start >= handoffTime)
+		for _, up := range upcomingPrimary {
+			if !up.StartTime.Before(handoffTime) {
+				status.NextShift = up
+				break
+			}
+		}
+		// If no shift starts exactly at or after handoffTime, fallback to first upcoming if different user
+		if status.NextShift == nil && len(upcomingPrimary) > 0 {
+			for _, up := range upcomingPrimary {
+				if up.UserID != activePrimary.UserID {
+					status.NextShift = up
+					break
+				}
+			}
+		}
+	} else if len(upcomingPrimary) > 0 {
+		status.NextShift = upcomingPrimary[0]
+		status.HandoffTime = upcomingPrimary[0].StartTime
+		status.RemainingSeconds = int64(upcomingPrimary[0].StartTime.Sub(now).Seconds())
 	}
 
 	return status, nil

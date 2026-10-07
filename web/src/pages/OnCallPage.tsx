@@ -1,21 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CalendarDays,
-  CalendarPlus,
   ChevronLeft,
   ChevronRight,
   Clock,
-  Copy,
-  Check,
   ExternalLink,
   Plus,
   RefreshCw,
-  RotateCcw,
   ShieldAlert,
   UserCheck,
   Users,
   AlertTriangle,
-  Info,
 } from 'lucide-react';
 import {
   Button,
@@ -37,10 +32,7 @@ import {
   createSchedule,
   getCalendarShifts,
   getCurrentOnCall,
-  getMyCalendarToken,
   listSchedules,
-  resetMyCalendarToken,
-  type CalendarTokenResponse,
   type GapSlot,
   type LiveOnCallStatus,
   type OnCallSchedule,
@@ -48,6 +40,27 @@ import {
 } from '@/api/oncall';
 
 type ViewMode = 'month' | 'week' | 'day';
+
+function formatTime(isoString?: string): string {
+  if (!isoString) return '';
+  try {
+    const d = new Date(isoString);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  } catch {
+    return isoString.slice(11, 16);
+  }
+}
+
+function toDateTimeLocalValue(isoString?: string): string {
+  if (!isoString) return '';
+  try {
+    const d = new Date(isoString);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } catch {
+    return isoString.slice(0, 16);
+  }
+}
 
 export default function OnCallPage() {
   const { tr } = useI18n();
@@ -68,11 +81,6 @@ export default function OnCallPage() {
   const [countdown, setCountdown] = useState<string>('');
 
   // Modals
-  const [subscribeModalOpen, setSubscribeModalOpen] = useState(false);
-  const [calendarToken, setCalendarToken] = useState<CalendarTokenResponse | null>(null);
-  const [tokenLoading, setTokenLoading] = useState(false);
-  const [copiedType, setCopiedType] = useState<'webcal' | 'http' | null>(null);
-
   const [createScheduleModalOpen, setCreateScheduleModalOpen] = useState(false);
   const [newSchedName, setNewSchedName] = useState('');
   const [newSchedDesc, setNewSchedDesc] = useState('');
@@ -228,38 +236,6 @@ export default function OnCallPage() {
     setCurrentDate(new Date());
   };
 
-  // Webcal subscription modal
-  const openSubscribeModal = async () => {
-    setSubscribeModalOpen(true);
-    setTokenLoading(true);
-    try {
-      const tok = await getMyCalendarToken();
-      setCalendarToken(tok);
-    } catch (e) {
-      console.error('Failed to get calendar token:', e);
-    } finally {
-      setTokenLoading(false);
-    }
-  };
-
-  const handleResetToken = async () => {
-    setTokenLoading(true);
-    try {
-      const tok = await resetMyCalendarToken();
-      setCalendarToken(tok);
-    } catch (e) {
-      console.error('Failed to reset token:', e);
-    } finally {
-      setTokenLoading(false);
-    }
-  };
-
-  const copyToClipboard = (text: string, type: 'webcal' | 'http') => {
-    navigator.clipboard.writeText(text);
-    setCopiedType(type);
-    setTimeout(() => setCopiedType(null), 2000);
-  };
-
   // Create schedule submit
   const handleCreateSchedule = async () => {
     if (!newSchedName.trim()) return;
@@ -298,8 +274,8 @@ export default function OnCallPage() {
   const handleOpenOverride = (shift: ShiftSlot) => {
     setDetailShift(null);
     setOverrideShift(shift);
-    setOverrideStart(shift.start_time.slice(0, 16));
-    setOverrideEnd(shift.end_time.slice(0, 16));
+    setOverrideStart(toDateTimeLocalValue(shift.start_time));
+    setOverrideEnd(toDateTimeLocalValue(shift.end_time));
     setSubstituteUserId(null);
     setOverrideReason('');
     setOverrideModalOpen(true);
@@ -352,15 +328,11 @@ export default function OnCallPage() {
       <PageHeader
         title={tr('值班排班大屏', 'On-Call Schedules')}
         subtitle={tr(
-          '自动化生产值班轮转、日历订阅（iCal/Webcal）与排班空洞检测',
-          'Automated on-call rotations, calendar synchronization, and schedule gap monitoring'
+          '自动化生产值班轮转与排班空洞检测',
+          'Automated on-call rotations and schedule gap monitoring'
         )}
         actions={
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={openSubscribeModal}>
-              <CalendarPlus size={14} className="mr-1.5 text-indigo-500" />
-              {tr('订阅到手机日历', 'Subscribe to Calendar')}
-            </Button>
             <Button size="sm" variant="primary" onClick={() => setCreateScheduleModalOpen(true)}>
               <Plus size={14} className="mr-1.5" />
               {tr('新建排班计划', 'New Schedule')}
@@ -456,6 +428,17 @@ export default function OnCallPage() {
                 <div className="text-base font-semibold text-text mt-0.5">
                   {liveStatus?.primary_user?.user_name || tr('暂无主值班人', 'No Primary Assigned')}
                 </div>
+                {liveStatus?.primary_user?.is_override && liveStatus.primary_user.end_time && (
+                  <div className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 font-medium">
+                    {tr('代班至 ', 'Override until ')}
+                    {formatTime(liveStatus.primary_user.end_time)}
+                    {liveStatus.primary_user.original_user_name && (
+                      <span className="text-text-muted ml-1 font-normal">
+                        ({tr('原值班人: ', 'Original: ')}{liveStatus.primary_user.original_user_name})
+                      </span>
+                    )}
+                  </div>
+                )}
                 {liveStatus?.primary_user?.user_phone && (
                   <div className="text-xs text-text-muted">
                     {liveStatus.primary_user.user_phone}
@@ -698,7 +681,7 @@ export default function OnCallPage() {
                                   ? 'border-indigo-500 bg-indigo-500/10 text-indigo-900 dark:text-indigo-200 font-medium'
                                   : 'border-zinc-400 bg-zinc-500/10 text-zinc-800 dark:text-zinc-300'
                             )}
-                            title={`${s.user_name} (${isPrimary ? '一线' : '二线'})\n${s.start_time.slice(11, 16)} - ${s.end_time.slice(11, 16)}`}
+                            title={`${s.user_name} (${isPrimary ? '一线' : '二线'})\n${formatTime(s.start_time)} - ${formatTime(s.end_time)}`}
                           >
                             <span className="font-semibold mr-1">
                               {isPrimary ? '①' : '②'}
@@ -711,12 +694,12 @@ export default function OnCallPage() {
                             )}
                             {hasMultipleInTier && isEndingToday && !isStartingToday && (
                               <span className="ml-1 text-[10px] text-text-muted">
-                                ({tr('至', 'to')} {s.end_time.slice(11, 16)})
+                                ({tr('至', 'to')} {formatTime(s.end_time)})
                               </span>
                             )}
                             {hasMultipleInTier && isStartingToday && (
                               <span className="ml-1 text-[10px] text-text-muted">
-                                ({tr('起', 'from')} {s.start_time.slice(11, 16)})
+                                ({tr('起', 'from')} {formatTime(s.start_time)})
                               </span>
                             )}
                           </div>
@@ -802,100 +785,6 @@ export default function OnCallPage() {
           </div>
         )}
       </Card>
-
-      {/* Subscribe to Webcal Modal */}
-      <Modal
-        open={subscribeModalOpen}
-        onClose={() => setSubscribeModalOpen(false)}
-        title={tr('订阅排班到外部日历 (RFC 5545)', 'Subscribe to Calendar (RFC 5545)')}
-        size="md"
-        footer={
-          <div className="flex justify-end gap-2">
-            <Button size="sm" variant="outline" onClick={() => setSubscribeModalOpen(false)}>
-              {tr('关闭', 'Close')}
-            </Button>
-          </div>
-        }
-      >
-        <div className="space-y-4 py-1">
-          <div className="text-xs text-text-muted">
-            {tr(
-              '通过专属 Webcal 密钥，实时将您的个人值班班次同步至 iPhone、Mac、Google Calendar 或 Outlook。发生代班或换班时，手机日历将自动无感刷新。',
-              'Subscribe to your personal on-call shifts via Apple Calendar, Google Calendar, or Outlook. Overrides and swaps will sync automatically.'
-            )}
-          </div>
-
-          {tokenLoading ? (
-            <div className="flex h-24 items-center justify-center">
-              <RefreshCw size={20} className="animate-spin text-indigo-500" />
-            </div>
-          ) : calendarToken ? (
-            <div className="space-y-3">
-              <div>
-                <Label className="text-xs">{tr('Webcal 一键订阅协议链接', 'Webcal URL')}</Label>
-                <div className="mt-1 flex items-center gap-2">
-                  <Input readOnly value={calendarToken.webcal_url} className="text-xs font-mono" />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => copyToClipboard(calendarToken.webcal_url, 'webcal')}
-                  >
-                    {copiedType === 'webcal' ? (
-                      <Check size={14} className="text-emerald-500" />
-                    ) : (
-                      <Copy size={14} />
-                    )}
-                  </Button>
-                </div>
-              </div>
-
-              <div>
-                <Label className="text-xs">{tr('通用 HTTPS 日历数据流链接', 'HTTPS URL')}</Label>
-                <div className="mt-1 flex items-center gap-2">
-                  <Input readOnly value={calendarToken.http_url} className="text-xs font-mono" />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => copyToClipboard(calendarToken.http_url, 'http')}
-                  >
-                    {copiedType === 'http' ? (
-                      <Check size={14} className="text-emerald-500" />
-                    ) : (
-                      <Copy size={14} />
-                    )}
-                  </Button>
-                </div>
-              </div>
-
-              {/* Instructions */}
-              <div className="rounded-lg border border-border bg-bg/50 p-3 space-y-1.5 text-xs text-text-muted">
-                <div className="font-semibold text-text flex items-center gap-1.5">
-                  <Info size={14} className="text-indigo-500" />
-                  {tr('快速同步指引', 'Setup Instructions')}
-                </div>
-                <div>
-                  • <b>Apple Calendar (Mac / iOS)</b>：打开“日历”应用 → 文件 → 新建日历订阅 →
-                  粘贴上方 Webcal 链接，刷新频率建议选择“每小时”。
-                </div>
-                <div>
-                  • <b>Google Calendar</b>：左侧其他日历旁边点击 “+” → “通过网址添加” →
-                  粘贴上述链接即可。
-                </div>
-              </div>
-
-              <div className="pt-2 flex justify-between items-center">
-                <span className="text-[11px] text-text-faint">
-                  {tr('链接包含个人安全凭证，请勿向外部公开。', 'Keep this URL secure as it carries your token.')}
-                </span>
-                <Button size="sm" variant="ghost" onClick={handleResetToken} disabled={tokenLoading}>
-                  <RotateCcw size={12} className="mr-1 text-red-500" />
-                  {tr('重置 Token', 'Reset Token')}
-                </Button>
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </Modal>
 
       {/* Create Schedule Modal */}
       <Modal

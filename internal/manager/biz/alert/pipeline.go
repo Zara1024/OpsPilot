@@ -275,17 +275,21 @@ func (e *PipelineEvaluator) refreshDeviceStalenessGauge(ctx context.Context, now
 		if edge.LastSeenAt == nil {
 			continue
 		}
+		// K8s controller probe edges (e.g. k8s:<cluster>:controller) are cluster control-plane
+		// Pods rather than physical host devices. They must never emit device_last_seen_seconds_ago metrics.
+		if strings.HasPrefix(edge.Name, "k8s:") && strings.HasSuffix(edge.Name, ":controller") {
+			continue
+		}
+		// Only evaluate edges that are linked to a real host device.
+		// Edges without a DeviceID are virtual or unassociated agents and must not emit device metrics.
+		if edge.DeviceID == nil || *edge.DeviceID == 0 {
+			continue
+		}
 		secs := now.Sub(*edge.LastSeenAt).Seconds()
 		if secs < 0 {
 			secs = 0
 		}
-		// Numeric device_id: prefer Edge.DeviceID (the host device's id);
-		// fall back to edge.ID before the register flow has linked them
-		// (idempotent because the backfill makes the values match).
-		var deviceID uint64 = edge.ID
-		if edge.DeviceID != nil && *edge.DeviceID != 0 {
-			deviceID = *edge.DeviceID
-		}
+		deviceID := *edge.DeviceID
 		idStr := fmt.Sprintf("%d", deviceID)
 
 		if cur, exists := perDevice[idStr]; !exists || secs < cur.secs {
