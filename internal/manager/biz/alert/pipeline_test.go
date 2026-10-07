@@ -392,3 +392,45 @@ func TestRefreshDeviceStalenessGaugeSkipsUnenrolledEdges(t *testing.T) {
 		t.Errorf("expected healthy edge (ID 2) to be in snapshot, got exists=%v, name=%q", exists, name)
 	}
 }
+
+func TestRefreshDeviceStalenessGaugePicksFreshestEdgeForSharedDevice(t *testing.T) {
+	now := time.Date(2026, 5, 2, 12, 0, 0, 0, time.UTC)
+	oldSeen := now.Add(-3 * time.Hour)
+	freshSeen := now.Add(-10 * time.Second)
+	sharedDevID := uint64(12)
+
+	edgeList := &fakeEdgeLister{
+		edges: []*edgemodel.Edge{
+			{
+				ID:         11,
+				DeviceID:   &sharedDevID,
+				Name:       "stale-edge",
+				LastSeenAt: &oldSeen,
+			},
+			{
+				ID:         12,
+				DeviceID:   &sharedDevID,
+				Name:       "live-edge",
+				LastSeenAt: &freshSeen,
+			},
+		},
+	}
+
+	eval := newPipelineEvaluator(t, newFakeRepo(), &fakeNotifier{}, NewStaticRulesProvider(), PipelineEvaluatorOpts{
+		EdgeLister: edgeList,
+		Now:        func() time.Time { return now },
+	})
+
+	eval.refreshDeviceStalenessGauge(context.Background(), now)
+
+	eval.gaugeMu.Lock()
+	defer eval.gaugeMu.Unlock()
+
+	if len(eval.gaugeSnapshot) != 1 {
+		t.Fatalf("expected exactly 1 device entry in snapshot, got %d", len(eval.gaugeSnapshot))
+	}
+	if name, ok := eval.gaugeSnapshot["12"]; !ok || name != "live-edge" {
+		t.Errorf("expected device 12 to resolve to live-edge, got ok=%v, name=%q", ok, name)
+	}
+}
+

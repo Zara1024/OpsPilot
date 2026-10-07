@@ -22,6 +22,7 @@ import {
   Boxes,
   FileText,
   CalendarClock,
+  CalendarDays,
   Waypoints,
   Route,
   Siren,
@@ -273,6 +274,13 @@ export function Sidebar() {
             />
           )}
         </Link></Hint>
+        <Hint content={tr('值班', 'On-Call')}><Link
+          to="/oncall"
+          aria-label={tr('值班', 'On-Call')}
+          className="rounded-lg p-2 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+        >
+          <CalendarDays size={16} />
+        </Link></Hint>
         <Link
           to="/devices"
           aria-label={tr('设备', 'Devices')}
@@ -442,6 +450,7 @@ export function Sidebar() {
             { key: 'logs', to: '/logs', icon: FileText, label: tr('日志', 'Logs') },
             { key: 'traces', to: '/traces', icon: Waypoints, label: tr('链路', 'Traces') },
             { key: 'alerts', to: '/alerts', icon: Siren, label: tr('告警', 'Alerts'), badge: incidentOpen },
+            { key: 'oncall', to: '/oncall', icon: CalendarDays, label: tr('值班', 'On-Call') },
           ]}
         />
 

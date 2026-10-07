@@ -237,6 +237,27 @@ func (e *PipelineEvaluator) evaluate(ctx context.Context) {
 //
 // Called every evaluator tick (30s default). Errors here are logged and
 // skipped — gauge staleness for one tick is preferable to a panic in
+type deviceStalenessEntry struct {
+	name string
+	secs float64
+}
+
+// refreshDeviceStalenessGauge updates the device_last_seen_seconds_ago
+// Prom gauge with one series per registered device. Source-of-truth is
+// the host edge's last_seen_at column (which mirrors host presence
+// post-split because the pre-launch backfill keeps device.id == edge.id
+// for type=host junctions). Series for devices that fall out of
+// inventory are deleted so the metric_raw evaluator doesn't keep firing
+// on a removed device.
+//
+// When multiple edges belong to the same device (e.g. an obsolete or
+// re-enrolled edge alongside an active one), staleness is aggregated by
+// taking the minimum seconds ago (i.e. the freshest edge). This avoids
+// ghost/offline edges generating spurious device_offline alerts when the
+// machine is healthy.
+//
+// Called every evaluator tick (30s default). Errors here are logged and
+// skipped — gauge staleness for one tick is preferable to a panic in
 // the alert loop.
 func (e *PipelineEvaluator) refreshDeviceStalenessGauge(ctx context.Context, now time.Time) {
 	edges, err := e.edges.List(ctx, edgebiz.ListFilter{Limit: 1000})
@@ -244,11 +265,8 @@ func (e *PipelineEvaluator) refreshDeviceStalenessGauge(ctx context.Context, now
 		e.log.Warn("alert: list edges for staleness gauge failed", slog.Any("err", err))
 		return
 	}
-	// Re-build the per-tick view of which (device_id, device_name) tuples
-	// we still own. Anything in the previous snapshot but not in this
-	// one gets deleted from the gauge so reuse-after-removal of
-	// device_id values doesn't double-up the series.
-	current := make(map[string]string, len(edges))
+
+	perDevice := make(map[string]deviceStalenessEntry, len(edges))
 	for _, edge := range edges {
 		// Only evaluate staleness for edges that have reported heartbeats at least once.
 		// Edges with LastSeenAt == nil are pending enrollment / not yet connected;
@@ -269,15 +287,28 @@ func (e *PipelineEvaluator) refreshDeviceStalenessGauge(ctx context.Context, now
 			deviceID = *edge.DeviceID
 		}
 		idStr := fmt.Sprintf("%d", deviceID)
-		prom.SetDeviceLastSeenSecondsAgo(idStr, edge.Name, secs)
-		current[idStr] = edge.Name
+
+		if cur, exists := perDevice[idStr]; !exists || secs < cur.secs {
+			perDevice[idStr] = deviceStalenessEntry{
+				name: edge.Name,
+				secs: secs,
+			}
+		}
 	}
+
+	current := make(map[string]string, len(perDevice))
+	for idStr, entry := range perDevice {
+		prom.SetDeviceLastSeenSecondsAgo(idStr, entry.name, entry.secs)
+		current[idStr] = entry.name
+	}
+
 	e.gaugeMu.Lock()
 	prev := e.gaugeSnapshot
 	e.gaugeSnapshot = current
 	e.gaugeMu.Unlock()
+
 	for id, name := range prev {
-		if _, ok := current[id]; ok {
+		if curName, ok := current[id]; ok && curName == name {
 			continue
 		}
 		prom.DeleteDeviceLastSeenSecondsAgo(id, name)

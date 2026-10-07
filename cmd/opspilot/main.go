@@ -96,6 +96,7 @@ import (
 	managerlogsdata "github.com/Zara1024/OpsPilot/internal/manager/data/logs/store"
 	managermetricdata "github.com/Zara1024/OpsPilot/internal/manager/data/metric/store"
 	managertopologydata "github.com/Zara1024/OpsPilot/internal/manager/data/topology/store"
+	manageroncalldata "github.com/Zara1024/OpsPilot/internal/manager/data/oncall/store"
 	managermodelalert "github.com/Zara1024/OpsPilot/internal/manager/model/alert"
 	managermodeledge "github.com/Zara1024/OpsPilot/internal/manager/model/edge"
 
@@ -175,6 +176,7 @@ import (
 	managerservermetric "github.com/Zara1024/OpsPilot/internal/manager/server/metric"
 	managermiddleware "github.com/Zara1024/OpsPilot/internal/manager/server/middleware"
 	managerservermonitor "github.com/Zara1024/OpsPilot/internal/manager/server/monitor"
+	managerserveroncall "github.com/Zara1024/OpsPilot/internal/manager/server/oncall"
 	managerserveroperatorrun "github.com/Zara1024/OpsPilot/internal/manager/server/operatorrun"
 	managerserverpacketcapture "github.com/Zara1024/OpsPilot/internal/manager/server/packetcapture"
 	managerserverprofiles "github.com/Zara1024/OpsPilot/internal/manager/server/profiles"
@@ -319,6 +321,7 @@ func main() {
 		managerreportdata.Migrate,
 		managerflowdata.Migrate,
 		managerpacketcapturedata.Migrate,
+		manageroncalldata.Migrate,
 	); err != nil {
 		log.Error("run migrations", slog.Any("err", err))
 		os.Exit(1)
@@ -2056,6 +2059,8 @@ func main() {
 	if rcaInvConcrete != nil {
 		alertHandler.WithInvestigationTrigger(rcaInvConcrete)
 	}
+	oncallStore := manageroncalldata.NewStore(db)
+	oncallHandler := managerserveroncall.NewHandler(oncallStore)
 	var healthDB managersvcsystemhealth.DBPinger
 	if errDB == nil {
 		healthDB = sqlDB
@@ -2636,6 +2641,7 @@ func main() {
 		// can't carry our manager JWT. Auth comes from the platform
 		// signature scheme inside the handler.
 		imbridgeHandler.RegisterPublic(api)
+		oncallHandler.RegisterPublic(api)
 		packetCaptureHandler.RegisterInternal(api)
 		// serve_page: public read of an assistant-hosted HTML page (under /api
 		// so nginx proxies it to the manager). The random token IS the
@@ -2735,6 +2741,7 @@ func main() {
 			profilesHandler.Register(protected)
 			aiopsHandler.Register(protected)
 			alertHandler.Register(protected)
+			oncallHandler.Register(protected)
 			systemHealthHandler.Register(protected)
 			systemUpgradeHandler.Register(protected)
 			imbridgeHandler.RegisterProtected(protected)
