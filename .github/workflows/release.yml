@@ -389,7 +389,7 @@ jobs:
             "tag_name": "${tag}",
             "release_url": "https://github.com/Zara1024/OpsPilot/releases/tag/${tag}",
             "published_at": "${published_at}",
-            "download_base": "https://opspilot.cloud/dl",
+            "download_base": "https://github.com/Zara1024/OpsPilot/releases/download/${tag}",
             "assets": {
               "linux-amd64": {
                 "package": "opspilot-${tag}-linux-amd64.tar.xz",

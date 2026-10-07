@@ -6,7 +6,7 @@ import SettingsUpgrade from './Upgrade';
 import { server } from '@/test/msw-server';
 
 const amd64Command = [
-  'curl -fL -O https://opspilot.cloud/dl/opspilot-v0.11.1-linux-amd64.tar.xz || wget https://opspilot.cloud/dl/opspilot-v0.11.1-linux-amd64.tar.xz',
+  'curl -fL -O https://github.com/Zara1024/OpsPilot/releases/download/v0.11.1/opspilot-v0.11.1-linux-amd64.tar.xz || wget https://github.com/Zara1024/OpsPilot/releases/download/v0.11.1/opspilot-v0.11.1-linux-amd64.tar.xz',
   'tar xf opspilot-v0.11.1-linux-amd64.tar.xz && cd opspilot-v0.11.1-linux-amd64',
   'sudo ./upgrade.sh',
 ].join('\n');

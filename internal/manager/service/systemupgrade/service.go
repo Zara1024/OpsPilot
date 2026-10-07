@@ -17,8 +17,8 @@ import (
 const (
 	// 优先使用官方 GitHub Releases API，保障最新版本秒级查询响应
 	defaultGitHubReleaseURL   = "https://api.github.com/repos/Zara1024/OpsPilot/releases/latest"
-	defaultReleaseMetadataURL = "https://opspilot.cloud/dl/latest.json"
-	defaultDownloadBase       = "https://opspilot.cloud/dl"
+	defaultReleaseMetadataURL = "https://github.com/Zara1024/OpsPilot/releases/latest/download/latest.json"
+	defaultDownloadBase       = "https://github.com/Zara1024/OpsPilot/releases/download"
 	maxReleaseMetadataBytes   = 1 << 20
 )
 
@@ -72,7 +72,7 @@ type releaseInfo struct {
 
 func New(cfg Config, client *http.Client) *Service {
 	cfg.ReleaseAPIURLs = normalizeReleaseURLs(cfg)
-	if cfg.DownloadBase == "" {
+	if cfg.DownloadBase == "" || strings.Contains(cfg.DownloadBase, "opspilot.cloud") {
 		cfg.DownloadBase = defaultDownloadBase
 	}
 	if cfg.Timeout <= 0 {
@@ -102,15 +102,23 @@ func (s *Service) buildInfo(rel *releaseInfo) *Info {
 	cmp, comparable := compareVersions(s.cfg.CurrentVersion, latest)
 	updateAvailable := comparable && cmp < 0
 	downloadBase := strings.TrimSpace(rel.downloadBase)
-	if downloadBase == "" {
+	if downloadBase == "" || strings.Contains(downloadBase, "opspilot.cloud") {
 		downloadBase = s.cfg.DownloadBase
+	}
+	releaseURL := strings.TrimSpace(rel.releaseURL)
+	if releaseURL == "" || strings.Contains(releaseURL, "opspilot.cloud") {
+		if latest != "" {
+			releaseURL = fmt.Sprintf("https://github.com/Zara1024/OpsPilot/releases/tag/%s", latest)
+		} else {
+			releaseURL = "https://github.com/Zara1024/OpsPilot/releases"
+		}
 	}
 	return &Info{
 		CurrentVersion:      strings.TrimSpace(s.cfg.CurrentVersion),
 		LatestVersion:       latest,
 		UpdateAvailable:     updateAvailable,
 		ComparisonSupported: comparable,
-		ReleaseURL:          rel.releaseURL,
+		ReleaseURL:          releaseURL,
 		PublishedAt:         rel.publishedAt,
 		CheckedAt:           time.Now().UTC(),
 		Commands:            buildCommands(latest, downloadBase),
@@ -215,6 +223,9 @@ func normalizeReleaseURLs(cfg Config) []string {
 	out := make([]string, 0, len(urls))
 	for _, sourceURL := range urls {
 		sourceURL = strings.TrimSpace(sourceURL)
+		if strings.Contains(sourceURL, "opspilot.cloud") {
+			sourceURL = defaultReleaseMetadataURL
+		}
 		if sourceURL != "" {
 			out = append(out, sourceURL)
 		}
@@ -226,7 +237,7 @@ func normalizeReleaseURLs(cfg Config) []string {
 }
 
 func buildCommands(version, downloadBase string) []UpgradeCommand {
-	base := strings.TrimRight(downloadBase, "/")
+	base := normalizeDownloadBase(downloadBase, version)
 	return []UpgradeCommand{
 		{
 			ID:      "linux-amd64",
@@ -247,6 +258,20 @@ func buildCommands(version, downloadBase string) []UpgradeCommand {
 			Command: buildAutoCommand(version, base),
 		},
 	}
+}
+
+func normalizeDownloadBase(downloadBase, version string) string {
+	base := strings.TrimRight(strings.TrimSpace(downloadBase), "/")
+	if base == "" || strings.Contains(base, "opspilot.cloud") {
+		base = defaultDownloadBase
+	}
+	version = strings.TrimSpace(version)
+	if strings.Contains(base, "github.com") && strings.Contains(base, "/releases/download") {
+		if version != "" && !strings.HasSuffix(base, "/"+version) {
+			base = base + "/" + version
+		}
+	}
+	return base
 }
 
 func buildAutoCommand(version, base string) string {
