@@ -55,6 +55,7 @@ services:
     environment:
       OPSPILOT_HTTP_ADDR: ${OPSPILOT_HTTP_ADDR:-:8080}
       OPSPILOT_METRICS_ADDR: ${OPSPILOT_METRICS_ADDR:-:9100}
+      OPSPILOT_DEFAULT_LOCALE: ${OPSPILOT_DEFAULT_LOCALE:-zh}
       # Frontier broker (upstream singchia/frontier). Manager dials the
       # service-bound port over the compose network.
       OPSPILOT_FRONTIER_ADDR: ${OPSPILOT_FRONTIER_ADDR:-frontier:40011}

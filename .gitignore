@@ -71,3 +71,4 @@ deploy/install/certs/
 .cache/
 .gstack/
 .playwright-mcp/
+screenshots/

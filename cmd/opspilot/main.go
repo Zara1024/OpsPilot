@@ -1927,7 +1927,7 @@ func main() {
 				// English SPA by default; ops sets OPSPILOT_DEFAULT_LOCALE=zh
 				// for an explicitly Chinese-default install.
 				// See [[feedback_ai_output_locale]].
-				DefaultLocale: firstNonEmpty(os.Getenv("OPSPILOT_DEFAULT_LOCALE"), "en"),
+				DefaultLocale: firstNonEmpty(os.Getenv("OPSPILOT_DEFAULT_LOCALE"), "zh"),
 			}, log)
 			// Same InvestigationRepo also implements the
 			// related-alerts query (same DB handle, different method).
@@ -1970,7 +1970,7 @@ func main() {
 			managerreportdata.NewFactsCollector(db, reportProm),
 			reportRT,
 			managerbizreport.GeneratorConfig{
-				DefaultLocale:   firstNonEmpty(os.Getenv("OPSPILOT_DEFAULT_LOCALE"), "en"),
+				DefaultLocale:   firstNonEmpty(os.Getenv("OPSPILOT_DEFAULT_LOCALE"), "zh"),
 				PublicURL:       cfg.PublicURL,
 				TimeoutProvider: settingSvc.AgentLLMTimeout,
 			},
@@ -1986,7 +1986,7 @@ func main() {
 	}
 	reportUC := managerbizreport.NewUsecase(reportRepo, reportGen, uuid.NewString).
 		WithReadRepo(reportRepo).
-		WithDefaultLocale(firstNonEmpty(os.Getenv("OPSPILOT_DEFAULT_LOCALE"), "en"))
+		WithDefaultLocale(firstNonEmpty(os.Getenv("OPSPILOT_DEFAULT_LOCALE"), "zh"))
 	if reportSchedulerReady {
 		managerbizreport.NewScheduler(reportUC, log).Start(rootCtx)
 		log.Info("report: scheduler wired")
