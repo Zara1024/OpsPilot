@@ -3,6 +3,8 @@ package oncall
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	store "github.com/Zara1024/OpsPilot/internal/manager/data/oncall/store"
@@ -49,10 +51,23 @@ func NewEscalationEngine(s *store.Store, sched *Scheduler) *EscalationEngine {
 	return &EscalationEngine{store: s, scheduler: sched}
 }
 
-// HandleAction processes a ChatOps / On-Call dashboard response action.
+// HandleAction processes a ChatOps / On-Call dashboard response action on real alert incidents.
 func (ee *EscalationEngine) HandleAction(ctx context.Context, req ChatOpsActionRequest) (*ChatOpsActionResult, error) {
+	// Parse numeric ID from req.IncidentID (supporting formats like "INC-0017", "INC-17", "17")
+	rawID := strings.TrimPrefix(strings.TrimSpace(req.IncidentID), "INC-")
+	rawID = strings.TrimLeft(rawID, "0")
+	if rawID == "" {
+		rawID = "0"
+	}
+	incID, _ := strconv.ParseUint(rawID, 10, 64)
+
 	switch req.Action {
 	case "ack":
+		if incID > 0 {
+			if err := ee.store.AckAlertIncident(ctx, incID, req.OperatorID, req.Note); err != nil {
+				return nil, fmt.Errorf("ack alert incident %d: %w", incID, err)
+			}
+		}
 		return &ChatOpsActionResult{
 			OK:             true,
 			Action:         "ack",
@@ -61,14 +76,24 @@ func (ee *EscalationEngine) HandleAction(ctx context.Context, req ChatOpsActionR
 			EscalationHalt: true,
 		}, nil
 	case "silence":
+		if incID > 0 {
+			if err := ee.store.SilenceAlertIncident(ctx, incID, req.OperatorID, 30*time.Minute, req.Note); err != nil {
+				return nil, fmt.Errorf("silence alert incident %d: %w", incID, err)
+			}
+		}
 		return &ChatOpsActionResult{
 			OK:             true,
 			Action:         "silence",
-			StatusText:     "已静音 1 小时 (Silenced)",
-			Message:        "该告警已进入静音保护期 (1h)，期间不再触发新通知推送。",
+			StatusText:     "已静音 30 分钟 (Silenced)",
+			Message:        "该告警已进入静音保护期 (30m)，期间不再触发新通知推送。",
 			EscalationHalt: true,
 		}, nil
 	case "escalate":
+		if incID > 0 {
+			if err := ee.store.EscalateAlertIncident(ctx, incID, req.OperatorID, req.Note); err != nil {
+				return nil, fmt.Errorf("escalate alert incident %d: %w", incID, err)
+			}
+		}
 		return &ChatOpsActionResult{
 			OK:             true,
 			Action:         "escalate",

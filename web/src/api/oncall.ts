@@ -377,8 +377,9 @@ export async function triggerChatOpsAction(
   return request('POST', '/oncall/chatops/callback', { action, incident_id: incidentId, note });
 }
 
-export async function listActiveIncidents(): Promise<{ items: ActiveIncident[]; total: number }> {
-  return request('GET', '/oncall/incidents/active');
+export async function listActiveIncidents(status?: string): Promise<{ items: ActiveIncident[]; total: number }> {
+  const q = status ? `?status=${status}` : '';
+  return request('GET', `/oncall/incidents/active${q}`);
 }
 
 // ==========================================

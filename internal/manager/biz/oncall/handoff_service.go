@@ -168,10 +168,30 @@ func (s *HandoffService) GetCurrentHandoffStatus(ctx context.Context, scheduleID
 		Status:           status,
 		Notes:            notes,
 		SignOffAt:        signOffAt,
-		ActiveIncidentsSummary: []string{
-			"INC-20261005-001: 订单支付接口超时率突增 (>5.2%) [已跟进抑制]",
-			"INC-20261005-002: Kubernetes Node 内存利用率高位告警 (>92%) [已认领]",
-		},
+		ActiveIncidentsSummary: func() []string {
+			res := make([]string, 0)
+			active, _ := s.store.ListAlertIncidents(ctx, "active", 5)
+			if len(active) > 0 {
+				for _, inc := range active {
+					stText := "处理中"
+					if inc.Status == "open" {
+						stText = "触发中"
+					} else if inc.Status == "acknowledged" {
+						stText = "已认领"
+					} else if inc.Status == "silenced" {
+						stText = "已静音"
+					}
+					res = append(res, fmt.Sprintf("INC-%04d: %s [%s]", inc.ID, inc.Title, stText))
+				}
+				return res
+			}
+			// If none active, show recently resolved real incidents
+			recent, _ := s.store.ListAlertIncidents(ctx, "all", 2)
+			for _, inc := range recent {
+				res = append(res, fmt.Sprintf("INC-%04d: %s [已恢复]", inc.ID, inc.Title))
+			}
+			return res
+		}(),
 		PendingChecklist: []HandoffCheckItem{
 			{ID: "c1", Title: "确认关键线上告警均已接单并认领", Category: "incident", Completed: true},
 			{ID: "c2", Title: "核对夜间变更窗口与临时静音规则 (Silence)", Category: "silence", Completed: true},

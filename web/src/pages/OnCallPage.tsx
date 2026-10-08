@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
   Clock,
-  ExternalLink,
   Plus,
   RefreshCw,
-  ShieldAlert,
   UserCheck,
-  Users,
   AlertTriangle,
+  GitFork,
+  BellRing,
+  Activity,
+  PhoneCall,
 } from 'lucide-react';
 import {
   Button,
@@ -22,6 +24,10 @@ import {
   PageHeader,
   Select,
   Textarea,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
 } from '@/components/ui';
 import { Modal } from '@/components/Modal';
 import { useI18n } from '@/i18n/locale';
@@ -33,11 +39,19 @@ import {
   getCalendarShifts,
   getCurrentOnCall,
   listSchedules,
+  listPendingOverrides,
+  listEscalationPolicies,
   type GapSlot,
   type LiveOnCallStatus,
   type OnCallSchedule,
   type ShiftSlot,
+  type EscalationPolicy,
 } from '@/api/oncall';
+import { RouteTreeTab } from './oncall/RouteTreeTab';
+import { EscalationChatOpsTab } from './oncall/EscalationChatOpsTab';
+import { SwapApprovalsTab } from './oncall/SwapApprovalsTab';
+import { HandoffAnalyticsTab } from './oncall/HandoffAnalyticsTab';
+import { VoiceGatewayTab } from './oncall/VoiceGatewayTab';
 
 type ViewMode = 'month' | 'week' | 'day';
 
@@ -64,6 +78,8 @@ function toDateTimeLocalValue(isoString?: string): string {
 
 export default function OnCallPage() {
   const { tr } = useI18n();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentTab = searchParams.get('tab') || 'board';
 
   // Data states
   const [schedules, setSchedules] = useState<OnCallSchedule[]>([]);
@@ -72,6 +88,8 @@ export default function OnCallPage() {
   const [shifts, setShifts] = useState<ShiftSlot[]>([]);
   const [gaps, setGaps] = useState<GapSlot[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [pendingCount, setPendingCount] = useState<number>(0);
+  const [escalationPolicies, setEscalationPolicies] = useState<EscalationPolicy[]>([]);
 
   // UI state
   const [loading, setLoading] = useState(true);
@@ -99,16 +117,33 @@ export default function OnCallPage() {
 
   const [detailShift, setDetailShift] = useState<ShiftSlot | null>(null);
 
+  const handleTabChange = (nextTab: string) => {
+    setSearchParams((prev) => {
+      const p = new URLSearchParams(prev);
+      if (nextTab === 'board') {
+        p.delete('tab');
+      } else {
+        p.set('tab', nextTab);
+      }
+      return p;
+    });
+  };
+
   // Fetch users & schedules on mount
   const fetchInitialData = useCallback(async () => {
     setLoading(true);
     try {
-      const [schedRes, userRes] = await Promise.all([
+      const [schedRes, userRes, overridesRes, policiesRes] = await Promise.all([
         listSchedules(),
         listUsers().catch(() => ({ items: [], total: 0 })),
+        listPendingOverrides().catch(() => ({ items: [], total: 0 })),
+        listEscalationPolicies().catch(() => ({ items: [], total: 0 })),
       ]);
       setSchedules(schedRes.items || []);
       setUsers(userRes.items || []);
+      const pendingItems = (overridesRes.items || []).filter((i) => i.status === 'pending');
+      setPendingCount(pendingItems.length);
+      setEscalationPolicies(policiesRes.items || []);
 
       if (schedRes.items && schedRes.items.length > 0) {
         setSelectedScheduleId((prev) => prev ?? schedRes.items[0].id);
@@ -323,38 +358,76 @@ export default function OnCallPage() {
   );
 
   return (
-    <div className="flex flex-col gap-6 p-6">
-      {/* Page Header */}
-      <PageHeader
-        title={tr('值班排班大屏', 'On-Call Schedules')}
-        subtitle={tr(
-          '自动化生产值班轮转与排班空洞检测',
-          'Automated on-call rotations and schedule gap monitoring'
-        )}
-        actions={
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="primary" onClick={() => setCreateScheduleModalOpen(true)}>
-              <Plus size={14} className="mr-1.5" />
-              {tr('新建排班计划', 'New Schedule')}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={fetchCalendar}
-              disabled={calendarLoading}
-            >
-              <RefreshCw
-                size={14}
-                className={cn('mr-1.5', calendarLoading && 'animate-spin')}
-              />
-              {tr('刷新', 'Refresh')}
-            </Button>
-          </div>
-        }
-      />
+    <Tabs value={currentTab} onValueChange={handleTabChange} className="contents">
+      <main className="anim-fade flex flex-1 min-w-0 flex-col overflow-hidden">
+        {/* Page Header */}
+        <PageHeader
+          title={tr('值班排班大盘', 'On-Call Schedules')}
+          subtitle={tr(
+            '自动化生产值班轮转、告警标签路由与多通道事件响应大屏',
+            'Automated on-call rotations, alert routing, and multi-channel incident response.'
+          )}
+          actions={
+            currentTab === 'board' ? (
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="primary" onClick={() => setCreateScheduleModalOpen(true)}>
+                  <Plus size={14} className="mr-1.5" />
+                  {tr('新建排班计划', 'New Schedule')}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={fetchCalendar}
+                  disabled={calendarLoading}
+                >
+                  <RefreshCw
+                    size={14}
+                    className={cn('mr-1.5', calendarLoading && 'animate-spin')}
+                  />
+                  {tr('刷新', 'Refresh')}
+                </Button>
+              </div>
+            ) : null
+          }
+          navigation={
+            <TabsList className="flex items-center gap-1 overflow-x-auto">
+              <TabsTrigger value="board">
+                <CalendarDays size={14} className="mr-1.5" />
+                {tr('排班大屏', 'Schedule Board')}
+              </TabsTrigger>
+              <TabsTrigger value="routes">
+                <GitFork size={14} className="mr-1.5" />
+                {tr('告警路由', 'Route Tree')}
+              </TabsTrigger>
+              <TabsTrigger value="escalation">
+                <BellRing size={14} className="mr-1.5" />
+                {tr('通知与响应', 'Escalation & ChatOps')}
+              </TabsTrigger>
+              <TabsTrigger value="approvals">
+                <UserCheck size={14} className="mr-1.5" />
+                {tr('换班审批', 'Swap Approvals')}
+                {pendingCount > 0 && (
+                  <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white">
+                    {pendingCount}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="analytics">
+                <Activity size={14} className="mr-1.5" />
+                {tr('交接与分析', 'Handoff & Analytics')}
+              </TabsTrigger>
+              <TabsTrigger value="voice">
+                <PhoneCall size={14} className="mr-1.5" />
+                {tr('语音网关', 'Voice Gateway')}
+              </TabsTrigger>
+            </TabsList>
+          }
+        />
 
-      {/* Top Live On-Call Banner Card */}
-      <Card className="p-5">
+        <div className="flex-1 min-w-0 overflow-y-auto px-6 py-6 space-y-6">
+          <TabsContent value="board" className="space-y-6">
+          {/* Top Live On-Call Banner Card */}
+          <Card className="p-5">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-500">
@@ -564,7 +637,7 @@ export default function OnCallPage() {
       )}
 
       {/* Calendar Grid Board */}
-      <Card className="overflow-hidden">
+      <Card className="!p-0 overflow-hidden">
         {calendarLoading ? (
           <div className="flex h-96 items-center justify-center">
             <RefreshCw size={24} className="animate-spin text-indigo-500" />
@@ -785,6 +858,29 @@ export default function OnCallPage() {
           </div>
         )}
       </Card>
+        </TabsContent>
+
+        <TabsContent value="routes">
+          <RouteTreeTab schedules={schedules} escalationPolicies={escalationPolicies} />
+        </TabsContent>
+
+        <TabsContent value="escalation">
+          <EscalationChatOpsTab schedules={schedules} />
+        </TabsContent>
+
+        <TabsContent value="approvals">
+          <SwapApprovalsTab onPendingCountChange={setPendingCount} />
+        </TabsContent>
+
+        <TabsContent value="analytics">
+          <HandoffAnalyticsTab schedules={schedules} />
+        </TabsContent>
+
+        <TabsContent value="voice">
+          <VoiceGatewayTab />
+        </TabsContent>
+      </div>
+    </main>
 
       {/* Create Schedule Modal */}
       <Modal
@@ -1070,6 +1166,6 @@ export default function OnCallPage() {
           </div>
         )}
       </Modal>
-    </div>
+    </Tabs>
   );
 }

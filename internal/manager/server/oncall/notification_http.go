@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	bizoncall "github.com/Zara1024/OpsPilot/internal/manager/biz/oncall"
@@ -230,32 +231,121 @@ func (h *Handler) chatopsCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listActiveIncidents(w http.ResponseWriter, r *http.Request) {
-	incidents := []bizoncall.IncidentSummary{
-		{
-			ID:              "INC-20261005-001",
-			Title:           "订单支付接口超时率突增 (>5.2%)",
-			Severity:        "P1",
-			ScheduleID:      2,
-			ScheduleName:    "基础设施与网络值班",
-			CurrentAssignee: "李四 (SRE)",
-			CurrentTier:     1,
-			Status:          "firing",
-			StartedAt:       time.Now().Add(-14 * time.Minute),
-			EscalationStep:  2,
-		},
-		{
-			ID:              "INC-20261005-002",
-			Title:           "Kubernetes Node 内存利用率高位告警 (>92%)",
-			Severity:        "P2",
-			ScheduleID:      1,
-			ScheduleName:    "SRE 核心生产值班",
-			CurrentAssignee: "admin",
-			CurrentTier:     1,
-			Status:          "acknowledged",
-			StartedAt:       time.Now().Add(-38 * time.Minute),
-			AckedBy:         "admin",
-			EscalationStep:  1,
-		},
+	statusFilter := r.URL.Query().Get("status")
+	limitStr := r.URL.Query().Get("limit")
+	limit := 50
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": incidents, "total": len(incidents)})
+
+	incidents, err := h.store.ListAlertIncidents(r.Context(), statusFilter, limit)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+
+	// If default query (no statusFilter specified) and there are 0 active,
+	// fall back to the most recent alert records so operators have visibility over real devices.
+	if statusFilter == "" && len(incidents) == 0 {
+		incidents, _ = h.store.ListAlertIncidents(r.Context(), "all", 20)
+	}
+
+	// Gather acked_by user IDs for display name resolution
+	var userIDs []uint64
+	for _, inc := range incidents {
+		if inc.AcknowledgedBy != nil && *inc.AcknowledgedBy > 0 {
+			userIDs = append(userIDs, *inc.AcknowledgedBy)
+		}
+	}
+	userMap, _ := h.store.GetUsersByIDs(r.Context(), userIDs)
+
+	items := make([]bizoncall.IncidentSummary, 0, len(incidents))
+	for _, inc := range incidents {
+		// Severity mapping
+		sev := "P2"
+		switch strings.ToLower(inc.Severity) {
+		case "critical", "p0", "p1":
+			sev = "P1"
+		case "warning", "p2":
+			sev = "P2"
+		case "info", "p3":
+			sev = "P3"
+		}
+
+		// Status mapping
+		st := "firing"
+		switch inc.Status {
+		case "acknowledged":
+			st = "acknowledged"
+		case "silenced":
+			st = "silenced"
+		case "resolved":
+			st = "resolved"
+		case "open":
+			st = "firing"
+		default:
+			st = inc.Status
+		}
+
+		// Parse labels and match route
+		labels := make(map[string]string)
+		if inc.LabelsJSON != "" {
+			_ = json.Unmarshal([]byte(inc.LabelsJSON), &labels)
+		}
+		labels["severity"] = inc.Severity
+		if inc.Rule != "" {
+			labels["rule"] = inc.Rule
+		}
+		if inc.RuleName != "" {
+			labels["rule_name"] = inc.RuleName
+		}
+		if inc.Scope != "" {
+			labels["scope"] = inc.Scope
+		}
+
+		schedID := uint64(0)
+		schedName := "基础设施核心值班"
+		assignee := "admin"
+
+		matchRes, mErr := h.routeMatcher.MatchLabels(r.Context(), 0, labels)
+		if mErr == nil && matchRes != nil && matchRes.ScheduleID > 0 {
+			schedID = matchRes.ScheduleID
+			if matchRes.ScheduleName != "" {
+				schedName = matchRes.ScheduleName
+			}
+			live, lerr := h.scheduler.GetLiveStatus(r.Context(), schedID, time.Now())
+			if lerr == nil && live != nil && live.PrimaryUser != nil && live.PrimaryUser.UserName != "" {
+				assignee = live.PrimaryUser.UserName
+			}
+		}
+
+		ackedByName := ""
+		if inc.AcknowledgedBy != nil {
+			if u, ok := userMap[*inc.AcknowledgedBy]; ok && u != nil {
+				ackedByName = u.DisplayName
+				if ackedByName == "" {
+					ackedByName = u.Email
+				}
+			}
+		}
+
+		items = append(items, bizoncall.IncidentSummary{
+			ID:              fmt.Sprintf("INC-%04d", inc.ID),
+			Title:           inc.Title,
+			Severity:        sev,
+			ScheduleID:      schedID,
+			ScheduleName:    schedName,
+			CurrentAssignee: assignee,
+			CurrentTier:     1,
+			Status:          st,
+			StartedAt:       inc.FirstFiredAt,
+			AckedAt:         inc.AcknowledgedAt,
+			AckedBy:         ackedByName,
+			EscalationStep:  1,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": len(items)})
 }
