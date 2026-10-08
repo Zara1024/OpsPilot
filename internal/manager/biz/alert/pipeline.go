@@ -383,22 +383,26 @@ func (e *PipelineEvaluator) evaluatePromQuery(ctx context.Context, now time.Time
 			if ruleTitle == "" {
 				ruleTitle = rule.RuleKey
 			}
+
+			// 提取设备名称做友好标题
+			devDisplayName := ""
+			if dn, ok := ent.Metric["device_name"]; ok && dn != "" {
+				parts := strings.Split(dn, ":")
+				devDisplayName = parts[len(parts)-1]
+			}
+
 			title := ruleTitle
-			if valStr != "" {
+			if devDisplayName != "" {
+				title = fmt.Sprintf("%s - %s", ruleTitle, devDisplayName)
+			} else if valStr != "" && rule.RuleKey != "device_offline" {
 				title = fmt.Sprintf("%s (当前值: %s)", ruleTitle, valStr)
 			}
 			summary := fmt.Sprintf("%s: %s ⇒ %s (value=%s)", rule.RuleKey, rule.Expr, labelSetKey(ent.Metric), valStr)
-			// Extract device_id from result labels when present — host-scope
-			// rules require it for FiringInput validation, and the new
-			// device-aware queries (`by (device_id)`) carry it as a label
-			// on every series. Best-effort: malformed values fall through
-			// and validateFiring rejects with a clear message.
+
 			var devID *uint64
-			if scope == model.RuleScopeHost {
-				if v, ok := ent.Metric["device_id"]; ok && v != "" {
-					if id, err := strconv.ParseUint(v, 10, 64); err == nil && id > 0 {
-						devID = &id
-					}
+			if v, ok := ent.Metric["device_id"]; ok && v != "" {
+				if id, err := strconv.ParseUint(v, 10, 64); err == nil && id > 0 {
+					devID = &id
 				}
 			}
 			input := FiringInput{
@@ -483,9 +487,18 @@ func (e *PipelineEvaluator) notify(ctx context.Context, res *FiringResult, summa
 	if labels, err := res.Incident.Labels(); err != nil {
 		e.log.Warn("alert: decode notification identity failed", slog.Uint64("incident_id", res.Incident.ID), slog.Any("err", err))
 	} else {
-		for _, key := range []string{"service", "service_namespace", "deployment_environment_name", "service_instance_id", "span_name"} {
+		for _, key := range []string{"service", "service_namespace", "deployment_environment_name", "service_instance_id", "span_name", "device_name", "device_id"} {
 			if value, ok := labels[key]; ok {
 				msg.Labels[key] = value
+			}
+		}
+		if msg.Labels["device"] == "" && labels["device_name"] != "" {
+			parts := strings.Split(labels["device_name"], ":")
+			shortName := parts[len(parts)-1]
+			if dID := labels["device_id"]; dID != "" {
+				msg.Labels["device"] = fmt.Sprintf("%s (ID: %s)", shortName, dID)
+			} else {
+				msg.Labels["device"] = shortName
 			}
 		}
 	}

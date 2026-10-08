@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -267,16 +268,29 @@ func (s *webhookSender) Send(ctx context.Context, msg Message) error {
 func formatSeverityBadge(sev Severity) string {
 	switch strings.ToLower(string(sev)) {
 	case string(SeverityCritical):
-		return "【严重告警】"
+		return "🚨 【严重告警】"
 	case string(SeverityWarning):
-		return "【告警提醒】"
+		return "⚠️ 【告警提醒】"
 	case string(SeverityInfo):
-		return "【信息提醒】"
+		return "ℹ️ 【信息提醒】"
 	default:
 		if sev == "" {
-			return "【告警提醒】"
+			return "⚠️ 【告警提醒】"
 		}
 		return fmt.Sprintf("【%s】", strings.ToUpper(string(sev)))
+	}
+}
+
+func formatSeverityName(sev Severity) string {
+	switch strings.ToLower(string(sev)) {
+	case string(SeverityCritical):
+		return "严重"
+	case string(SeverityWarning):
+		return "警告"
+	case string(SeverityInfo):
+		return "提醒"
+	default:
+		return strings.ToUpper(string(sev))
 	}
 }
 
@@ -297,73 +311,313 @@ func formatSourceCN(source string) string {
 	}
 }
 
-func formatText(msg Message) string {
-	badge := formatSeverityBadge(msg.Severity)
-	title := strings.TrimSpace(msg.Subject)
-	if title == "" {
-		title = string(msg.Severity)
+func ruleNameCN(ruleKey string) string {
+	switch strings.ToLower(strings.TrimSpace(ruleKey)) {
+	case "device_offline", "edge_offline":
+		return "设备离线"
+	case "cpu_high", "cpu_high_default", "cpu_high_80":
+		return "CPU 高负载"
+	case "mem_high":
+		return "内存高占用"
+	case "disk_high", "disk_full_warning":
+		return "磁盘空间不足"
+	case "load1_high":
+		return "系统负载过高"
+	case "swap_high":
+		return "Swap 内存高占用"
+	case "fd_exhaustion":
+		return "文件句柄耗尽"
+	case "scrape_down":
+		return "采集探针离线"
+	case "prom_ingest_fail":
+		return "数据摄取失败"
+	default:
+		return ""
+	}
+}
+
+func extractDeviceDisplayName(labels map[string]string, rawText ...string) string {
+	if labels != nil {
+		if d := labels["device"]; d != "" {
+			return d
+		}
+		if dn := labels["device_name"]; dn != "" {
+			// 如果是形如 k8s:k3s-edge-51:lavm-8d0eljpims，提取最后有意义的主机名部分
+			parts := strings.Split(dn, ":")
+			shortName := parts[len(parts)-1]
+			if id := labels["device_id"]; id != "" {
+				return fmt.Sprintf("%s (ID: %s)", shortName, id)
+			}
+			return shortName
+		}
+		host := labels["device_hostname"]
+		ip := labels["device_ip"]
+		if host != "" && ip != "" {
+			return fmt.Sprintf("%s (%s)", host, ip)
+		} else if host != "" {
+			return host
+		} else if ip != "" {
+			return ip
+		} else if id := labels["device_id"]; id != "" {
+			return "#" + id
+		}
 	}
 
-	var lines []string
-	lines = append(lines, fmt.Sprintf("%s %s", badge, title))
-
-	body := strings.TrimSpace(msg.Body)
-	if body != "" && body != title {
-		lines = append(lines, "", body)
-	}
-
-	var metaLines []string
-	if msg.Labels != nil {
-		ruleName := msg.Labels["rule_name"]
-		if ruleName == "" {
-			ruleName = msg.Labels["rule"]
+	// 从原始文本中正则匹配 device_name 或 device_id
+	for _, text := range rawText {
+		if text == "" {
+			continue
 		}
-		if ruleName != "" {
-			metaLines = append(metaLines, "• 告警规则: "+ruleName)
-		}
-
-		device := msg.Labels["device"]
-		if device == "" {
-			host := msg.Labels["device_hostname"]
-			ip := msg.Labels["device_ip"]
-			if host != "" && ip != "" {
-				device = fmt.Sprintf("%s (%s)", host, ip)
-			} else if host != "" {
-				device = host
-			} else if ip != "" {
-				device = ip
-			} else if id := msg.Labels["device_id"]; id != "" {
-				device = "#" + id
+		if idx := strings.Index(text, "device_name="); idx != -1 {
+			sub := text[idx+12:]
+			end := strings.IndexAny(sub, ",) \n\t")
+			if end != -1 {
+				sub = sub[:end]
+			}
+			sub = strings.TrimSpace(sub)
+			if sub != "" {
+				parts := strings.Split(sub, ":")
+				shortName := parts[len(parts)-1]
+				// 查是否有 device_id
+				if idIdx := strings.Index(text, "device_id="); idIdx != -1 {
+					idSub := text[idIdx+10:]
+					idEnd := strings.IndexAny(idSub, ",) \n\t")
+					if idEnd != -1 {
+						idSub = idSub[:idEnd]
+					}
+					idSub = strings.TrimSpace(idSub)
+					if idSub != "" {
+						return fmt.Sprintf("%s (ID: %s)", shortName, idSub)
+					}
+				}
+				return shortName
 			}
 		}
+		if idx := strings.Index(text, "device_id="); idx != -1 {
+			sub := text[idx+10:]
+			end := strings.IndexAny(sub, ",) \n\t")
+			if end != -1 {
+				sub = sub[:end]
+			}
+			sub = strings.TrimSpace(sub)
+			if sub != "" {
+				return "#" + sub
+			}
+		}
+	}
+	return ""
+}
+
+func isRawMachineExpr(s string) bool {
+	return strings.Contains(s, "⇒") ||
+		strings.Contains(s, "device_last_seen_seconds_ago") ||
+		strings.Contains(s, "node_cpu_seconds_total") ||
+		strings.Contains(s, "node_memory_") ||
+		strings.Contains(s, "node_filesystem_") ||
+		strings.Contains(s, "node_load1") ||
+		strings.Contains(s, "up == 0") ||
+		(strings.Contains(s, "value=") && strings.Contains(s, ":"))
+}
+
+func cleanAlertSubject(rawSubject, ruleName, ruleKey, device string) string {
+	s := strings.TrimSpace(rawSubject)
+
+	name := strings.TrimSpace(ruleName)
+	if name == "" {
+		name = ruleNameCN(ruleKey)
+	}
+	if name == "" {
+		name = ruleKey
+	}
+
+	if s == "" || isRawMachineExpr(s) {
 		if device != "" {
-			metaLines = append(metaLines, "• 关联设备: "+device)
+			// 去掉 device 里的 ID: 部分做简短标题
+			devTitle := device
+			if parenIdx := strings.Index(devTitle, " ("); parenIdx != -1 {
+				devTitle = devTitle[:parenIdx]
+			}
+			return fmt.Sprintf("%s - %s", name, devTitle)
 		}
+		return name
+	}
 
+	// 如果前面有 [device=...] 标签，规范化展示
+	if strings.HasPrefix(s, "[device=") {
+		endIdx := strings.Index(s, "] ")
+		if endIdx != -1 {
+			devTag := s[8:endIdx]
+			content := s[endIdx+2:]
+			if isRawMachineExpr(content) {
+				return fmt.Sprintf("%s - %s", name, devTag)
+			}
+		}
+	}
+
+	return s
+}
+
+func cleanAlertBody(rawBody, ruleKey, ruleName, device string) string {
+	raw := strings.TrimSpace(rawBody)
+	if raw == "" {
+		return ""
+	}
+
+	if !isRawMachineExpr(raw) {
+		return raw
+	}
+
+	// 提取 value (value=xxx)
+	valStr := ""
+	if idx := strings.Index(raw, "value="); idx != -1 {
+		valPart := raw[idx+6:]
+		if endIdx := strings.Index(valPart, ")"); endIdx != -1 {
+			valStr = strings.TrimSpace(valPart[:endIdx])
+		} else {
+			valStr = strings.TrimSpace(valPart)
+		}
+	}
+	var valFloat float64
+	if valStr != "" {
+		valFloat, _ = strconv.ParseFloat(valStr, 64)
+	}
+
+	key := strings.ToLower(ruleKey)
+	switch {
+	case key == "device_offline" || key == "edge_offline" || strings.Contains(raw, "device_last_seen_seconds_ago"):
+		if valFloat > 0 {
+			return fmt.Sprintf("设备已超过 90 秒未上报心跳数据，当前已累计离线约 %.0f 秒。建议检查设备网络连通性及 OpsPilot Agent 运行状态。", valFloat)
+		}
+		return "设备已超过 90 秒未上报心跳数据，处于离线失联状态。请排查设备运行状态。"
+
+	case key == "cpu_high" || key == "cpu_high_default" || strings.Contains(raw, "node_cpu_seconds_total"):
+		if valFloat > 0 {
+			return fmt.Sprintf("主机 CPU 使用率达到 %.1f%%，已超过预警阈值。请检查系统高占用进程。", valFloat)
+		}
+		return "主机 CPU 使用率持续偏高，已超出预设阈值。请检查系统负载。"
+
+	case key == "mem_high" || strings.Contains(raw, "node_memory_MemAvailable_bytes"):
+		if valFloat > 0 {
+			return fmt.Sprintf("主机内存占用率达到 %.1f%%，已超过预警阈值。请排查高内存消耗应用。", valFloat)
+		}
+		return "主机物理内存占用率过高，剩余可用内存不足。"
+
+	case key == "disk_high" || strings.Contains(raw, "node_filesystem_avail_bytes"):
+		if valFloat > 0 {
+			return fmt.Sprintf("主机磁盘分区使用率达到 %.1f%%，存储空间严重不足。请及时清理磁盘空间。", valFloat)
+		}
+		return "主机磁盘存储空间不足，已超出告警阈值。"
+
+	case key == "load1_high" || strings.Contains(raw, "node_load1"):
+		if valFloat > 0 {
+			return fmt.Sprintf("主机 1 分钟平均系统负载达到 %.2f，CPU 与 I/O 资源压力较大。", valFloat)
+		}
+		return "主机系统平均负载过高，已超出预设阈值。"
+
+	case key == "swap_high":
+		if valFloat > 0 {
+			return fmt.Sprintf("主机 Swap 交换分区使用率达到 %.1f%%，物理内存可能已出现严重紧缺。", valFloat)
+		}
+		return "主机 Swap 分区占用过高，请注意内存瓶颈。"
+
+	case key == "scrape_down" || strings.Contains(raw, "up == 0"):
+		return "监控采集探针无响应，目标实例可能已下线或端口不可达。"
+
+	default:
+		if valStr != "" {
+			return fmt.Sprintf("监控指标异常触发告警阈值规则（当前检测值: %s）。", valStr)
+		}
+		return "监控指标偏离正常范围，触发告警阈值条件。"
+	}
+}
+
+func formatDedupeKey(key string) string {
+	if key == "" {
+		return ""
+	}
+	// 如果包含多余的指标标签，例如 pipeline:device_offline:device_id=12,device_name=...
+	// 精简为关键定位标识
+	if idx := strings.Index(key, ",device_name="); idx != -1 {
+		key = key[:idx]
+	}
+	if idx := strings.Index(key, ",instance="); idx != -1 {
+		key = key[:idx]
+	}
+	if idx := strings.Index(key, ",job="); idx != -1 {
+		key = key[:idx]
+	}
+	return key
+}
+
+func formatText(msg Message) string {
+	badge := formatSeverityBadge(msg.Severity)
+
+	var ruleKey, ruleName string
+	if msg.Labels != nil {
+		ruleKey = msg.Labels["rule"]
+		ruleName = msg.Labels["rule_name"]
+	}
+	if ruleName == "" {
+		ruleName = ruleNameCN(ruleKey)
+	}
+
+	device := extractDeviceDisplayName(msg.Labels, msg.Subject, msg.Body)
+	title := cleanAlertSubject(msg.Subject, ruleName, ruleKey, device)
+	body := cleanAlertBody(msg.Body, ruleKey, ruleName, device)
+
+	var lines []string
+	// 标题行
+	lines = append(lines, fmt.Sprintf("%s %s", badge, title))
+	lines = append(lines, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// 核心元数据列表
+	if ruleName != "" {
+		lines = append(lines, "• 告警规则: "+ruleName)
+	} else if ruleKey != "" {
+		lines = append(lines, "• 告警规则: "+ruleKey)
+	}
+
+	if sevName := formatSeverityName(msg.Severity); sevName != "" {
+		lines = append(lines, "• 告警等级: "+sevName)
+	}
+
+	if device != "" {
+		lines = append(lines, "• 关联设备: "+device)
+	}
+
+	if msg.Labels != nil {
 		if incidentID := msg.Labels["incident_id"]; incidentID != "" {
-			metaLines = append(metaLines, "• 告警编号: #"+incidentID)
+			lines = append(lines, "• 告警编号: #"+incidentID)
 		}
-
 		if svc := msg.Labels["service"]; svc != "" {
-			metaLines = append(metaLines, "• 关联服务: "+svc)
+			lines = append(lines, "• 关联服务: "+svc)
 		}
 	}
 
 	if src := formatSourceCN(msg.Source); src != "" {
-		metaLines = append(metaLines, "• 告警来源: "+src)
+		lines = append(lines, "• 告警来源: "+src)
 	}
 
 	if !msg.OccurredAt.IsZero() {
-		metaLines = append(metaLines, "• 触发时间: "+msg.OccurredAt.Local().Format("2006-01-02 15:04:05"))
+		lines = append(lines, "• 触发时间: "+msg.OccurredAt.Local().Format("2006-01-02 15:04:05"))
 	}
 
-	if msg.DedupeKey != "" {
-		metaLines = append(metaLines, "• 去重标识: "+msg.DedupeKey)
-	}
+	lines = append(lines, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	if len(metaLines) > 0 {
+	// 详情内容
+	if body != "" && body != title {
+		lines = append(lines, "告警详情:")
+		lines = append(lines, body)
 		lines = append(lines, "")
-		lines = append(lines, metaLines...)
+	}
+
+	// 追踪标识
+	if msg.DedupeKey != "" {
+		lines = append(lines, "• 去重标识: "+formatDedupeKey(msg.DedupeKey))
+	}
+
+	for len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
 	}
 
 	return strings.Join(lines, "\n")
