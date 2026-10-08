@@ -87,13 +87,20 @@ func formatSlack(msg Message) map[string]any {
 		// Surface the alert-pipeline labels operators care about as
 		// short fields; the remaining labels stay out of the message
 		// to keep the card readable. Rule/incident/device are the same
-		// breakdown the incident detail page leads with.
-		addField("Rule", msg.Labels["rule"], true)
+		ruleVal := msg.Labels["rule_name"]
+		if ruleVal == "" {
+			ruleVal = msg.Labels["rule"]
+		}
+		addField("Rule", ruleVal, true)
 		if id := msg.Labels["incident_id"]; id != "" {
 			addField("Incident", "#"+id, true)
 		}
-		if did := msg.Labels["device_id"]; did != "" {
-			addField("Device", "#"+did, true)
+		deviceVal := msg.Labels["device"]
+		if deviceVal == "" && msg.Labels["device_id"] != "" {
+			deviceVal = "#" + msg.Labels["device_id"]
+		}
+		if deviceVal != "" {
+			addField("Device", deviceVal, true)
 		}
 	}
 	// Dedupe key is the join key for ops chatter — keep full width so
@@ -257,18 +264,109 @@ func (s *webhookSender) Send(ctx context.Context, msg Message) error {
 	return nil
 }
 
+func formatSeverityBadge(sev Severity) string {
+	switch strings.ToLower(string(sev)) {
+	case string(SeverityCritical):
+		return "【严重告警】"
+	case string(SeverityWarning):
+		return "【告警提醒】"
+	case string(SeverityInfo):
+		return "【信息提醒】"
+	default:
+		if sev == "" {
+			return "【告警提醒】"
+		}
+		return fmt.Sprintf("【%s】", strings.ToUpper(string(sev)))
+	}
+}
+
+func formatSourceCN(source string) string {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "host":
+		return "主机监控"
+	case "global":
+		return "全局监控"
+	case "monitoring_pipeline":
+		return "监控管线"
+	case "channel_test":
+		return "渠道连通性测试"
+	case "alert-evaluator":
+		return "告警引擎"
+	default:
+		return source
+	}
+}
+
 func formatText(msg Message) string {
-	parts := []string{fmt.Sprintf("[%s] %s", strings.ToUpper(string(msg.Severity)), msg.Subject)}
-	if msg.Body != "" {
-		parts = append(parts, msg.Body)
+	badge := formatSeverityBadge(msg.Severity)
+	title := strings.TrimSpace(msg.Subject)
+	if title == "" {
+		title = string(msg.Severity)
 	}
-	if msg.Source != "" {
-		parts = append(parts, "source: "+msg.Source)
+
+	var lines []string
+	lines = append(lines, fmt.Sprintf("%s %s", badge, title))
+
+	body := strings.TrimSpace(msg.Body)
+	if body != "" && body != title {
+		lines = append(lines, "", body)
 	}
+
+	var metaLines []string
+	if msg.Labels != nil {
+		ruleName := msg.Labels["rule_name"]
+		if ruleName == "" {
+			ruleName = msg.Labels["rule"]
+		}
+		if ruleName != "" {
+			metaLines = append(metaLines, "• 告警规则: "+ruleName)
+		}
+
+		device := msg.Labels["device"]
+		if device == "" {
+			host := msg.Labels["device_hostname"]
+			ip := msg.Labels["device_ip"]
+			if host != "" && ip != "" {
+				device = fmt.Sprintf("%s (%s)", host, ip)
+			} else if host != "" {
+				device = host
+			} else if ip != "" {
+				device = ip
+			} else if id := msg.Labels["device_id"]; id != "" {
+				device = "#" + id
+			}
+		}
+		if device != "" {
+			metaLines = append(metaLines, "• 关联设备: "+device)
+		}
+
+		if incidentID := msg.Labels["incident_id"]; incidentID != "" {
+			metaLines = append(metaLines, "• 告警编号: #"+incidentID)
+		}
+
+		if svc := msg.Labels["service"]; svc != "" {
+			metaLines = append(metaLines, "• 关联服务: "+svc)
+		}
+	}
+
+	if src := formatSourceCN(msg.Source); src != "" {
+		metaLines = append(metaLines, "• 告警来源: "+src)
+	}
+
+	if !msg.OccurredAt.IsZero() {
+		metaLines = append(metaLines, "• 触发时间: "+msg.OccurredAt.Local().Format("2006-01-02 15:04:05"))
+	}
+
 	if msg.DedupeKey != "" {
-		parts = append(parts, "dedupe: "+msg.DedupeKey)
+		metaLines = append(metaLines, "• 去重标识: "+msg.DedupeKey)
 	}
-	return strings.Join(parts, "\n")
+
+	if len(metaLines) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, metaLines...)
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 func signGenericWebhook(endpoint string, secret string, body []byte) (string, map[string]string, error) {

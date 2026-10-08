@@ -210,3 +210,44 @@ func TestSlackSenderColorByUnknownSeverity(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatText_ChineseFormatting(t *testing.T) {
+	msg := Message{
+		Subject:    "CPU 高负载 (当前值: 92.5%)",
+		Body:       "100 * (1 - avg by (device_id) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))) >= 80",
+		Severity:   SeverityCritical,
+		Source:     "host",
+		DedupeKey:  "pipeline:cpu_high:device_id=2",
+		OccurredAt: time.Date(2026, 10, 8, 22, 30, 0, 0, time.Local),
+		Labels: map[string]string{
+			"rule":            "cpu_high",
+			"rule_name":       "CPU 高负载",
+			"incident_id":     "88",
+			"device":          "VM-4-8-ubuntu (10.2.4.8)",
+			"device_id":       "2",
+			"device_hostname": "VM-4-8-ubuntu",
+			"device_ip":       "10.2.4.8",
+			"service":         "order-api",
+		},
+	}
+
+	formatted := formatText(msg)
+	expectedSubstrings := []string{
+		"【严重告警】 CPU 高负载 (当前值: 92.5%)",
+		"100 * (1 - avg",
+		"• 告警规则: CPU 高负载",
+		"• 关联设备: VM-4-8-ubuntu (10.2.4.8)",
+		"• 告警编号: #88",
+		"• 关联服务: order-api",
+		"• 告警来源: 主机监控",
+		"• 触发时间: 2026-10-08 22:30:00",
+		"• 去重标识: pipeline:cpu_high:device_id=2",
+	}
+
+	for _, sub := range expectedSubstrings {
+		if !strings.Contains(formatted, sub) {
+			t.Errorf("formatText output missing %q, got:\n%s", sub, formatted)
+		}
+	}
+}
+

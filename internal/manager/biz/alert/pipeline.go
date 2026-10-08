@@ -379,6 +379,14 @@ func (e *PipelineEvaluator) evaluatePromQuery(ctx context.Context, now time.Time
 			value, hasValue := parseFloat(valStr)
 			dedupeKey := fmt.Sprintf("pipeline:%s:%s", rule.RuleKey, labelSetKey(ent.Metric))
 			fired[dedupeKey] = struct{}{}
+			ruleTitle := strings.TrimSpace(rule.Name)
+			if ruleTitle == "" {
+				ruleTitle = rule.RuleKey
+			}
+			title := ruleTitle
+			if valStr != "" {
+				title = fmt.Sprintf("%s (当前值: %s)", ruleTitle, valStr)
+			}
 			summary := fmt.Sprintf("%s: %s ⇒ %s (value=%s)", rule.RuleKey, rule.Expr, labelSetKey(ent.Metric), valStr)
 			// Extract device_id from result labels when present — host-scope
 			// rules require it for FiringInput validation, and the new
@@ -402,7 +410,7 @@ func (e *PipelineEvaluator) evaluatePromQuery(ctx context.Context, now time.Time
 				DeviceID:   devID,
 				DedupeKey:  dedupeKey,
 				OccurredAt: now,
-				Title:      summary,
+				Title:      title,
 				Summary:    summary,
 				RunbookURL: rule.RunbookURL,
 				Labels:     mergeLabels(rule.Labels, ent.Metric, map[string]string{"rule": rule.RuleKey, "trigger": "ticker"}),
@@ -451,8 +459,13 @@ func (e *PipelineEvaluator) notify(ctx context.Context, res *FiringResult, summa
 	if res == nil || res.Incident == nil {
 		return
 	}
+	subject := res.Incident.Title
+	if subject == "" {
+		subject = summary
+	}
 	msg := notify.Message{
-		Subject:    summary,
+		Subject:    subject,
+		Body:       summary,
 		Severity:   notify.Severity(res.Incident.Severity),
 		Source:     source,
 		DedupeKey:  res.Incident.DedupeKey,
@@ -461,6 +474,9 @@ func (e *PipelineEvaluator) notify(ctx context.Context, res *FiringResult, summa
 			"rule":        res.Incident.Rule,
 			"incident_id": fmt.Sprintf("%d", res.Incident.ID),
 		},
+	}
+	if res.Incident.RuleName != "" {
+		msg.Labels["rule_name"] = res.Incident.RuleName
 	}
 	// Preserve application identity for notification routing and correlation.
 	// Control labels such as incident_id/rule still come from the incident.
@@ -482,8 +498,13 @@ func (e *PipelineEvaluator) notify(ctx context.Context, res *FiringResult, summa
 				e.log.Warn("alert: resolve device identity for notification failed",
 					slog.Uint64("device_id", deviceID), slog.Any("err", err))
 			} else if display := deviceDisplay(identity); display != "" {
-				msg.Subject = strings.ReplaceAll(msg.Subject,
-					fmt.Sprintf("device_id=%d", deviceID), "device="+display)
+				msg.Labels["device"] = display
+				if strings.Contains(msg.Subject, fmt.Sprintf("device_id=%d", deviceID)) {
+					msg.Subject = strings.ReplaceAll(msg.Subject,
+						fmt.Sprintf("device_id=%d", deviceID), "device="+display)
+				} else if !strings.Contains(msg.Subject, "device=") {
+					msg.Subject = fmt.Sprintf("[device=%s] %s", display, msg.Subject)
+				}
 				if identity.Hostname != "" {
 					msg.Labels["device_hostname"] = identity.Hostname
 				}
