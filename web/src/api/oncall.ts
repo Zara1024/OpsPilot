@@ -7,9 +7,37 @@ export interface OnCallRotation {
   tier: number; // 1=Primary, 2=Secondary
   rotation_type: 'daily' | 'weekly' | 'custom';
   shift_length_seconds: number;
-  users: number[];
+  users?: number[];
+  users_json?: string;
   effective_from: string;
   time_restriction_type: 'none' | 'time_of_day' | 'weekday';
+  restriction_start_time?: string;
+  restriction_end_time?: string;
+}
+
+export function getRotationUserIds(rotation?: OnCallRotation | null): number[] {
+  if (!rotation) return [];
+  if (Array.isArray(rotation.users) && rotation.users.length > 0) {
+    return rotation.users;
+  }
+  if (rotation.users_json) {
+    try {
+      const parsed = JSON.parse(rotation.users_json);
+      if (Array.isArray(parsed)) return parsed.map((id) => Number(id));
+    } catch {
+      // ignore malformed json
+    }
+  }
+  return [];
+}
+
+export interface SetSecondaryRotationInput {
+  name?: string;
+  rotation_type: 'daily' | 'weekly' | 'custom';
+  shift_length_seconds?: number;
+  users: number[];
+  effective_from?: string;
+  time_restriction_type?: 'none' | 'time_of_day' | 'weekday';
   restriction_start_time?: string;
   restriction_end_time?: string;
 }
@@ -261,17 +289,8 @@ export async function rejectOverride(
 
 export async function setSecondaryRotation(
   scheduleId: number,
-  data: {
-    name?: string;
-    rotation_type: 'daily' | 'weekly';
-    shift_length_seconds?: number;
-    users: number[];
-    effective_from?: string;
-    time_restriction_type?: 'none' | 'time_of_day' | 'weekday';
-    restriction_start_time?: string;
-    restriction_end_time?: string;
-  }
-): Promise<{ ok: boolean }> {
+  data: SetSecondaryRotationInput
+): Promise<{ ok: boolean; rotation?: OnCallRotation }> {
   return request('POST', `/oncall/schedules/${scheduleId}/secondary-rotation`, data);
 }
 

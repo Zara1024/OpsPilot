@@ -13,6 +13,8 @@ import {
   BellRing,
   Activity,
   PhoneCall,
+  Settings,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   Button,
@@ -52,6 +54,8 @@ import { EscalationChatOpsTab } from './oncall/EscalationChatOpsTab';
 import { SwapApprovalsTab } from './oncall/SwapApprovalsTab';
 import { HandoffAnalyticsTab } from './oncall/HandoffAnalyticsTab';
 import { VoiceGatewayTab } from './oncall/VoiceGatewayTab';
+import { SecondaryRotationModal } from './oncall/SecondaryRotationModal';
+import { ScheduleEditModal } from './oncall/ScheduleEditModal';
 
 type ViewMode = 'month' | 'week' | 'day';
 
@@ -99,13 +103,9 @@ export default function OnCallPage() {
   const [countdown, setCountdown] = useState<string>('');
 
   // Modals
-  const [createScheduleModalOpen, setCreateScheduleModalOpen] = useState(false);
-  const [newSchedName, setNewSchedName] = useState('');
-  const [newSchedDesc, setNewSchedDesc] = useState('');
-  const [newSchedHandoff, setNewSchedHandoff] = useState('09:00:00');
-  const [newSchedCadence, setNewSchedCadence] = useState<'daily' | 'weekly'>('daily');
-  const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
-  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [scheduleModalMode, setScheduleModalMode] = useState<'create' | 'edit'>('create');
+  const [secondaryModalOpen, setSecondaryModalOpen] = useState(false);
 
   const [overrideModalOpen, setOverrideModalOpen] = useState(false);
   const [overrideShift, setOverrideShift] = useState<ShiftSlot | null>(null);
@@ -271,38 +271,33 @@ export default function OnCallPage() {
     setCurrentDate(new Date());
   };
 
-  // Create schedule submit
-  const handleCreateSchedule = async () => {
-    if (!newSchedName.trim()) return;
-    setSavingSchedule(true);
-    try {
-      const shiftLen = newSchedCadence === 'daily' ? 86400 : 7 * 86400;
-      await createSchedule({
-        name: newSchedName.trim(),
-        description: newSchedDesc.trim(),
-        handoff_time: newSchedHandoff,
-        rotations: [
-          {
-            name: '一线值班轮转',
-            tier: 1,
-            rotation_type: newSchedCadence,
-            shift_length_seconds: shiftLen,
-            users: selectedUserIds,
-            effective_from: new Date().toISOString(),
-            time_restriction_type: 'none',
-          },
-        ],
-      });
-      setCreateScheduleModalOpen(false);
-      setNewSchedName('');
-      setNewSchedDesc('');
-      setSelectedUserIds([]);
-      await fetchInitialData();
-    } catch (e) {
-      console.error('Failed to create schedule:', e);
-    } finally {
-      setSavingSchedule(false);
+  const handleOpenCreateSchedule = () => {
+    setScheduleModalMode('create');
+    setScheduleModalOpen(true);
+  };
+
+  const handleOpenEditSchedule = () => {
+    if (!selectedSchedule) return;
+    setScheduleModalMode('edit');
+    setScheduleModalOpen(true);
+  };
+
+  const handleScheduleSuccess = async (savedScheduleId?: number) => {
+    await fetchInitialData();
+    if (savedScheduleId) {
+      setSelectedScheduleId(savedScheduleId);
     }
+    await fetchCalendar();
+  };
+
+  const handleScheduleDelete = async (deletedScheduleId: number) => {
+    const updated = schedules.filter((s) => s.id !== deletedScheduleId);
+    setSchedules(updated);
+    if (selectedScheduleId === deletedScheduleId) {
+      setSelectedScheduleId(updated[0]?.id || null);
+    }
+    await fetchInitialData();
+    await fetchCalendar();
   };
 
   // Open override modal
@@ -370,7 +365,7 @@ export default function OnCallPage() {
           actions={
             currentTab === 'board' ? (
               <div className="flex items-center gap-2">
-                <Button size="sm" variant="primary" onClick={() => setCreateScheduleModalOpen(true)}>
+                <Button size="sm" variant="primary" onClick={handleOpenCreateSchedule}>
                   <Plus size={14} className="mr-1.5" />
                   {tr('新建排班计划', 'New Schedule')}
                 </Button>
@@ -533,22 +528,69 @@ export default function OnCallPage() {
           {/* Secondary */}
           <div className="flex items-center justify-between rounded-lg border border-border bg-bg/50 p-3.5">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-500/10 text-zinc-600 dark:text-zinc-300 font-semibold text-sm">
-                {liveStatus?.secondary_user?.user_name?.[0] || '2'}
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 font-semibold text-sm">
+                <ShieldCheck size={20} />
               </div>
               <div>
-                <div className="text-xs font-semibold text-text-muted uppercase">
-                  {tr('二线专家支持 (Secondary)', 'Secondary Support')}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-text-muted uppercase">
+                    {tr('二线专家支持 (Secondary)', 'Secondary Support')}
+                  </span>
+                  {liveStatus?.secondary_user ? (
+                    <Chip tone="accent" dense>
+                      {tr('已就绪', 'Ready')}
+                    </Chip>
+                  ) : (
+                    <Chip tone="default" dense>
+                      {tr('未配置', 'Unset')}
+                    </Chip>
+                  )}
                 </div>
                 <div className="text-base font-semibold text-text mt-0.5">
-                  {liveStatus?.secondary_user?.user_name || tr('未配置二线', 'None Configured')}
+                  {liveStatus?.secondary_user?.user_name || tr('未配置二线专家', 'No Secondary Specialist')}
                 </div>
                 {liveStatus?.secondary_user?.user_phone && (
                   <div className="text-xs text-text-muted">
                     {liveStatus.secondary_user.user_phone}
                   </div>
                 )}
+                {!liveStatus?.secondary_user && (
+                  <div className="text-[11px] text-text-faint">
+                    {tr('一线超时或重大突发时，系统将升级至二线专家梯队响应', 'Escalation tier for timeouts and major incidents')}
+                  </div>
+                )}
               </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {liveStatus?.secondary_user ? (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setSecondaryModalOpen(true)}
+                  >
+                    <Settings size={13} className="mr-1 text-sky-600 dark:text-sky-400" />
+                    {tr('调整二线配置', 'Edit Secondary')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleOpenOverride(liveStatus.secondary_user!)}
+                  >
+                    {tr('申请换班/代班', 'Swap/Override')}
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={() => setSecondaryModalOpen(true)}
+                >
+                  <ShieldCheck size={14} className="mr-1.5" />
+                  {tr('配置二线专家支持', 'Configure Secondary')}
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -572,6 +614,18 @@ export default function OnCallPage() {
               {s.name}
             </button>
           ))}
+          {selectedSchedule && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleOpenEditSchedule}
+              className="text-xs shrink-0"
+              title={tr('编辑当前排班基础信息与轮转池', 'Edit schedule & rotations')}
+            >
+              <Settings size={13} className="mr-1 text-text-muted" />
+              {tr('编辑排班', 'Edit Schedule')}
+            </Button>
+          )}
           {schedules.length === 0 && !loading && (
             <span className="text-xs text-text-faint">{tr('暂无排班计划', 'No schedules found')}</span>
           )}
@@ -651,7 +705,7 @@ export default function OnCallPage() {
               'Click "New Schedule" to add rotations and assign engineers.'
             )}
             action={
-              <Button size="sm" variant="primary" onClick={() => setCreateScheduleModalOpen(true)}>
+              <Button size="sm" variant="primary" onClick={handleOpenCreateSchedule}>
                 <Plus size={14} className="mr-1.5" />
                 {tr('新建排班计划', 'New Schedule')}
               </Button>
@@ -882,128 +936,29 @@ export default function OnCallPage() {
       </div>
     </main>
 
-      {/* Create Schedule Modal */}
-      <Modal
-        open={createScheduleModalOpen}
-        onClose={() => setCreateScheduleModalOpen(false)}
-        title={tr('新建 On-Call 排班计划', 'Create On-Call Schedule')}
-        size="md"
-        footer={
-          <div className="flex justify-end gap-2">
-            <Button size="sm" variant="outline" onClick={() => setCreateScheduleModalOpen(false)}>
-              {tr('取消', 'Cancel')}
-            </Button>
-            <Button
-              size="sm"
-              variant="primary"
-              onClick={handleCreateSchedule}
-              disabled={savingSchedule || !newSchedName.trim() || selectedUserIds.length === 0}
-            >
-              {savingSchedule ? tr('保存中...', 'Saving...') : tr('确认创建', 'Create')}
-            </Button>
-          </div>
-        }
-      >
-        <div className="space-y-4 py-1">
-          <div>
-            <Label className="text-xs">{tr('排班计划名称 *', 'Schedule Name *')}</Label>
-            <Input
-              value={newSchedName}
-              onChange={(e) => setNewSchedName(e.target.value)}
-              placeholder="e.g. SRE 核心生产运维值班"
-              className="mt-1"
-            />
-          </div>
+      {/* Schedule Edit / Create Modal */}
+      <ScheduleEditModal
+        open={scheduleModalOpen}
+        onClose={() => setScheduleModalOpen(false)}
+        mode={scheduleModalMode}
+        initialSchedule={scheduleModalMode === 'edit' ? selectedSchedule : null}
+        users={users}
+        onSuccess={handleScheduleSuccess}
+        onDelete={handleScheduleDelete}
+      />
 
-          <div>
-            <Label className="text-xs">{tr('描述', 'Description')}</Label>
-            <Input
-              value={newSchedDesc}
-              onChange={(e) => setNewSchedDesc(e.target.value)}
-              placeholder="生产核心链路全天候第一响应阵列"
-              className="mt-1"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs">{tr('交接时刻点', 'Handoff Time')}</Label>
-              <Input
-                value={newSchedHandoff}
-                onChange={(e) => setNewSchedHandoff(e.target.value)}
-                placeholder="09:00:00"
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">{tr('轮转周期', 'Rotation Cadence')}</Label>
-              <div className="mt-1 flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant={newSchedCadence === 'daily' ? 'primary' : 'outline'}
-                  onClick={() => setNewSchedCadence('daily')}
-                  className="flex-1"
-                >
-                  {tr('按天 (Daily)', 'Daily')}
-                </Button>
-                <Button
-                  size="sm"
-                  variant={newSchedCadence === 'weekly' ? 'primary' : 'outline'}
-                  onClick={() => setNewSchedCadence('weekly')}
-                  className="flex-1"
-                >
-                  {tr('按周 (Weekly)', 'Weekly')}
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {/* Select Users */}
-          <div>
-            <Label className="text-xs mb-1.5 block">
-              {tr('轮转人员列表 (点击按序添加) *', 'Rotation Users (Click to append) *')}
-            </Label>
-            <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto rounded-lg border border-border p-2 bg-bg/50">
-              {users.map((u) => {
-                const selectedIdx = selectedUserIds.indexOf(u.id);
-                const isSelected = selectedIdx !== -1;
-                return (
-                  <button
-                    key={u.id}
-                    type="button"
-                    onClick={() => {
-                      if (isSelected) {
-                        setSelectedUserIds(selectedUserIds.filter((id) => id !== u.id));
-                      } else {
-                        setSelectedUserIds([...selectedUserIds, u.id]);
-                      }
-                    }}
-                    className={cn(
-                      'rounded-md px-2.5 py-1 text-xs font-medium border transition-colors flex items-center gap-1.5',
-                      isSelected
-                        ? 'bg-indigo-600 text-white border-indigo-600'
-                        : 'bg-card text-text-muted border-border hover:bg-bg'
-                    )}
-                  >
-                    {isSelected && (
-                      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/20 text-[10px] font-bold">
-                        {selectedIdx + 1}
-                      </span>
-                    )}
-                    <span>{u.display_name || u.email}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="text-[11px] text-text-faint mt-1">
-              {tr(
-                `当前已选择 ${selectedUserIds.length} 位工程师按序循环`,
-                `Selected ${selectedUserIds.length} users in sequence.`
-              )}
-            </div>
-          </div>
-        </div>
-      </Modal>
+      {/* Secondary Specialist Rotation Modal */}
+      <SecondaryRotationModal
+        open={secondaryModalOpen}
+        onClose={() => setSecondaryModalOpen(false)}
+        schedule={selectedSchedule || null}
+        existingRotation={selectedSchedule?.rotations?.find((r) => r.tier === 2) || null}
+        users={users}
+        onSuccess={async () => {
+          await fetchInitialData();
+          await fetchCalendar();
+        }}
+      />
 
       {/* Override / Shift Swap Modal */}
       <Modal
