@@ -63,15 +63,15 @@ Elige el comando para la arquitectura de tu servidor:
 
 **AMD64**
 ```bash
-wget https://github.com/Zara1024/OpsPilot/releases/download/v1.1.0/opspilot-v1.1.0-linux-amd64.tar.xz
-tar -xf opspilot-v1.1.0-linux-amd64.tar.xz && cd opspilot-v1.1.0-linux-amd64
+wget https://github.com/Zara1024/OpsPilot/releases/download/v1.1.1/opspilot-v1.1.1-linux-amd64.tar.xz
+tar -xf opspilot-v1.1.1-linux-amd64.tar.xz && cd opspilot-v1.1.1-linux-amd64
 sudo ./install.sh
 ```
 
 **ARM64**
 ```bash
-wget https://github.com/Zara1024/OpsPilot/releases/download/v1.1.0/opspilot-v1.1.0-linux-arm64.tar.xz
-tar -xf opspilot-v1.1.0-linux-arm64.tar.xz && cd opspilot-v1.1.0-linux-arm64
+wget https://github.com/Zara1024/OpsPilot/releases/download/v1.1.1/opspilot-v1.1.1-linux-arm64.tar.xz
+tar -xf opspilot-v1.1.1-linux-arm64.tar.xz && cd opspilot-v1.1.1-linux-arm64
 sudo ./install.sh
 ```
 
@@ -79,10 +79,10 @@ sudo ./install.sh
 
 ```bash
 # AMD64
-wget https://mirror.ghproxy.com/https://github.com/Zara1024/OpsPilot/releases/download/v1.1.0/opspilot-v1.1.0-linux-amd64.tar.xz
+wget https://mirror.ghproxy.com/https://github.com/Zara1024/OpsPilot/releases/download/v1.1.1/opspilot-v1.1.1-linux-amd64.tar.xz
 
 # ARM64
-wget https://mirror.ghproxy.com/https://github.com/Zara1024/OpsPilot/releases/download/v1.1.0/opspilot-v1.1.0-linux-arm64.tar.xz
+wget https://mirror.ghproxy.com/https://github.com/Zara1024/OpsPilot/releases/download/v1.1.1/opspilot-v1.1.1-linux-arm64.tar.xz
 ```
 
 ## Recorrido del producto
