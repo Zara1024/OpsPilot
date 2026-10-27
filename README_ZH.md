@@ -19,7 +19,7 @@
   </a>
 </p>
 
-[English](./README.md) | 简体中文 | [日本語](./README_JA.md) | [한국어](./README_KO.md) | [Español](./README_ES.md) | [Français](./README_FR.md) | [Deutsch](./README_DE.md) | [Português](./README_PT.md) | [Русский](./README_RU.md)
+简体中文 | [English](./README_EN.md) | [日本語](./README_JA.md) | [한국어](./README_KO.md) | [Español](./README_ES.md) | [Français](./README_FR.md) | [Deutsch](./README_DE.md) | [Português](./README_PT.md) | [Русский](./README_RU.md)
 
 ---
 
@@ -247,19 +247,7 @@ OpsPilot 名称、Logo、域名和相关品牌资产不随 AGPLv3 授权，见
 ## 加入群组
 
 <p align="center">
-  <img src="docs/assets/community/wechat-group-qr.jpg" alt="OpsPilot 微信群二维码" width="200" />
+  <img src="docs/assets/community/wechat-group-qr.jpg" alt="OpsPilot 微信交流群" width="220" />
 </p>
-
 
 扫码加入 OpsPilot 开发者社区，交流部署、AIOps 场景、工作流和插件扩展。
-
-
----
-
-## 交流群
-
-扫码加入 OpsPilot 开发者社区，交流部署、AIOps 场景、工作流和插件扩展：
-
-<p align="center">
-  <img src="docs/assets/wechat-community-qr.png" alt="OpsPilot WeChat Community" width="220" />
-</p>

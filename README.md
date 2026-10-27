@@ -1,8 +1,8 @@
 # <img src="web/public/opspilot-logo.svg" alt="" width="40" align="absmiddle" style="vertical-align: middle;" /> OpsPilot
 
-> **An ops AI Agent that understands your infrastructure, finds the root cause, and fixes it — right from Slack or Telegram.**
+> **懂你的系统和基础设施、查得出根因、还能动手修复的 AI Agent，直接在飞书和钉钉里指挥。**
 
-*Metrics · logs · traces · topology blast-radius · root-cause correlation · remote execution · alert-driven auto-investigation · RAG knowledge & code search · specialist agents & skills.*
+*指标 · 日志 · 链路 · 拓扑影响面 · 根因关联 · 远程执行 · 告警自动排查 · 知识库与代码 RAG 检索 · 专家 Agent 与技能。*
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/Zara1024/OpsPilot)](https://goreportcard.com/report/github.com/Zara1024/OpsPilot)
 [![Release](https://img.shields.io/github/v/release/Zara1024/OpsPilot?logo=github&label=release&color=2563eb)](https://github.com/Zara1024/OpsPilot/releases/latest)
@@ -19,7 +19,7 @@
   </a>
 </p>
 
-English | [简体中文](./README_ZH.md) | [日本語](./README_JA.md) | [한국어](./README_KO.md) | [Español](./README_ES.md) | [Français](./README_FR.md) | [Deutsch](./README_DE.md) | [Português](./README_PT.md) | [Русский](./README_RU.md)
+简体中文 | [English](./README_EN.md) | [日本語](./README_JA.md) | [한국어](./README_KO.md) | [Español](./README_ES.md) | [Français](./README_FR.md) | [Deutsch](./README_DE.md) | [Português](./README_PT.md) | [Русский](./README_RU.md)
 
 ---
 
@@ -28,38 +28,38 @@ English | [简体中文](./README_ZH.md) | [日本語](./README_JA.md) | [한국
 </p>
 
 <p align="center">
-  <img src="docs/assets/kubernetes-release-banner.png" alt="Kubernetes lifecycle management" width="100%" />
+  <img src="docs/assets/kubernetes-release-banner.png" alt="Kubernetes 生命周期管理" width="100%" />
   <br />
-  <strong>☸️ Kubernetes lifecycle management is now available</strong><br />
-  <sub>Enroll clusters through Edge, inspect workloads and events, manage upgrades, and connect Kubernetes resources to topology.</sub>
+  <strong>☸️ Kubernetes 生命周期管理现已发布</strong><br />
+  <sub>通过 Edge 注册集群，查看工作负载与事件，管理升级，并将 Kubernetes 资源关联到拓扑。</sub>
 </p>
 
 <div align="center">
 
-[Features](#features) • [Install](#install) • [Integrations](#integrations) • [License](#license)
+[特性](#特性) • [安装](#安装) • [集成](#集成) • [许可证](#许可证)
 
 </div>
 
-## Features
+## 特性
 
-- 🤖 **Coordinator + Specialist agents** — coordinator dispatches to SRE / network / DB sub-agents
-- 🚨 **Auto-investigate on alert** — investigator spawns an RCA worker, writes the cause back to chat
-- 🔍 **Root-cause RCA** — walks topology, correlates m/l/t, pins the "why" to a source-code line
-- 🔒 **Zero inbound ports** — edge dials out; no port 22 / 80 / 443 on hosts
-- 💻 **Browser SSH** — reverse-tunnel shell into any host; no keys, no jumpbox, all audited
-- 🐳 **Self-host in one command** — `install.sh` brings up the full stack
-- 📊 **Built-in observability** — Prometheus + Loki + Tempo + Grafana wired; the agent writes the queries
-- 🧠 **Bring your own model** — Anthropic / OpenAI / GLM / DeepSeek / Gemini / Kimi, hot routing
-- 💬 **Two-way IM channels** — Slack / Telegram / Larksuite / DingTalk / WeCom, per-channel locale
-- 🛠️ **Read-only host tools** — bash sandbox + 26+ inspection tools; every call audited
-- ☸️ **Kubernetes lifecycle** — enroll clusters, inspect workloads and events, manage upgrades, and mirror Kubernetes resources into topology
-- 🌐 **Network device management** — discover neighbors from Edge hosts, verify with SNMP, poll interfaces, and map host-to-network-device links
+- 🤖 **Coordinator + Specialist 双层 Agent** — coordinator 派活给 SRE / 网络 / DB 子 agent
+- 🚨 **告警触发自动调查** — investigator 派 RCA worker, 根因 + 证据回填到聊天
+- 🔍 **根因 RCA** — 沿拓扑做爆炸半径分析, 跨指标/日志/链路相关到源码行
+- 🔒 **零入站端口** — edge 主动外联, host 不开 22 / 80 / 443
+- 💻 **浏览器 SSH** — 反向隧道开交互式 shell, 不用 key / 跳板机, 全程审计
+- 🐳 **一行命令自托管** — `install.sh` 起整套栈
+- 📊 **可观测全栈内置** — Prometheus + Loki + Tempo + Grafana 自动起, Agent 自动写 query
+- 🧠 **自带任意模型** — Anthropic / OpenAI / GLM / DeepSeek / Gemini / Kimi, 热路由
+- 💬 **双向 IM 通道** — Slack / Telegram / Larksuite / DingTalk / WeCom, 按通道语言
+- 🛠️ **只读主机巡检工具** — bash 沙箱 + 26+ 工具, 每次调用全审计
+- ☸️ **Kubernetes 生命周期管理** — 注册集群、查看工作负载与事件、管理升级，并将 Kubernetes 资源映射到拓扑
+- 🌐 **网络设备管理** — 从 Edge 主机发现邻居，经 SNMP 校验和轮询接口状态，并建立主机到网络设备的拓扑关系
 
-## Install
+## 安装
 
-Download the latest release for your server architecture (`linux-amd64` or `linux-arm64`), extract it, and run the installer (Ubuntu 22.04+, Debian 12+, RHEL/Rocky 9):
+按服务器架构下载最新 release（`linux-amd64` 或 `linux-arm64`），解压后运行安装脚本（Ubuntu 22.04+、Debian 12+、RHEL/Rocky 9）：
 
-Choose the command for your server architecture:
+按服务器架构选择对应命令：
 
 **AMD64**
 ```bash
@@ -75,7 +75,7 @@ tar -xf opspilot-v1.1.3-linux-arm64.tar.xz && cd opspilot-v1.1.3-linux-arm64
 sudo ./install.sh
 ```
 
-**🇨🇳 Mainland China** — if GitHub is slow, use the matching CDN mirror URL instead:
+**🇨🇳 中国大陆用户** — GitHub 较慢时，选择对应架构的 CDN 镜像地址下载：
 
 ```bash
 # AMD64
@@ -85,41 +85,41 @@ wget https://mirror.ghproxy.com/https://github.com/Zara1024/OpsPilot/releases/do
 wget https://mirror.ghproxy.com/https://github.com/Zara1024/OpsPilot/releases/download/v1.1.3/opspilot-v1.1.3-linux-arm64.tar.xz
 ```
 
-### Custom Domain & SSL Automatic Renewal
+### 域名配置与 SSL 证书自动续签
 
-OpsPilot supports binding any custom domain name with native Nginx ACME challenge passthrough for **zero-downtime, automated SSL renewal**.
+OpsPilot 支持绑定任意自定义独立域名，并在 Nginx 80 端口原生集成了 ACME 验证挑战穿透路径，可实现 **零停机、无感自动续签**。
 
-#### 1. DNS Resolution
-Add an **A Record** pointing your domain (e.g. `opspilot.example.com`) to the target server's public IP address.
+#### 1. 域名 DNS 解析
+在您的域名服务商后台（如阿里云、腾讯云、Cloudflare、DNSPod 等）添加一条 **A 记录**，将您的域名（例如 `opspilot.example.com`）解析至部署服务器的公网 IP。
 
-#### 2. Configure Environment (`.env`)
-Edit `/opt/opspilot/.env` with your domain:
+#### 2. 修改配置文件 (`.env`)
+在解压安装目录或 `/opt/opspilot/.env` 中配置您的真实域名：
 ```bash
-# Public canonical base URL (Edge agents use this to report metrics and logs)
+# 对外公开的基础 URL（Edge 边缘客户端将使用此地址上报遥测与日志）
 OPSPILOT_PUBLIC_URL=https://opspilot.example.com
 
-# Admin notification email (optional)
+# 管理员账号邮箱（可选）
 OPSPILOT_ADMIN_EMAIL=admin@opspilot.example.com
 ```
+> **提示**：`OPSPILOT_TUNNEL_ADDR` 保持留空即可，系统会自动识别 `OPSPILOT_PUBLIC_URL` 中的域名并自动拼接 `40012` 隧道端口。
 
-#### 3. Issue SSL Certificate & Configure Renewal
-Issue a free Let's Encrypt certificate with Certbot webroot mode:
-
+#### 3. 申请正式 SSL 证书与配置自动续签
+使用 Certbot 申请 Let's Encrypt 免费证书并建立全自动续签链条：
 ```bash
-# 1. Install certbot (Ubuntu / Debian)
+# 1. 安装 certbot 工具（Ubuntu / Debian）
 sudo apt update && sudo apt install -y certbot
 
-# 2. Request certificate via pre-wired webroot challenge path
+# 2. 申请域名 SSL 证书（利用预置的 Webroot 验证路径）
 sudo mkdir -p /var/www/certbot
-sudo certbot certonly --webroot -w /var/www/certbot -d opspilot.example.com --non-interactive --agree-tos --email admin@example.com
+sudo certbot certonly --webroot -w /var/www/certbot -d opspilot.example.com --non-interactive --agree-tos --email 您的邮箱@example.com
 
-# 3. Copy certificates to OpsPilot mount directory
+# 3. 复制证书至 OpsPilot 证书挂载目录
 sudo mkdir -p /opt/opspilot/certs
 sudo cp -L /etc/letsencrypt/live/opspilot.example.com/fullchain.pem /opt/opspilot/certs/tls.crt
 sudo cp -L /etc/letsencrypt/live/opspilot.example.com/privkey.pem /opt/opspilot/certs/tls.key
 sudo chmod 644 /opt/opspilot/certs/tls.crt && sudo chmod 600 /opt/opspilot/certs/tls.key
 
-# 4. Set up auto-deploy reload hook
+# 4. 配置证书自动续签与热重载 Hook
 sudo tee /etc/letsencrypt/renewal-hooks/deploy/opspilot-deploy.sh > /dev/null << 'EOF'
 #!/bin/bash
 CERT_DIR="${RENEWED_LINEAGE:-/etc/letsencrypt/live/opspilot.example.com}"
@@ -134,112 +134,120 @@ EOF
 sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/opspilot-deploy.sh
 ```
 
-#### 4. Restart Nginx
+#### 4. 重启服务生效
 ```bash
 cd /opt/opspilot
 sudo docker compose restart nginx
 ```
-> **Architecture Note**: Nginx routes use wildcard catch-all (`server_name _;`). Changing your domain requires **no changes to nginx.conf**, only updating `OPSPILOT_PUBLIC_URL` in `.env` and refreshing certificates in `/opt/opspilot/certs/`.
+> **架构说明**：OpsPilot 的 Nginx 内部配置采用泛匹配模式（`server_name _;`），更换域名后 **无需手动修改 Nginx 配置文件**，仅需在 `.env` 中更新 `OPSPILOT_PUBLIC_URL` 并替换 `/opt/opspilot/certs/` 下的证书公私钥即可。
 
-## Product Tour
+## 产品导览
 
-### Root Cause Analysis
-
-<p align="center">
-  <img src="docs/assets/readme-tour/user-20260707-agent-write-gate.png" alt="Root cause analysis report" width="100%" />
-</p>
-
-Start from an operator question or alert, collect topology and device context, and produce an evidence-backed analysis with concrete next steps.
-
-### Workflow Builder
+### 根因分析
 
 <p align="center">
-  <img src="docs/assets/readme-tour/user-20260707-workflow-editor.png" alt="Workflow builder" width="100%" />
+  <img src="docs/assets/readme-tour/user-20260707-agent-write-gate.png" alt="根因分析" width="100%" />
 </p>
 
-Wire triggers, agents, tools, conditions, and notifications into repeatable automations that stay editable and reviewable.
+从告警或运维问题出发，汇总拓扑、设备、指标、日志和变更上下文，形成带证据的根因分析与下一步建议。
 
-### Skills Catalog
+### 工作流编排
 
 <p align="center">
-  <img src="docs/assets/readme-tour/user-20260707-skills-catalog.png" alt="Skills catalog" width="100%" />
+  <img src="docs/assets/readme-tour/user-20260707-workflow-editor.png" alt="工作流编排" width="100%" />
 </p>
 
-Show the tools agents can call, with clear descriptions and a visible inventory for operators.
+把触发器、Agent、工具、条件和通知节点串成可复用的自动化流程，并保持可编辑、可审查。
 
-### MCP Servers
+### 技能目录
 
 <p align="center">
-  <img src="docs/assets/readme-tour/user-20260707-mcp-servers.png" alt="MCP servers" width="100%" />
+  <img src="docs/assets/readme-tour/user-20260707-skills-catalog.png" alt="技能目录" width="100%" />
 </p>
 
-Register external MCP servers and expose their tools to chat agents and workflows with clear runtime and trust boundaries.
+展示 Agent 可调用的工具、描述和边界，让运维人员能清楚看到自动化能力面。
 
-### Knowledge Vault
+### MCP 服务器
 
 <p align="center">
-  <img src="docs/assets/readme-tour/user-20260707-knowledge-vault.png" alt="Knowledge vault" width="100%" />
+  <img src="docs/assets/readme-tour/user-20260707-mcp-servers.png" alt="MCP 服务器" width="100%" />
 </p>
 
-Index runbooks, notes, incident history, and repositories so both humans and agents can search the same operational context.
+注册外部 MCP 服务器，把 Grafana、Kubernetes、PagerDuty、GitHub 或内部平台工具接入同一套治理清单。
 
-### Artifacts Center
+### 知识库
 
 <p align="center">
-  <img src="docs/assets/readme-tour/user-20260707-artifacts-pages.png" alt="Artifacts center" width="100%" />
+  <img src="docs/assets/readme-tour/user-20260707-knowledge-vault.png" alt="知识库" width="100%" />
 </p>
 
-Keep generated pages and reports in one place, with private-by-default sharing and a clean handoff for review.
+索引 Runbook、事故记录、架构笔记和代码仓库，让人和 Agent 使用同一份上下文。
 
-### Monitoring
+### 产物中心
 
 <p align="center">
-  <img src="docs/assets/readme-tour/user-20260707-monitor.png" alt="Monitoring" width="100%" />
+  <img src="docs/assets/readme-tour/user-20260707-artifacts-pages.png" alt="产物中心" width="100%" />
 </p>
 
-Inspect fleet health, logs, traces, and alert state from the same workspace where the agent gathers evidence.
+集中保存 Agent 和工作流生成的页面与报告，默认私有，便于审阅和交接。
 
-### Topology Map
+### 监控
 
 <p align="center">
-  <img src="docs/assets/readme-tour/user-20260707-topology-map.png" alt="Topology map" width="100%" />
+  <img src="docs/assets/readme-tour/user-20260707-monitor.png" alt="监控" width="100%" />
 </p>
 
-Visualize dependencies and blast radius so incidents can be traced through the affected service graph.
+在同一个工作台里查看主机健康、日志、链路和告警状态，为 RCA 收集证据。
 
-### Approval and Write Gate
+### 拓扑图
 
 <p align="center">
-  <img src="docs/assets/readme-tour/user-20260707-rca-session.png" alt="Approval and write gate" width="100%" />
+  <img src="docs/assets/readme-tour/user-20260707-topology-map.png" alt="拓扑图" width="100%" />
 </p>
 
-Keep risky actions behind approvals, with a visible policy boundary before anything changes production systems.
+可视化服务、集群、设备与故障域之间的依赖关系，用于判断影响面。
 
-## Documentation
+### 审批与写入闸门
 
-The full product documentation is available at [opspilot.cloud](https://opspilot.cloud/docs/get-started/introduction).
+<p align="center">
+  <img src="docs/assets/readme-tour/user-20260707-rca-session.png" alt="审批与写入闸门" width="100%" />
+</p>
 
-| Area | Start here |
+高风险动作先进入审批和策略边界，避免 Agent 直接修改生产系统。
+
+## 文档
+
+完整产品文档见 [opspilot.cloud](https://opspilot.cloud/docs/get-started/introduction)。
+
+| 领域 | 从这里开始 |
 |---|---|
-| **Get started** | [Introduction](https://opspilot.cloud/docs/get-started/introduction) · [Quickstart](https://opspilot.cloud/docs/get-started/quickstart) · [Architecture](https://opspilot.cloud/docs/get-started/architecture) · [Concepts](https://opspilot.cloud/docs/get-started/concepts) |
-| **Install & operate** | [Server install](https://opspilot.cloud/docs/install/server) · [Edge install](https://opspilot.cloud/docs/install/edge) · [First boot](https://opspilot.cloud/docs/install/first-boot) · [Upgrade](https://opspilot.cloud/docs/install/upgrade) |
-| **Capabilities** | [Alerts](https://opspilot.cloud/docs/capabilities/alerts) · [RCA](https://opspilot.cloud/docs/capabilities/rca) · [Monitoring](https://opspilot.cloud/docs/capabilities/monitoring) · [Logs](https://opspilot.cloud/docs/capabilities/logs) · [Traces](https://opspilot.cloud/docs/capabilities/traces) · [Knowledge](https://opspilot.cloud/docs/capabilities/knowledge) · [Skills](https://opspilot.cloud/docs/capabilities/skills) |
-| **Agents** | [Overview](https://opspilot.cloud/docs/agents/overview) · [Coordinator](https://opspilot.cloud/docs/agents/coordinator) · [Incident investigator](https://opspilot.cloud/docs/agents/incident-investigator) · [Specialists](https://opspilot.cloud/docs/agents/specialists) · [Reviewer](https://opspilot.cloud/docs/agents/reviewer) |
-| **Reference** | [API](https://opspilot.cloud/docs/reference/api) · [CLI](https://opspilot.cloud/docs/reference/cli) · [Alert rules](https://opspilot.cloud/docs/reference/alert-rules) · [Skill manifest](https://opspilot.cloud/docs/reference/skill-manifest) · [Data plane](https://opspilot.cloud/docs/reference/data-plane) |
+| **快速开始** | [介绍](https://opspilot.cloud/docs/get-started/introduction) · [Quickstart](https://opspilot.cloud/docs/get-started/quickstart) · [架构](https://opspilot.cloud/docs/get-started/architecture) · [概念](https://opspilot.cloud/docs/get-started/concepts) |
+| **安装与运维** | [服务端安装](https://opspilot.cloud/docs/install/server) · [边缘安装](https://opspilot.cloud/docs/install/edge) · [首次启动](https://opspilot.cloud/docs/install/first-boot) · [升级](https://opspilot.cloud/docs/install/upgrade) |
+| **能力** | [告警](https://opspilot.cloud/docs/capabilities/alerts) · [RCA](https://opspilot.cloud/docs/capabilities/rca) · [监控](https://opspilot.cloud/docs/capabilities/monitoring) · [日志](https://opspilot.cloud/docs/capabilities/logs) · [链路](https://opspilot.cloud/docs/capabilities/traces) · [知识库](https://opspilot.cloud/docs/capabilities/knowledge) · [技能](https://opspilot.cloud/docs/capabilities/skills) |
+| **Agent** | [概览](https://opspilot.cloud/docs/agents/overview) · [Coordinator](https://opspilot.cloud/docs/agents/coordinator) · [Incident investigator](https://opspilot.cloud/docs/agents/incident-investigator) · [Specialists](https://opspilot.cloud/docs/agents/specialists) · [Reviewer](https://opspilot.cloud/docs/agents/reviewer) |
+| **参考** | [API](https://opspilot.cloud/docs/reference/api) · [CLI](https://opspilot.cloud/docs/reference/cli) · [告警规则](https://opspilot.cloud/docs/reference/alert-rules) · [Skill manifest](https://opspilot.cloud/docs/reference/skill-manifest) · [Data plane](https://opspilot.cloud/docs/reference/data-plane) |
 
-## Integrations
+## 集成
 
-Drop-in for the observability, channel, and model stacks your team already uses.
+即插即用，对接团队现有的可观测、IM 通道与模型栈。
 
 | | |
 |---|---|
-| **Observability** | <img src="docs/assets/integrations/prometheus.svg" alt="Prometheus" title="Prometheus" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/grafana.svg" alt="Grafana" title="Grafana" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/loki.svg" alt="Loki" title="Loki" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/tempo.svg" alt="Tempo" title="Tempo" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/opentelemetry.svg" alt="OpenTelemetry" title="OpenTelemetry" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/qdrant.svg" alt="Qdrant" title="Qdrant" width="28" height="28" /> |
-| **Channels** | <img src="docs/assets/integrations/slack.svg" alt="Slack" title="Slack" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/telegram.svg" alt="Telegram" title="Telegram" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/larksuite.svg" alt="Larksuite" title="Larksuite" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/dingtalk.svg" alt="DingTalk" title="DingTalk" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/wecom.svg" alt="WeCom" title="WeCom" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/webhook.svg" alt="Webhook" title="Webhook" width="28" height="28" /> |
-| **Models** | <img src="docs/assets/integrations/anthropic.svg" alt="Anthropic" title="Anthropic" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/openai.svg" alt="OpenAI" title="OpenAI" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/gemini.svg" alt="Gemini" title="Gemini" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/deepseek.svg" alt="DeepSeek" title="DeepSeek" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/zhipu.svg" alt="Zhipu" title="Zhipu" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/kimi.svg" alt="Kimi" title="Kimi" width="28" height="28" /> |
+| **可观测** | <img src="docs/assets/integrations/prometheus.svg" alt="Prometheus" title="Prometheus" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/grafana.svg" alt="Grafana" title="Grafana" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/loki.svg" alt="Loki" title="Loki" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/tempo.svg" alt="Tempo" title="Tempo" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/opentelemetry.svg" alt="OpenTelemetry" title="OpenTelemetry" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/qdrant.svg" alt="Qdrant" title="Qdrant" width="28" height="28" /> |
+| **通道** | <img src="docs/assets/integrations/slack.svg" alt="Slack" title="Slack" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/telegram.svg" alt="Telegram" title="Telegram" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/larksuite.svg" alt="Larksuite" title="Larksuite" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/dingtalk.svg" alt="DingTalk" title="DingTalk" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/wecom.svg" alt="WeCom" title="WeCom" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/webhook.svg" alt="Webhook" title="Webhook" width="28" height="28" /> |
+| **模型** | <img src="docs/assets/integrations/anthropic.svg" alt="Anthropic" title="Anthropic" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/openai.svg" alt="OpenAI" title="OpenAI" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/gemini.svg" alt="Gemini" title="Gemini" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/deepseek.svg" alt="DeepSeek" title="DeepSeek" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/zhipu.svg" alt="Zhipu" title="Zhipu" width="28" height="28" />&nbsp;&nbsp;&nbsp;<img src="docs/assets/integrations/kimi.svg" alt="Kimi" title="Kimi" width="28" height="28" /> |
 
-## License
+## 许可证
 
-AGPLv3 — see [LICENSE](LICENSE).
+AGPLv3 — 见 [LICENSE](LICENSE)。
 
-OpsPilot brand assets are not licensed under AGPLv3. See
-[TRADEMARK.md](TRADEMARK.md).
+OpsPilot 名称、Logo、域名和相关品牌资产不随 AGPLv3 授权，见
+[TRADEMARK.md](TRADEMARK.md)。
+
+## 加入群组
+
+<p align="center">
+  <img src="docs/assets/community/wechat-group-qr.jpg" alt="OpsPilot 微信交流群" width="220" />
+</p>
+
+扫码加入 OpsPilot 开发者社区，交流部署、AIOps 场景、工作流和插件扩展。
