@@ -112,6 +112,21 @@ func (c *StreamClient) Run(ctx context.Context) error {
 		return fmt.Errorf("ws dial: %w", err)
 	}
 	defer conn.Close()
+	// ReadMessage takes no context: closing the socket is the only thing that
+	// unblocks it. Without this, Run never returns on cancellation and the
+	// supervisor has to abandon the goroutine and its socket (#517 shape).
+	// gorilla documents Close as safe to call concurrently with ReadMessage.
+	// watchDone releases the watcher when Run returns on its own, so a slot that
+	// reconnects many times does not accumulate one goroutine per attempt.
+	watchDone := make(chan struct{})
+	defer close(watchDone)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.Close()
+		case <-watchDone:
+		}
+	}()
 
 	// Keep the connection warm. Slack's idle close hits ~30s. The ping
 	// runs in a goroutine so the read loop never blocks behind a write.

@@ -106,6 +106,8 @@ const ROLE_FILTER_TITLES: Record<string, [string, string]> = {
   server: ["服务器", "Servers"],
   storage: ["存储", "Storage"],
   network: ["网络设备", "Network devices"],
+  database: ["数据库设备", "Database devices"],
+  gpu: ["GPU设备", "GPU devices"],
   unknown: ["未分类设备", "Uncategorized devices"],
 };
 
@@ -859,6 +861,7 @@ export default function EdgesPage() {
                             '暂无设备。点击右上角"新建"创建一个。',
                             'No devices yet. Click "New" in the top right to create one.',
                           )}
+                      {!rolesFilter && canMutate && <div className="mt-3"><Button variant="primary" onClick={() => setCreateOpen(true)}><Plus size={12} />{tr('新建设备', 'New device')}</Button></div>}
                     </td>
                   </tr>
                 ) : (
@@ -2134,10 +2137,11 @@ const ROLE_CHIP_CLASS: Record<EdgeRole, string> = {
   storage: "border-violet-500/30 bg-violet-500/10 text-violet-300",
   network: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
   database: "border-amber-500/30  bg-amber-500/10  text-amber-300",
+  gpu: "border-cyan-500/30    bg-cyan-500/10    text-cyan-300",
 };
 
-// RolesEditorModal lets an admin toggle the three role bits for one edge.
-// Keep "全选" / "全清" out of MVP — three checkboxes is already trivial UX.
+// RolesEditorModal lets an admin toggle the role bits for one device. Keep
+// "全选" / "全清" out of MVP — the role list is still short and explicit.
 // Saving sends the full roles array (PATCH .../roles {roles:[...]}); empty
 // array means "未分类". Backend rejects unknown names so the UI doesn't
 // have to client-side validate.

@@ -53,6 +53,7 @@ services:
       qdrant:
         condition: service_started
     environment:
+      OPSPILOT_VERSION: ${VERSION:-dev}
       OPSPILOT_HTTP_ADDR: ${OPSPILOT_HTTP_ADDR:-:8080}
       OPSPILOT_METRICS_ADDR: ${OPSPILOT_METRICS_ADDR:-:9100}
       OPSPILOT_DEFAULT_LOCALE: ${OPSPILOT_DEFAULT_LOCALE:-zh}
@@ -164,6 +165,7 @@ services:
     #     - ./data:/data
     #   and set OPSPILOT_DB_DIALECT=sqlite, OPSPILOT_DB_PATH=/data/opspilot.db.
     volumes:
+      - ../VERSION:/opt/opspilot/VERSION:ro
       # ADR-024 edge upgrade bundles. ./edge holds edge-bundle-<arch>-
       # <ver>.tar.gz + .tar.gz.sha256 (placed there by install.sh /
       # upgrade.sh from the release tarball). Manager reads the .sha256

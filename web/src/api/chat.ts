@@ -350,7 +350,7 @@ export async function streamMessage(
   const decoder = new TextDecoder();
   let buf = '';
 
-  while (true) {
+  for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
     buf += decoder.decode(value, { stream: true });

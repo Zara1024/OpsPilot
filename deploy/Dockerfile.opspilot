@@ -116,6 +116,7 @@ RUN set -eux; \
 ENV ONNX_PATH=/usr/lib/libonnxruntime.so
 
 COPY --from=builder /out/opspilot /opspilot
+COPY --from=builder /app/VERSION /opt/opspilot/VERSION
 
 # chatruntime.LoadAll reads from `./skills` and `./agents` relative to
 # the binary's working directory. Ship the in-tree persona / SKILL.md

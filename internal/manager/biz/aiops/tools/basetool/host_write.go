@@ -5,10 +5,11 @@ import "context"
 // host_write.go — ctx propagation for the admin "allow Agent write actions"
 // gate. The active kernel resolves the live AgentWriteEnabled setting once per
 // request and stamps the result here; write tools read it before proposing or
-// dispatching work. host_bash also forwards it to the edge as
-// BashExecRequest.Unrestricted, which makes the edge bypass cmdpolicy and run
-// the raw command through a shell. Gate OFF (the default) leaves host_bash on
-// the locked read-only cmdpolicy path.
+// dispatching work. It only controls whether a mutating host_bash command may
+// create an approval proposal. It is never forwarded to the edge as
+// BashExecRequest.Unrestricted: that flag makes the edge bypass cmdpolicy, so
+// only the approval executor, running the exact command the user approved, may
+// set it. Gate OFF (the default) additionally blocks the proposal path.
 //
 // Same leaf-package rationale as session.go / artifact_source.go: both the
 // producer (chatruntime) and the consumer (tools/bash_basetool) depend on

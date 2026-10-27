@@ -353,9 +353,9 @@ sudo OPSPILOT_CLOUD_ADDR=opspilot.example.com:40012 \
 脚本会：
 
 - 根据 `uname -s/-m` 挑选 `opspilot-edge-<os>-<arch>` 二进制，拷贝到 `/usr/local/bin/opspilot-edge`。
-- 创建系统用户 `opspilot-edge`、日志目录 `/var/log/opspilot-edge`。
+- 准备 `root:root` 所有的配置、状态和日志目录，不再创建专用系统用户；已有账户保持不变。
 - 渲染 `/etc/opspilot-edge/opspilot-edge.env` 并安装 systemd unit。
-- `systemctl enable --now opspilot-edge` 并打印状态与最近 20 行日志。
+- 执行 `systemctl enable opspilot-edge` 和 `systemctl restart opspilot-edge`，以 root 身份运行服务，并打印状态与最近 20 行日志。
 
 卸载：`sudo /path/to/install-edge.sh --uninstall`。
 

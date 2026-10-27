@@ -1,5 +1,6 @@
 import { Hint } from '@/components/ui/Tooltip';
 import { useState, useEffect } from 'react';
+import { resolveToolStatus } from '@/lib/toolStatus';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -212,7 +213,7 @@ function ToolBubble({ message, onConfirmConfigDraft, hideActiveOperations }: Pro
       onConfirmConfigDraft={onConfirmConfigDraft}
       call={{
         name: message.tool_name ?? 'tool',
-        status: 'success',
+        // 历史消息没有执行状态，仅从明确的结果字段恢复。
         result,
       }}
       hideActiveOperations={hideActiveOperations}
@@ -233,13 +234,13 @@ function ToolCallSummaryBlock({
     result?: unknown;
     duration_ms?: number;
     error?: string;
-	  };
-	  onConfirmConfigDraft?: ConfirmConfigDraft;
-    hideActiveOperations?: boolean;
-	}) {
+  };
+  onConfirmConfigDraft?: ConfirmConfigDraft;
+  hideActiveOperations?: boolean;
+}) {
   const { tr } = useI18n();
   const [open, setOpen] = useState(false);
-  const status = call.status ?? (call.error ? 'error' : 'success');
+  const status = resolveToolStatus(call);
   const isPending = status === 'pending';
   const isError = status === 'error' || status === 'timeout' || !!call.error;
   const hint = argSummary(call.arguments);
@@ -286,6 +287,7 @@ function ToolCallSummaryBlock({
           {typeof call.duration_ms === 'number' && call.duration_ms > 0 && (
             <span>{formatDuration(call.duration_ms)}</span>
           )}
+          {status === 'unknown' && <span className="text-zinc-500">{tr('状态未知', 'Status unknown')}</span>}
           {isPending && <span className="text-blue-400">{tr('运行中', 'Running')}</span>}
           {isError && <span className="text-red-400">{tr('失败', 'Failed')}</span>}
           {open ? (
@@ -440,7 +442,6 @@ export function OperationCard({ operation, onTerminal }: { operation: OperationC
       cancelled = true;
       window.clearInterval(timer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [operation.id, operation.legacySessionID, terminal, tr]);
 
   function applyOperationUpdate(updated: Operation, artifactURL?: string) {
@@ -742,9 +743,9 @@ function ConfigDraftCard({
               <span className="truncate text-[11px] text-zinc-500">{draft.target.name}</span>
             )}
           </div>
-		  <div className="text-sm font-medium text-zinc-100">
-			{proposal?.title || draft.summary || tr('配置草案', 'Configuration draft')}
-		  </div>
+          <div className="text-sm font-medium text-zinc-100">
+            {proposal?.title || draft.summary || tr('配置草案', 'Configuration draft')}
+          </div>
           {scope && <div className="text-[11px] leading-5 text-zinc-300">{scope}</div>}
           {draft.confirmation_prompt && (
             <div className="text-[11px] leading-5 text-zinc-400">{draft.confirmation_prompt}</div>
@@ -872,7 +873,8 @@ function StatusIcon({ status }: { status?: string }) {
   if (status === 'error' || status === 'timeout') {
     return <AlertCircle size={13} className="text-red-400" />;
   }
-  return <CheckCircle2 size={13} className="text-emerald-400" />;
+  if (status === 'success') return <CheckCircle2 size={13} className="text-emerald-400" />;
+  return <AlertCircle size={13} className="text-zinc-500" />;
 }
 
 // argSummary picks a compact one-line preview from the arguments object.

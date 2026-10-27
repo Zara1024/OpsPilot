@@ -252,9 +252,9 @@ export default function HomePage() {
   const showEmptyState = deviceTotal === 0;
 
   return (
-    <main className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-4xl flex-col items-stretch px-6 pb-16 pt-16 sm:pt-20">
+    <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-y-auto px-0 py-8 sm:pb-[10vh] sm:pt-8">
+        <div className="mx-auto my-auto flex w-full max-w-4xl shrink-0 flex-col items-stretch px-6">
           <StatusRow />
 
           <h1 className="mb-8 mt-8 text-center text-3xl font-semibold tracking-tight text-zinc-100">

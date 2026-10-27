@@ -19,11 +19,27 @@ describe('Sidebar configurable sections', () => {
     localStorage.clear();
     localStorage.setItem('opspilot-locale', 'zh-CN');
     useAuth.setState({ token: null, refreshToken: null, email: 'user@example.com', role: 'user' });
-    useUi.getState().setSidebarCollapsed(false);
+    useUi.setState({ sidebarCollapsed: false, sessionsCollapsed: false, sessionsPreviewOpen: false, sessionsTriggerHovered: false });
     server.use(
       http.get('/api/v1/chat/sessions', () => HttpResponse.json({ items: [], total: 0 })),
       http.get('/api/v1/system-settings', () => HttpResponse.json({ items: [], total: 0 })),
     );
+  });
+
+  it('reveals auto-hidden sessions from the menu header only on chat routes', () => {
+    useUi.setState({ sessionsCollapsed: true });
+    const view = render(<MemoryRouter><Sidebar /></MemoryRouter>);
+    expect(screen.queryByRole('button', { name: '展开会话栏' })).not.toBeInTheDocument();
+    const trigger = screen.getByLabelText('会话栏预览区域');
+    fireEvent.pointerEnter(trigger.closest('[data-session-reveal]')!, { pointerType: 'mouse' });
+    expect(useUi.getState().sessionsPreviewOpen).toBe(true);
+    expect(useUi.getState().sessionsCollapsed).toBe(true);
+    view.unmount();
+    useUi.setState({ sessionsPreviewOpen: false, sessionsTriggerHovered: false });
+    render(<MemoryRouter initialEntries={['/devices']}><Sidebar /></MemoryRouter>);
+    expect(screen.queryByRole('button', { name: '展开会话栏' })).not.toBeInTheDocument();
+    fireEvent.pointerEnter(screen.getByRole('link', { name: 'OpsPilot 首页' }).closest('[data-session-reveal]')!, { pointerType: 'mouse' });
+    expect(useUi.getState().sessionsPreviewOpen).toBe(false);
   });
 
   it('隐藏子菜单并从父菜单管理入口恢复', async () => {
@@ -85,66 +101,16 @@ describe('Sidebar configurable sections', () => {
     expect(await screen.findByRole('link', { name: '网络设备' })).toBeInTheDocument();
   });
 
-  it('展开后展示全部会话', async () => {
-    const user = userEvent.setup({ skipHover: true });
-    const sessions = Array.from({ length: 12 }, (_, index) => ({
-      id: String(index + 1),
-      user_id: 1,
-      title: `测试会话 ${index + 1}`,
-    }));
-    server.use(
-      http.get('/api/v1/chat/sessions', () => HttpResponse.json({ items: sessions, total: sessions.length })),
-    );
 
+
+  it('keeps chat sessions out of the navigation menu', () => {
     render(
       <MemoryRouter>
         <Sidebar />
       </MemoryRouter>,
     );
-
-    expect(await screen.findByText('测试会话 1')).toBeInTheDocument();
-    expect(screen.queryByText('测试会话 6')).not.toBeInTheDocument();
-
-      await user.click(screen.getByRole('button', { name: '展开剩余 7 条' }));
-
-    expect(screen.getByText('测试会话 12')).toBeInTheDocument();
-  });
-
-  it('批量选择并删除会话', async () => {
-    const user = userEvent.setup({ skipHover: true });
-    const sessions = Array.from({ length: 3 }, (_, index) => ({
-      id: String(index + 1),
-      user_id: 1,
-      title: `测试会话 ${index + 1}`,
-    }));
-    const deleted: string[] = [];
-    server.use(
-      http.get('/api/v1/chat/sessions', () => HttpResponse.json({ items: sessions, total: sessions.length })),
-      http.delete('/api/v1/chat/sessions/:id', ({ params }) => {
-        deleted.push(String(params.id));
-        return new HttpResponse(null, { status: 204 });
-      }),
-    );
-
-    render(
-      <MemoryRouter>
-        <Sidebar />
-      </MemoryRouter>,
-    );
-
-    await screen.findByText('测试会话 1');
-
-      await user.click(screen.getByRole('button', { name: '批量删除会话' }));
-
-
-      await user.click(screen.getByRole('checkbox', { name: '选择会话 测试会话 1' }));
-      await user.click(screen.getByRole('checkbox', { name: '选择会话 测试会话 3' }));
-
-
-      await user.click(screen.getByRole('button', { name: '删除 2 条' }));
-
-
-    await waitFor(() => expect(deleted.sort()).toEqual(['1', '3']));
-    expect(screen.queryByRole('dialog', { name: '批量删除会话' })).not.toBeInTheDocument();
+    expect(screen.queryByText('会话')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '批量删除会话' })).not.toBeInTheDocument();
   });
 });
+

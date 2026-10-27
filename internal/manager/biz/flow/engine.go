@@ -208,7 +208,7 @@ func (e *Engine) runNode(ctx context.Context, run *model.FlowRun, g *Graph, byID
 			cfg, _ = resolved.(map[string]any)
 		}
 	}
-	rcSnapshot := st.rc
+	rcSnapshot := st.rc.snapshot()
 	st.mu.Unlock()
 	if cfg == nil {
 		cfg = map[string]any{}

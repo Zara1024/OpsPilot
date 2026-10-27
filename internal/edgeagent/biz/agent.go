@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -535,12 +536,12 @@ func applyKubernetesHostIdentity(k8sInfo *tunnel.KubernetesInfo, host *tunnel.Ho
 // sending heartbeats so a transient startup dependency does not leave the
 // edge permanently at edge_id=0.
 func (a *Agent) heartbeatLoop(ctx context.Context) error {
-	t := time.NewTicker(a.cfg.HeartbeatInterval)
-	defer t.Stop()
 	var consecutiveFail int
 	for {
+		t := time.NewTimer(heartbeatRetryDelay(a.cfg.HeartbeatInterval, consecutiveFail))
 		select {
 		case <-ctx.Done():
+			t.Stop()
 			return nil
 		case <-t.C:
 			if a.EdgeID() == 0 {
@@ -548,7 +549,7 @@ func (a *Agent) heartbeatLoop(ctx context.Context) error {
 				err := a.registerEdge(rctx)
 				cancel()
 				if err != nil {
-					consecutiveFail++
+					consecutiveFail = minInt(consecutiveFail+1, 63)
 					a.log.Warn("agent: register_edge retry failed",
 						slog.Int("consecutive_fail", consecutiveFail),
 						slog.Any("err", err))
@@ -574,7 +575,7 @@ func (a *Agent) heartbeatLoop(ctx context.Context) error {
 				}, nil)
 			cancel()
 			if err != nil {
-				consecutiveFail++
+				consecutiveFail = minInt(consecutiveFail+1, 63)
 				a.log.Warn("agent: heartbeat failed",
 					slog.Int("consecutive_fail", consecutiveFail),
 					slog.Any("err", err))
@@ -600,6 +601,42 @@ func (a *Agent) heartbeatLoop(ctx context.Context) error {
 			consecutiveFail = 0
 		}
 	}
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxDuration(a, b time.Duration) time.Duration {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// Cap failure backoff at one minute (or a longer configured interval). Jitter
+// also spreads healthy heartbeats from agents that started together.
+func heartbeatRetryDelay(interval time.Duration, failures int) time.Duration {
+	delay, limit := interval, maxDuration(interval, time.Minute)
+	if failures > 0 {
+		// Leave room for RPC latency before the default 90s offline threshold.
+		delay = maxDuration(interval/2, time.Nanosecond)
+	}
+	for i := 1; i < failures && delay < limit; i++ {
+		if delay > limit/2 {
+			delay = limit
+		} else {
+			delay *= 2
+		}
+	}
+	jitter := delay / 10
+	if jitter <= 0 {
+		return delay
+	}
+	return delay - jitter + time.Duration(rand.Int63n(int64(jitter)+1))
 }
 
 const tunnelStuckThreshold = 5

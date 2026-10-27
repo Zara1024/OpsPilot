@@ -1381,7 +1381,10 @@ func main() {
 		log.Error("imbridge: migrate failed", slog.Any("err", err))
 	}
 	imbridgeRepo := managerimbridgedata.New(db)
-	imbridgeUC := managerbizimbridge.NewUC(imbridgeRepo)
+	// Stream runtime health is shared: the stream supervisor writes it, the
+	// admin API reads it through the UC (Settings → Channels).
+	imbridgeStreamHealth := managerbizimbridge.NewStreamHealthStore()
+	imbridgeUC := managerbizimbridge.NewUC(imbridgeRepo, imbridgeStreamHealth)
 
 	// manager/aiops biz + service + server.
 	//
@@ -1790,7 +1793,7 @@ func main() {
 	// RegisterFactory hook. Without a factory the supervisor just
 	// logs "no factory for provider — skipping" and the webhook path
 	// is still available as fallback.
-	imbridgeStreamSupervisor := managerbizimbridge.NewStreamSupervisor(imbridgeRepo, imbridgeSvc, log)
+	imbridgeStreamSupervisor := managerbizimbridge.NewStreamSupervisor(imbridgeRepo, imbridgeSvc, imbridgeStreamHealth, log)
 	// Register long-connection providers. All connections dial out, so
 	// operators do not need to expose public webhook endpoints.
 	imbridgeStreamSupervisor.RegisterFactory("feishu", managerbizimbridgefeishu.NewStreamFactory(log))

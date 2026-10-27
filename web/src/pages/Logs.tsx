@@ -1,6 +1,7 @@
 import { TimeRangePicker } from '@/components/ui/TimeRangePicker';
 import { FilterField } from '@/components/ui/FilterField';
-import { Input, Label } from '@/components/ui';
+import { Button, Hint, Input, Label, EmptyStateCard } from '@/components/ui';
+import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from '@/components/ui/Popover';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { Select } from '@/components/ui/Select';
@@ -11,6 +12,7 @@ import {
   BarChart3,
   Braces,
   ChevronDown,
+  Copy,
   Download,
   FileSearch,
   ListFilter,
@@ -55,7 +57,7 @@ import { ApiError } from '@/api/client';
 import { listEdges, type Edge, type EdgeRole } from '@/api/edges';
 import { listNodes, type TopologyNode } from '@/api/topology';
 import { onDevicesChanged } from '@/lib/events';
-import { Button, RoleSelect } from '@/components/ui';
+import { RoleSelect } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { chartTooltipItemStyle, chartTooltipLabelStyle, chartTooltipStyle } from '@/lib/chartTheme';
 import { useI18n } from '@/i18n/locale';
@@ -124,7 +126,7 @@ const DISPLAY_FIELD_LABELS: Record<string, { zh: string; en: string }> = {
   span_id: { zh: 'Span ID', en: 'Span ID' },
 };
 
-const DEFAULT_VISIBLE_FIELDS: DisplayField[] = ['level', 'cluster_id', 'device_id', 'pod', 'source_id'];
+const DEFAULT_VISIBLE_FIELDS: DisplayField[] = ['level', 'cluster_id', 'device_id', 'pod', 'file', 'source_id'];
 const NO_SELECTED_DEVICE_IDS: number[] = [];
 
 function buildDisplayFields(fields: LogField[], records: LogRecord[]): DisplayFieldOption[] {
@@ -265,7 +267,7 @@ function displayFieldValue(
     case 'source_id':
       return scopeValue(record, 'source_id');
     case 'file':
-      return scopeValue(record, 'file');
+      return scopeValue(record, 'file', 'filename', 'log.file.path', 'log_file_path');
     case 'unit':
       return scopeValue(record, 'unit');
     case 'trace_id':
@@ -989,11 +991,11 @@ export default function LogsPage() {
           {error && <div className="m-3 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300"><AlertTriangle size={13} className="mt-0.5 shrink-0" /><span>{error}</span></div>}
           {loading && records.length === 0 && <div className="flex h-40 items-center justify-center text-xs text-zinc-500"><Loader2 size={16} className="mr-2 animate-spin" />{tr('正在检索日志…', 'Searching logs…')}</div>}
           {!loading && !error && records.length === 0 && (
-            <div className="flex h-56 flex-col items-center justify-center text-center">
-              <FileSearch size={30} className="mb-3 text-zinc-700" />
-              <p className="text-sm text-zinc-300">{tr('该时间窗内没有匹配日志', 'No matching logs in this time range')}</p>
-              <p className="mt-1 max-w-lg text-xs text-zinc-600">{tr('可以扩大时间窗、减少筛选条件，或检查 Edge 日志采集配置。', 'Try a wider time range, fewer filters, or check Edge log collection settings.')}</p>
-            </div>
+            <EmptyStateCard className="m-4" icon={FileSearch}
+              title={tr('该时间窗内没有匹配日志', 'No matching logs in this time range')}
+              action={(committedQuery || committedExclude) && <Button onClick={() => { setQuery(''); setCommittedQuery(''); setExclude(''); setCommittedExclude(''); }}>{tr('清除关键词', 'Clear keywords')}</Button>}
+              hint={tr('可以扩大时间窗、减少筛选条件，或检查 Edge 日志采集配置。', 'Try a wider time range, fewer filters, or check Edge log collection settings.')}
+            />
           )}
           {viewMode === 'raw' ? (
             <div role="list" className={cn('divide-y divide-zinc-800/40 font-mono text-[11px] leading-snug', !wrapLines && 'overflow-x-auto')}>
@@ -1080,7 +1082,9 @@ function LogRow({ index, record, visibleFields, deviceLabels, clusterLabels, wra
       <span className="pt-px text-right tabular-nums text-zinc-700">{index}</span>
       <span className="flex items-start gap-2 whitespace-nowrap tabular-nums text-zinc-600"><span className={cn('mt-1 h-1.5 w-1.5 shrink-0 rounded-full', color)} />{formatLogDateTime(timestamp)}</span>
       <span className={cn('text-zinc-200', wrap ? 'min-w-0 whitespace-pre-wrap break-words' : 'whitespace-nowrap pr-4')}>
-        {fieldValues.map((item) => <Tag key={item.field} label={DISPLAY_FIELD_LABELS[item.field]?.zh ?? item.field} value={item.value} tone={item.field === 'level' ? level : ''} />)}
+        {fieldValues.map((item) => item.field === 'file'
+          ? <LogFile key={item.field} path={item.value} tagged />
+          : <Tag key={item.field} label={DISPLAY_FIELD_LABELS[item.field]?.zh ?? item.field} value={item.value} tone={item.field === 'level' ? level : ''} />)}
         <RecordTraceLink record={record} /><span>{record.message}</span>
       </span>
     </div>
@@ -1104,7 +1108,10 @@ function LogTable({ records, visibleFields, deviceLabels, clusterLabels, wrap, d
             <tr key={recordKey(record)} className="cursor-text select-text text-zinc-400 hover:bg-zinc-900/60">
               <td className={cn('px-3 text-right text-zinc-700', dense ? 'py-1' : 'py-2')}>{index + 1}</td>
               <td className={cn('whitespace-nowrap px-3 tabular-nums text-zinc-600', dense ? 'py-1' : 'py-2')}>{formatLogDateTime(new Date(record.timestamp))}</td>
-              {visibleFields.map((field) => <td key={field} className={cn('px-3', dense ? 'py-1' : 'py-2', wrap ? 'max-w-48 break-words' : 'whitespace-nowrap')}>{displayFieldValue(record, field, deviceLabels, clusterLabels) || '—'}</td>)}
+              {visibleFields.map((field) => {
+                const value = displayFieldValue(record, field, deviceLabels, clusterLabels);
+                return <td key={field} className={cn('px-3', dense ? 'py-1' : 'py-2', wrap ? 'max-w-48 break-words' : 'whitespace-nowrap')}>{field === 'file' && value ? <LogFile path={value} /> : value || '—'}</td>;
+              })}
               <td className={cn('px-3 text-zinc-200', dense ? 'py-1' : 'py-2', wrap ? 'whitespace-pre-wrap break-words' : 'whitespace-nowrap')}><RecordTraceLink record={record} />{record.message}</td>
             </tr>
           ))}
@@ -1114,9 +1121,41 @@ function LogTable({ records, visibleFields, deviceLabels, clusterLabels, wrap, d
   );
 }
 
-function Tag({ label, value, tone = '' }: { label: string; value: string; tone?: string }) {
+function LogFile({ path, tagged = false }: { path: string; tagged?: boolean }) {
+  const { tr } = useI18n();
+  const [copyState, setCopyState] = useState<'idle' | 'copying' | 'copied' | 'failed'>('idle');
+  const filename = path.split(/[/\\]/).pop() || path;
+  const value = <span className="min-w-0 whitespace-normal break-all">{filename}</span>;
+  const copyPath = async () => {
+    setCopyState('copying');
+    try {
+      await navigator.clipboard.writeText(path);
+      setCopyState('copied');
+    } catch {
+      setCopyState('failed');
+    }
+  };
+  return (
+    <Popover onOpenChange={() => setCopyState('idle')}>
+      <Hint content={<span className="whitespace-pre-wrap break-all font-mono">{path}</span>}>
+        <PopoverTrigger aria-label={tr(`查看完整文件路径：${path}`, `View full file path: ${path}`)} className="max-w-full rounded text-left align-baseline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
+          {tagged ? <Tag label={tr('文件', 'File')} value={value} className="max-w-full items-baseline" /> : value}
+        </PopoverTrigger>
+      </Hint>
+      <PopoverContent className="w-96 max-w-[calc(100vw-1rem)]">
+        <PopoverTitle className="text-sm font-medium">{tr('完整文件路径', 'Full file path')}</PopoverTitle>
+        <code className="mt-2 block max-h-48 select-text overflow-y-auto whitespace-pre-wrap break-all text-xs">{path}</code>
+        <Button variant="outline" size="sm" className="mt-3" disabled={copyState === 'copying'} onClick={() => void copyPath()}><Copy size={12} aria-hidden="true" />{tr('复制完整路径', 'Copy full path')}</Button>
+        {copyState === 'copied' && <p role="status" className="mt-2 text-xs text-text-muted">{tr('已复制', 'Copied')}</p>}
+        {copyState === 'failed' && <p role="alert" className="mt-2 text-xs text-red-500">{tr('复制失败，请选中上方路径手动复制。', 'Copy failed. Select the path above to copy it manually.')}</p>}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function Tag({ label, value, tone = '', className }: { label: string; value: React.ReactNode; tone?: string; className?: string }) {
   const semantic = /fatal|error|critical|panic/.test(tone) ? 'border-red-500/30 bg-red-500/10 text-red-400' : /warn/.test(tone) ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' : 'border-zinc-800 bg-zinc-900 text-zinc-500';
-  return <span className={cn('mr-1 inline-flex rounded border px-1 py-px align-baseline text-[9px]', semantic)}><span className="mr-0.5 opacity-60">{label}:</span>{value}</span>;
+  return <span className={cn('mr-1 inline-flex rounded border px-1 py-px align-baseline text-[9px]', semantic, className)}><span className="mr-0.5 shrink-0 opacity-60">{label}:</span>{value}</span>;
 }
 
 function RecordTraceLink({ record }: { record: LogRecord }) {

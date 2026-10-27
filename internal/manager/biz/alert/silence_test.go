@@ -49,6 +49,68 @@ func TestSilenceIncidentBoundsLongUnicodeName(t *testing.T) {
 	}
 }
 
+func TestSilenceIncidentOnlyMutesSilencedDeviceAndRule(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	device := func(id uint64) *uint64 { return &id }
+
+	cases := []struct {
+		name     string
+		silenced FiringInput
+		others   []FiringInput
+	}{
+		{
+			name:     "host",
+			silenced: FiringInput{ScopeType: model.RuleScopeHost, DeviceID: device(5), Rule: "cpu_high", Severity: "warning"},
+			others: []FiringInput{
+				{ScopeType: model.RuleScopeHost, DeviceID: device(9), Rule: "disk_full", Severity: "critical"},
+				{ScopeType: model.RuleScopeHost, DeviceID: device(9), Rule: "cpu_high", Severity: "warning"},
+				{ScopeType: model.RuleScopeHost, DeviceID: device(5), Rule: "disk_full", Severity: "critical"},
+			},
+		},
+		{
+			name:     "global",
+			silenced: FiringInput{ScopeType: model.RuleScopeGlobal, Rule: "cpu_high", Severity: "warning"},
+			others: []FiringInput{
+				{ScopeType: model.RuleScopeGlobal, Rule: "disk_full", Severity: "critical"},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newFakeRepo()
+			uc := NewUsecase(repo, nil)
+			uc.clock = silenceTestClock{now: now}
+
+			first, err := uc.RecordFiring(ctx, tc.silenced)
+			if err != nil {
+				t.Fatalf("RecordFiring(silenced): %v", err)
+			}
+			if err := uc.SilenceIncident(ctx, first.Incident.ID, 7, "1h", "maintenance"); err != nil {
+				t.Fatalf("SilenceIncident() error = %v", err)
+			}
+
+			for i, in := range tc.others {
+				res, err := uc.RecordFiring(ctx, in)
+				if err != nil {
+					t.Fatalf("RecordFiring(others[%d]): %v", i, err)
+				}
+				if res.Silenced {
+					t.Fatalf("others[%d] (rule %q) was muted by the silence on rule %q", i, in.Rule, tc.silenced.Rule)
+				}
+			}
+
+			again, err := uc.RecordFiring(ctx, tc.silenced)
+			if err != nil {
+				t.Fatalf("RecordFiring(silenced again): %v", err)
+			}
+			if !again.Silenced || again.SilencedBy == nil {
+				t.Fatalf("re-firing of the silenced incident: silenced=%v by=%v, want silenced by the new silence row", again.Silenced, again.SilencedBy)
+			}
+		})
+	}
+}
+
 func TestBuildSilenceNameFallsBackToRuleIdentity(t *testing.T) {
 	incident := &model.Incident{RuleName: "  CPU high  ", Rule: "cpu_high"}
 	if got := buildSilenceName(incident); got != "CPU high" {

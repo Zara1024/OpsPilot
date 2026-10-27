@@ -345,7 +345,11 @@ func (t *BashTool) InvokableRun(ctx context.Context, argsJSON string, opts ...ba
 	defer cancel()
 
 	results := runBatch(batchCtx, in.DeviceIDs, func(ctx context.Context, id uint64) BashResultEntry {
-		return t.singleBash(ctx, id, in.Cmd, in.TimeoutSeconds, hostWriteAllowed)
+		// 写动作开关只决定"能不能生成提案"，不改变下发模式。走到这里说明
+		// 分类器判定为读命令，一旦漏判，也必须以只读模式交给 Edge 的
+		// cmdpolicy，由它 fail closed。只有审批通过后执行的 RunApproved
+		// 才允许 Unrestricted。
+		return t.singleBash(ctx, id, in.Cmd, in.TimeoutSeconds, false)
 	})
 	return marshalBashEnvelope(in.Cmd, results)
 }
@@ -366,16 +370,116 @@ func marshalBashEnvelope(cmd string, results []BashResultEntry) (string, error) 
 	return string(out), nil
 }
 
+// isHostBashWriteCommand 判定一条命令是否可能改动作主机。它只做保守分流：
+// 判成写就走提案确认，判成读也只是以只读模式下发，最终仍由 Edge 的 cmdpolicy
+// 决定。因此这里宁可多报，不可漏报。
 func isHostBashWriteCommand(cmd string) bool {
-	fields := strings.Fields(strings.TrimSpace(cmd))
+	segments, risky := splitHostShellCommands(cmd)
+	if risky {
+		return true
+	}
+	for _, segment := range segments {
+		if hostSegmentIsWrite(segment) {
+			return true
+		}
+	}
+	return false
+}
+
+// splitHostShellCommands 按 shell 分隔符把命令切成多个简单命令段，并报告是否
+// 出现 Edge 侧无法执行的语法。risky 的判据取自 internal/edgeagent/cmdpolicy 的
+// 解析器：它只接受简单命令与裸管道，其余一律拒绝，所以这些语法必须走审批，
+// 不能以只读模式下发后被 Edge 拒掉（那会让原本能执行的命令直接失效）。
+// 被标为 risky 的有：输出/输入重定向、命令替换 $() 与反引号、参数展开 ${}、
+// 子 shell 与进程替换的括号、命令列表符 ; 与 && 与 ||、后台执行 &，以及换行
+// （Edge 把换行当空白，会把两条命令粘成一条 argv）。引号内的分隔符不算语法：
+// 单引号内是字面量；双引号内的 $( )、${ } 与反引号仍会执行，所以按风险处理。
+// 裸 | 是唯一双方都支持的复合语法，继续只切段不判写。
+func splitHostShellCommands(cmd string) ([]string, bool) {
+	var segments []string
+	var buf []rune
+	risky := false
+	flush := func() {
+		if s := strings.TrimSpace(string(buf)); s != "" {
+			segments = append(segments, s)
+		}
+		buf = buf[:0]
+	}
+	runes := []rune(cmd)
+	inSingle, inDouble := false, false
+	for i := 0; i < len(runes); i++ {
+		c := runes[i]
+		if inSingle {
+			if c == '\'' {
+				inSingle = false
+			}
+			continue
+		}
+		if c == '\\' && i+1 < len(runes) {
+			buf = append(buf, runes[i+1])
+			i++
+			continue
+		}
+		// 命令替换与参数展开在双引号内同样会执行或被 Edge 拒绝。
+		if c == '`' || (c == '$' && i+1 < len(runes) && (runes[i+1] == '(' || runes[i+1] == '{')) {
+			risky = true
+		}
+		if inDouble {
+			if c == '"' {
+				inDouble = false
+			}
+			buf = append(buf, c)
+			continue
+		}
+		switch c {
+		case '\'':
+			inSingle = true
+		case '"':
+			inDouble = true
+		case ';', '\n':
+			// 命令列表符 ; 与换行：前者被 Edge 判为 forbidden，后者被当成空白把两条
+			// 命令粘成一条 argv。两者都不能按只读段逐段判断。
+			risky = true
+			flush()
+		case '|':
+			// || 是逻辑或，被 Edge 拒绝；裸 | 是双方都支持的管道，只切段不判写。
+			if i+1 < len(runes) && runes[i+1] == '|' {
+				i++
+				risky = true
+			}
+			flush()
+		case '&':
+			// && 与后台 & 都被 Edge 拒绝，吃掉 && 的第二个字符避免多切一个空段。
+			if i+1 < len(runes) && runes[i+1] == '&' {
+				i++
+			}
+			risky = true
+			flush()
+		case '>', '<':
+			// 输出重定向必然改文件；输入重定向同样被 Edge 一律拒绝。
+			risky = true
+			flush()
+		case '(', ')':
+			// 子 shell / 进程替换：Edge 的解析器直接拒绝，留在段里供诊断。
+			risky = true
+			buf = append(buf, c)
+		default:
+			buf = append(buf, c)
+		}
+	}
+	flush()
+	return segments, risky
+}
+
+// hostSegmentIsWrite 对一个简单命令段做原来的首命令判断。
+func hostSegmentIsWrite(segment string) bool {
+	fields := dropHostEnvAssignments(strings.Fields(segment))
+	fields = dropHostSudo(fields)
 	if len(fields) == 0 {
 		return false
 	}
 	writeBins := []string{"rm", "mv", "cp", "chmod", "chown", "dd", "truncate", "tee", "mkdir", "rmdir", "touch", "ln"}
 	first := fields[0]
-	if first == "sudo" && len(fields) > 1 {
-		first = fields[1]
-	}
 	if slash := strings.LastIndex(first, "/"); slash >= 0 {
 		first = first[slash+1:]
 	}
@@ -394,6 +498,58 @@ func isHostBashWriteCommand(cmd string) bool {
 		}
 	}
 	return false
+}
+
+// dropHostEnvAssignments 去掉前导的 NAME=value。`LC_ALL=C rm -f x` 的首词是
+// 赋值而不是命令名，不剥掉就会把写命令漏判成读命令。
+func dropHostEnvAssignments(fields []string) []string {
+	for len(fields) > 0 && isHostEnvAssignment(fields[0]) {
+		fields = fields[1:]
+	}
+	return fields
+}
+
+func isHostEnvAssignment(token string) bool {
+	i := strings.Index(token, "=")
+	if i <= 0 {
+		return false
+	}
+	for j, r := range token[:i] {
+		switch {
+		case r == '_':
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+			if j == 0 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// dropHostSudo 跳过 sudo 自身、它的前导选项以及带值选项的参数。只取 fields[1]
+// 的话 `sudo -u nginx rm -f x` 会把 -u 当成命令名而漏判。
+func dropHostSudo(fields []string) []string {
+	if len(fields) == 0 || fields[0] != "sudo" {
+		return fields
+	}
+	fields = fields[1:]
+	for len(fields) > 0 && len(fields[0]) > 1 && strings.HasPrefix(fields[0], "-") && fields[0] != "--" {
+		switch fields[0] {
+		case "-u", "-g", "-C", "-D", "-p", "-r", "-t":
+			fields = fields[1:]
+			if len(fields) == 0 {
+				return fields
+			}
+		}
+		fields = fields[1:]
+	}
+	if len(fields) > 0 && fields[0] == "--" {
+		fields = fields[1:]
+	}
+	return fields
 }
 
 func isDockerWriteCommand(args []string) bool {

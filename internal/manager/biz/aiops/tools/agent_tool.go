@@ -101,9 +101,11 @@ type SubagentRegistry interface {
 // SOTA models have learned that name; switching to a snake_case label
 // would degrade tool selection quality. for details.
 type AgentTool struct {
-	spawner  WorkerSpawner
-	registry SubagentRegistry
-	log      *slog.Logger
+	spawner     WorkerSpawner
+	registry    SubagentRegistry
+	log         *slog.Logger
+	dedupeMu    sync.Mutex
+	dedupeOrder uint64
 	// dedupe stores recent SpawnWorker results keyed by
 	// sha256(subagent_type + "|" + prompt). When a coordinator
 	// re-dispatches with the same prompt within dedupeTTL we return
@@ -112,12 +114,13 @@ type AgentTool struct {
 	// coordinator models fall into — see E2E eval D1 (5 redundant
 	// AgentTool calls to specialist-compute with near-identical
 	// briefs).
-	dedupe sync.Map // map[string]*dedupeEntry
+	dedupe sync.Map // map[string]*dedupeEntry; writes and eviction hold dedupeMu
 }
 
 type dedupeEntry struct {
 	result *agentToolResult
 	expiry time.Time
+	order  uint64
 }
 
 // dedupeTTL is how long a cached SpawnWorker result remains valid for
@@ -127,6 +130,39 @@ type dedupeEntry struct {
 // want it longer than a typical chat turn or we risk stale results
 // when the user follows up with a similar question.
 const dedupeTTL = 90 * time.Second
+
+// A bounded cache limits results retained across long-lived chat sessions.
+const dedupeMaxEntries = 512
+
+func (t *AgentTool) storeDedupeResult(key string, result agentToolResult) {
+	t.dedupeMu.Lock()
+	defer t.dedupeMu.Unlock()
+	now := time.Now()
+
+	count := 0
+	var oldestKey any
+	var oldestExpiry time.Time
+	var oldestOrder uint64
+	t.dedupe.Range(func(k, value any) bool {
+		entry, ok := value.(*dedupeEntry)
+		if !ok || entry == nil || !now.Before(entry.expiry) {
+			t.dedupe.Delete(k)
+			return true
+		}
+		count++
+		if oldestKey == nil || entry.expiry.Before(oldestExpiry) || (entry.expiry.Equal(oldestExpiry) && entry.order < oldestOrder) {
+			oldestKey = k
+			oldestExpiry = entry.expiry
+			oldestOrder = entry.order
+		}
+		return true
+	})
+	if _, exists := t.dedupe.Load(key); !exists && count >= dedupeMaxEntries {
+		t.dedupe.Delete(oldestKey)
+	}
+	t.dedupeOrder++
+	t.dedupe.Store(key, &dedupeEntry{result: &result, expiry: now.Add(dedupeTTL), order: t.dedupeOrder})
+}
 
 // NewAgentTool builds the tool. spawner MUST be non-nil — the tool is
 // useless without a runtime to delegate to. registry MAY be nil; when
@@ -307,7 +343,7 @@ func (t *AgentTool) InvokableRun(ctx context.Context, argsJSON string, opts ...b
 	// "你已经派过" hint while a fresh call gets the regular hint.
 	storeRes := res
 	storeRes.Hint = ""
-	t.dedupe.Store(dKey, &dedupeEntry{result: &storeRes, expiry: now.Add(dedupeTTL)})
+	t.storeDedupeResult(dKey, storeRes)
 	body, err := json.Marshal(res)
 	if err != nil {
 		return "", fmt.Errorf("AgentTool: marshal: %w", err)

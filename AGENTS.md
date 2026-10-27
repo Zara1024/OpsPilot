@@ -60,7 +60,9 @@
 
 - **规范优先**：[前端设计语言与开发规范](docs/design/frontend-design-language.md) 是公共设计规则的集中维护入口，组件 API 以 `web/src/components/ui/` 实现为准。未写明的布局参考设备、日志、监控等成熟页面的对应区域；历史页面的不一致不能作为新规范。新增或修改的 UI 必须融入现有控制台，不另建一套风格。
 - **统一组件体系**：沿用仓库已有的 **shadcn/ui 风格与派生组件实现**，复杂交互基于 **Base UI**，统一封装在 `web/src/components/ui/`。页面复用这些组件，保留 OpsPilot 的 Tailwind 3、主题变量和组件 API；新增控件先检查已有实现，缺失时在公共层按同一体系补齐，不在业务页面另写一套。
-- **页面骨架**：复用 `PageHeader` / `Card` / `EmptyState` / `PaginationFooter`；统一页头、操作区、筛选栏、列表及分页。相关信息优先一个 `Card` 加 `divide-y`，不为每行重复套卡片。长文本使用 `min-w-0`，窄屏允许操作换行，密集表格只在容器内横向滚动。
+- **页面骨架**：复用 `PageHeader` / `Card` / `EmptyState` / `EmptyStateCard` / `PaginationFooter`；统一页头、操作区、筛选栏、列表及分页。相关信息优先一个 `Card` 加 `divide-y`，不为每行重复套卡片。长文本使用 `min-w-0`，窄屏允许操作换行，密集表格只在容器内横向滚动。
+- **空状态与操作**：独立列表空状态使用 `EmptyStateCard`，已有卡片/表格内使用 `EmptyState`，不重复套卡片。首次无数据且有权限时提供一个创建/接入主按钮；筛选无结果提供可用的清除筛选；系统生成数据与无权限场景按[空状态决策表](docs/design/frontend-design-language.md#何时显示按钮)给出下一步，不为凑齐样式放无效按钮。外观一致不代表每张卡片都必须有按钮。
+- **局部调整隔离**：局部 UI 调整只影响授权区域；导航、会话列表和资源页的调整不能顺带改变首页欢迎语、输入框、建议卡片或对话正文的字号、对齐与间距。遵守设计规范中的专用布局，不能把密集表格字号套到对话区。
 - **表单与筛选**：从 `@/components/ui` 复用 `Input` / `Textarea` / `Select` / `Checkbox` / `Switch` / `Radio` / `Slider`。表单用 `Label` 关联字段，横向筛选用 `FilterField`，列表搜索用 `Input type="search"`；不手写另一套输入框、下拉框或开关。
 - **尺寸与按钮**：常规控件沿用默认 36px，密集行内操作用 `Button size="sm"`（28px），独立图标操作用 `size="icon"`。主要操作用 `primary`，次要操作用 `outline` / `ghost`，危险操作用 `danger` / `dangerGhost`；不通过局部 `h-*`、`py-*`、字号和圆角拼出第三套常规尺寸。
 - **弹层与导航**：复用 `Modal` / `Dialog` / `DropdownMenu` / `Hint` / `Popover` / `Tabs`，确认和输入请求用 `useDialogs`。弹窗使用预设尺寸，长内容在正文区滚动；不重写浮层定位、Escape、焦点管理或使用浏览器原生弹窗替代公共交互。监控类时间筛选复用 `TimeRangePicker`。

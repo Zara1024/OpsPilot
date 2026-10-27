@@ -59,8 +59,9 @@ func TestK8sHostCapabilitiesSurviveJVMAttach(t *testing.T) {
 	case "attach":
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
+		lastCapability := linuxLastCapability()
 		uid, gid := syscall.Geteuid(), syscall.Getegid()
-		assertK8sAttachCapabilities(t, "after exec")
+		assertK8sAttachCapabilities(t, "after exec", lastCapability)
 		for _, target := range []int{0, 1000, 65532, 0} {
 			if err := syscall.Setegid(target); err != nil {
 				t.Fatal(err)
@@ -68,13 +69,13 @@ func TestK8sHostCapabilitiesSurviveJVMAttach(t *testing.T) {
 			if err := syscall.Seteuid(target); err != nil {
 				t.Fatal(err)
 			}
-			assertK8sAttachCapabilities(t, fmt.Sprintf("during attach to uid %d", target))
+			assertK8sAttachCapabilities(t, fmt.Sprintf("during attach to uid %d", target), lastCapability)
 			// JVM attach uses Go's process-wide Seteuid. Other collection threads
 			// must also retain their capabilities while attach is in progress.
 			t.Run("concurrent collector", func(t *testing.T) {
 				runtime.LockOSThread()
 				defer runtime.UnlockOSThread()
-				assertK8sAttachCapabilities(t, "concurrent collection thread")
+				assertK8sAttachCapabilities(t, "concurrent collection thread", lastCapability)
 			})
 			if err := syscall.Seteuid(uid); err != nil {
 				t.Fatal(err)
@@ -82,14 +83,14 @@ func TestK8sHostCapabilitiesSurviveJVMAttach(t *testing.T) {
 			if err := syscall.Setegid(gid); err != nil {
 				t.Fatal(err)
 			}
-			assertK8sAttachCapabilities(t, "after restoring identity")
+			assertK8sAttachCapabilities(t, "after restoring identity", lastCapability)
 		}
 	default:
 		t.Fatal("unknown helper phase")
 	}
 }
 
-func assertK8sAttachCapabilities(t *testing.T, phase string) {
+func assertK8sAttachCapabilities(t *testing.T, phase string, lastCapability int) {
 	t.Helper()
 	var data [2]unix.CapUserData
 	header := unix.CapUserHeader{Version: unix.LINUX_CAPABILITY_VERSION_3}
@@ -98,6 +99,9 @@ func assertK8sAttachCapabilities(t *testing.T, phase string) {
 	}
 	var want [2]uint32
 	for _, capability := range k8sHostCapabilities {
+		if capability > lastCapability {
+			continue
+		}
 		want[capability/32] |= uint32(1) << uint(capability%32)
 		if value, err := unix.PrctlRetInt(unix.PR_CAP_AMBIENT, unix.PR_CAP_AMBIENT_IS_SET, uintptr(capability), 0, 0); err != nil || value != 1 {
 			t.Fatalf("%s: ambient capability %d lost: %d, %v", phase, capability, value, err)

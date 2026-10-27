@@ -22,6 +22,31 @@ type RunContext struct {
 	Vars map[string]any
 }
 
+// snapshot copies the context for an executor running outside the engine
+// lock. Shallow is enough: the engine only adds or replaces top-level
+// entries and never mutates a stored value; Trigger is never written.
+func (c *RunContext) snapshot() *RunContext {
+	if c == nil {
+		return nil
+	}
+	return &RunContext{
+		Trigger: c.Trigger,
+		Nodes:   cloneMap(c.Nodes),
+		Vars:    cloneMap(c.Vars),
+	}
+}
+
+func cloneMap(m map[string]any) map[string]any {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
 var tmplRe = regexp.MustCompile(`\{\{\s*([^{}]+?)\s*\}\}`)
 
 // ResolveString substitutes every {{path}} in s. A template that is the
