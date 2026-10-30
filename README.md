@@ -243,11 +243,3 @@ AGPLv3 — 见 [LICENSE](LICENSE)。
 
 OpsPilot 名称、Logo、域名和相关品牌资产不随 AGPLv3 授权，见
 [TRADEMARK.md](TRADEMARK.md)。
-
-## 加入群组
-
-<p align="center">
-  <img src="docs/assets/community/wechat-group-qr.jpg" alt="OpsPilot 微信交流群" width="220" />
-</p>
-
-扫码加入 OpsPilot 开发者社区，交流部署、AIOps 场景、工作流和插件扩展。
