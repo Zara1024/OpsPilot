@@ -215,18 +215,6 @@ sudo docker compose restart nginx
 
 高风险动作先进入审批和策略边界，避免 Agent 直接修改生产系统。
 
-## 文档
-
-完整产品文档见 [opspilot.cloud](https://opspilot.cloud/docs/get-started/introduction)。
-
-| 领域 | 从这里开始 |
-|---|---|
-| **快速开始** | [介绍](https://opspilot.cloud/docs/get-started/introduction) · [Quickstart](https://opspilot.cloud/docs/get-started/quickstart) · [架构](https://opspilot.cloud/docs/get-started/architecture) · [概念](https://opspilot.cloud/docs/get-started/concepts) |
-| **安装与运维** | [服务端安装](https://opspilot.cloud/docs/install/server) · [边缘安装](https://opspilot.cloud/docs/install/edge) · [首次启动](https://opspilot.cloud/docs/install/first-boot) · [升级](https://opspilot.cloud/docs/install/upgrade) |
-| **能力** | [告警](https://opspilot.cloud/docs/capabilities/alerts) · [RCA](https://opspilot.cloud/docs/capabilities/rca) · [监控](https://opspilot.cloud/docs/capabilities/monitoring) · [日志](https://opspilot.cloud/docs/capabilities/logs) · [链路](https://opspilot.cloud/docs/capabilities/traces) · [知识库](https://opspilot.cloud/docs/capabilities/knowledge) · [技能](https://opspilot.cloud/docs/capabilities/skills) |
-| **Agent** | [概览](https://opspilot.cloud/docs/agents/overview) · [Coordinator](https://opspilot.cloud/docs/agents/coordinator) · [Incident investigator](https://opspilot.cloud/docs/agents/incident-investigator) · [Specialists](https://opspilot.cloud/docs/agents/specialists) · [Reviewer](https://opspilot.cloud/docs/agents/reviewer) |
-| **参考** | [API](https://opspilot.cloud/docs/reference/api) · [CLI](https://opspilot.cloud/docs/reference/cli) · [告警规则](https://opspilot.cloud/docs/reference/alert-rules) · [Skill manifest](https://opspilot.cloud/docs/reference/skill-manifest) · [Data plane](https://opspilot.cloud/docs/reference/data-plane) |
-
 ## 集成
 
 即插即用，对接团队现有的可观测、IM 通道与模型栈。
