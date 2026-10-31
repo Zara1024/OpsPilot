@@ -1,24 +1,34 @@
-﻿package main
+package main
 
 import (
 	"fmt"
-
-	"github.com/go-chi/chi/v5"
 	"log/slog"
 	"net/url"
 	"strings"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/prometheus/client_golang/prometheus"
+	"gorm.io/gorm"
 
 	tokenbiz "github.com/Zara1024/OpsPilot/internal/iam/biz/integrationtoken"
 	tokendata "github.com/Zara1024/OpsPilot/internal/iam/data/integrationtoken"
 	userdata "github.com/Zara1024/OpsPilot/internal/iam/data/user/sqlite"
 	iamserver "github.com/Zara1024/OpsPilot/internal/iam/server"
-	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/tools"
+	aiopstools "github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/tools"
+	managerbizapproval "github.com/Zara1024/OpsPilot/internal/manager/biz/approval"
+	managerauditbiz "github.com/Zara1024/OpsPilot/internal/manager/biz/audit"
+	managerbizdevice "github.com/Zara1024/OpsPilot/internal/manager/biz/device"
+	managerbizedge "github.com/Zara1024/OpsPilot/internal/manager/biz/edge"
 	biz "github.com/Zara1024/OpsPilot/internal/manager/biz/externalmcp"
+	managerbizmonitor "github.com/Zara1024/OpsPilot/internal/manager/biz/monitor"
 	data "github.com/Zara1024/OpsPilot/internal/manager/data/externalmcp"
+	managerserverapproval "github.com/Zara1024/OpsPilot/internal/manager/server/approval"
 	server "github.com/Zara1024/OpsPilot/internal/manager/server/externalmcp"
+	managersvcalert "github.com/Zara1024/OpsPilot/internal/manager/service/alert"
 	service "github.com/Zara1024/OpsPilot/internal/manager/service/externalmcp"
+	managersvcfb "github.com/Zara1024/OpsPilot/internal/manager/service/frontierbound"
+	managersvck8s "github.com/Zara1024/OpsPilot/internal/manager/service/k8s"
 	"github.com/Zara1024/OpsPilot/internal/pkg/config"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 type externalMCPModule struct {
@@ -27,8 +37,23 @@ type externalMCPModule struct {
 	engine  *biz.Engine
 }
 
-func bootstrapExternalMCP(cfg *config.Config, log *slog.Logger, reg *prometheus.Registry, storage *storageModule, settings *settingsModule, devices *devicesModule, tunnel *tunnelModule, aiops *aiopsModule, extensions *extensionsModule) (*externalMCPModule, error) {
-	auth := tokenbiz.New(tokendata.New(storage.db), userdata.NewRepo(storage.db), settings.auditUC)
+func bootstrapExternalMCP(
+	cfg *config.Config,
+	log *slog.Logger,
+	reg *prometheus.Registry,
+	db *gorm.DB,
+	auditUC *managerauditbiz.Usecase,
+	deviceUC *managerbizdevice.Usecase,
+	edgeUC *managerbizedge.Usecase,
+	k8sSvc *managersvck8s.Service,
+	alertSvc *managersvcalert.Service,
+	monitorSvc *managerbizmonitor.Service,
+	fbClient *managersvcfb.Client,
+	toolsReg *aiopstools.Registry,
+	approvalUC *managerbizapproval.Usecase,
+	approvalHandler *managerserverapproval.Handler,
+) (*externalMCPModule, error) {
+	auth := tokenbiz.New(tokendata.New(db), userdata.NewRepo(db), auditUC)
 	baseURL := strings.TrimRight(cfg.PublicURL, "/")
 	m := &externalMCPModule{tokens: iamserver.NewTokenHandler(auth, cfg.ExternalMCP.Enabled, cfg.ExternalMCP.WritesEnabled, baseURL+"/api/v1/integrations/mcp")}
 	if !cfg.ExternalMCP.Enabled {
@@ -44,9 +69,9 @@ func bootstrapExternalMCP(cfg *config.Config, log *slog.Logger, reg *prometheus.
 			return nil, fmt.Errorf("invalid external MCP origin")
 		}
 	}
-	store := data.New(storage.db)
-	engine := &biz.Engine{Auth: auth, Audit: settings.auditUC, Store: store, Approvals: extensions.approvalUC, WritesEnabled: cfg.ExternalMCP.WritesEnabled, BaseURL: baseURL, Log: log.With("component", "external-mcp")}
-	baseTools := aiops.toolsReg.BuildBaseTools().AllTools()
+	store := data.New(db)
+	engine := &biz.Engine{Auth: auth, Audit: auditUC, Store: store, Approvals: approvalUC, WritesEnabled: cfg.ExternalMCP.WritesEnabled, BaseURL: baseURL, Log: log.With("component", "external-mcp")}
+	baseTools := toolsReg.BuildBaseTools().AllTools()
 	catalog, err := service.QueryTools(baseTools)
 	if err != nil {
 		return nil, err
@@ -56,10 +81,10 @@ func bootstrapExternalMCP(cfg *config.Config, log *slog.Logger, reg *prometheus.
 		return nil, err
 	}
 	catalog = append(catalog, builtinWrites...)
-	resources := service.Resources{Devices: devices.deviceUC, Alerts: aiops.alertSvc, Monitor: settings.monitorSvc}
+	resources := service.Resources{Devices: deviceUC, Alerts: alertSvc, Monitor: monitorSvc}
 	catalog = append(catalog, resources.Tools()...)
 	if !cfg.FrontierClient.Disabled {
-		actions, err := service.ActionTools(tools.NewRestartServiceTool(tunnel.fbClient, devices.edgeUC, devices.deviceUC, log), tools.NewPersistentK8sActionTool(tunnel.fbClient, devices.k8sSvc, log, store))
+		actions, err := service.ActionTools(aiopstools.NewRestartServiceTool(fbClient, edgeUC, deviceUC, log), aiopstools.NewPersistentK8sActionTool(fbClient, k8sSvc, log, store))
 		if err != nil {
 			return nil, err
 		}
@@ -70,8 +95,8 @@ func bootstrapExternalMCP(cfg *config.Config, log *slog.Logger, reg *prometheus.
 	if err != nil {
 		return nil, err
 	}
-	extensions.approvalUC.RegisterExecutor(biz.ApprovalKind, engine.Approve)
-	extensions.approvalHandler.SetExternalOperations(engine)
+	approvalUC.RegisterExecutor(biz.ApprovalKind, engine.Approve)
+	approvalHandler.SetExternalOperations(engine)
 	m.handler = server.New(engine, cfg.ExternalMCP.AllowedOrigins, reg)
 	m.engine = engine
 	return m, nil
@@ -92,4 +117,3 @@ func (m *externalMCPModule) addAPITools(router chi.Router) error {
 	m.engine.Catalog = catalog
 	return nil
 }
-

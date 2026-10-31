@@ -76,6 +76,7 @@ import (
 	iambizuser "github.com/Zara1024/OpsPilot/internal/iam/biz/user"
 	iamdatamembership "github.com/Zara1024/OpsPilot/internal/iam/data/membership/store"
 	iamdataorg "github.com/Zara1024/OpsPilot/internal/iam/data/org/store"
+	iamdatatoken "github.com/Zara1024/OpsPilot/internal/iam/data/integrationtoken"
 	iamdatauser "github.com/Zara1024/OpsPilot/internal/iam/data/user/sqlite"
 	iammodel "github.com/Zara1024/OpsPilot/internal/iam/model"
 	iamserver "github.com/Zara1024/OpsPilot/internal/iam/server"
@@ -129,6 +130,7 @@ import (
 	managerbizsetting "github.com/Zara1024/OpsPilot/internal/manager/biz/setting"
 	managerbizskill "github.com/Zara1024/OpsPilot/internal/manager/biz/skill"
 	managerwebshellbiz "github.com/Zara1024/OpsPilot/internal/manager/biz/webshell"
+	externalmcpdata "github.com/Zara1024/OpsPilot/internal/manager/data/externalmcp"
 	manageraiopsdata "github.com/Zara1024/OpsPilot/internal/manager/data/aiops/store"
 	managerapprovaldata "github.com/Zara1024/OpsPilot/internal/manager/data/approval/store"
 	managerimbridgedata "github.com/Zara1024/OpsPilot/internal/manager/data/imbridge/store"
@@ -299,6 +301,7 @@ func main() {
 	upgradingExistingInstall := db.Migrator().HasTable("devices")
 	if err := dbx.RunMigrations(db, log,
 		iamdatauser.Migrate,
+		iamdatatoken.Migrate,
 		iamdataorg.Migrate,
 		iamdatamembership.Migrate,
 		manageralertdata.Migrate,
@@ -309,6 +312,7 @@ func main() {
 		managertopologydata.Migrate,
 		managermetricdata.Migrate,
 		manageraiopsdata.Migrate,
+		externalmcpdata.Migrate,
 		managerbizskill.Migrate,
 		managersettingdata.Migrate,
 		managermarketplacedata.Migrate,
@@ -2633,11 +2637,129 @@ func main() {
 	k8sHandler.RegisterInternal(mux)
 	edgeEnrollmentHandler.RegisterInternal(mux)
 
+	externalMCP, err := bootstrapExternalMCP(
+		cfg, log, reg, db,
+		auditUC, deviceUC, edgeUC, k8sSvc, alertSvc, monitorSvc,
+		fbClient, toolsReg, approvalUC, approvalHandler,
+	)
+	if err != nil {
+		log.Error("bootstrap external mcp", slog.Any("err", err))
+		os.Exit(1)
+	}
+
+	registerProtected := func(protected chi.Router) {
+		// /v1/version — manager binary version, used by the SPA to
+		// flag edges whose agent_version drifts from the manager's.
+		// Inline rather than its own handler package because the
+		// payload is one field; growing this past version + maybe a
+		// build SHA would warrant lifting it out.
+		protected.Get("/v1/version", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(`{"manager_version":"` + version + `"}`))
+		})
+		// Hosted-page management (serve_page artifacts) for the operations
+		// UI. The page CONTENT is served publicly by token at
+		// /api/pages/{id}; these authed routes list + delete them.
+		protected.Get("/v1/pages", func(w http.ResponseWriter, r *http.Request) {
+			items, err := pageStore.List(r.Context())
+			if err != nil {
+				items = []pageMeta{}
+			}
+			w.Header().Set("content-type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"items": items, "total": len(items)})
+		})
+		protected.Delete("/v1/pages/{id}", func(w http.ResponseWriter, r *http.Request) {
+			if err := pageStore.Delete(r.Context(), chi.URLParam(r, "id")); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		})
+		// Authed in-app read of a page (the SPA fetches this with its bearer
+		// and renders it via iframe srcdoc — the page is NOT public).
+		protected.Get("/pages/{id}", func(w http.ResponseWriter, r *http.Request) {
+			id := chi.URLParam(r, "id")
+			if !isHexToken(id) {
+				http.NotFound(w, r)
+				return
+			}
+			b, err := pageStore.readPageHTML(id)
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
+			writePageHTML(w, b)
+		})
+		// Mint a TTL-bounded public share link for a page (off-platform,
+		// login-free) — mirrors POST /v1/reports/{id}/share.
+		protected.Post("/v1/pages/{id}/share", func(w http.ResponseWriter, r *http.Request) {
+			id := chi.URLParam(r, "id")
+			if _, err := pageStore.readPageHTML(id); err != nil {
+				http.NotFound(w, r)
+				return
+			}
+			exp := time.Now().Add(pageShareTTL)
+			tok := mintPageShareToken(cfg.JWT.Secret, id, exp)
+			w.Header().Set("content-type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"share_token": tok,
+				"path":        "/api/p/" + tok,
+				"expires_at":  exp.UTC().Format(time.RFC3339),
+			})
+		})
+		iamHandler.RegisterProtected(protected)
+		edgeHandler.Register(protected)
+		edgeEnrollmentHandler.RegisterProtected(protected)
+		k8sHandler.RegisterProtected(protected)
+		webshellHandler.Register(protected)
+		deviceHandler.Register(protected)
+		topologyHandler.Register(protected)
+		metricHandler.Register(protected)
+		monitorHandler.Register(protected)
+		logsHandler.Register(protected)
+		tracesHandler.Register(protected)
+		apmHandler.Register(protected)
+		profilesHandler.Register(protected)
+		aiopsHandler.Register(protected)
+		alertHandler.Register(protected)
+		oncallHandler.Register(protected)
+		systemHealthHandler.Register(protected)
+		systemUpgradeHandler.Register(protected)
+		imbridgeHandler.RegisterProtected(protected)
+		skillHandler.Register(protected)
+		operatorRunHandler.Register(protected)
+		if knowledgeHandler != nil {
+			knowledgeHandler.Register(protected)
+		}
+		settingHandler.Register(protected)
+		integrationHandler.Register(protected)
+		marketplaceHandler.Register(protected)
+		secretHandler.Register(protected)
+		mcpHandler.Register(protected)
+		approvalHandler.Register(protected)
+		promProxyHandler.RegisterProtected(protected)
+		managerserveraudit.NewHandler(auditUC).Register(protected)
+		reportHandler.Register(protected)
+		flowHandler.Register(protected)
+		packetCaptureHandler.Register(protected)
+	}
+	if externalMCP.engine != nil {
+		apiRouter := chi.NewRouter()
+		registerProtected(apiRouter)
+		if err := externalMCP.addAPITools(apiRouter); err != nil {
+			log.Error("register external mcp api tools", slog.Any("err", err))
+			os.Exit(1)
+		}
+	}
+
 	// All BC HTTP lives under /api. Public iam routes (login / refresh)
 	// skip the auth middleware; everything else goes through it via
 	// chi.Router.Group.
 	mux.Route("/api", func(api chi.Router) {
 		iamHandler.RegisterPublic(api)
+		if externalMCP.handler != nil {
+			api.Handle("/v1/integrations/mcp", externalMCP.handler)
+		}
 		webshellHandler.RegisterPublic(api)
 		promProxyHandler.RegisterPublic(api)
 		// IM webhooks live OUTSIDE the bearer group — Feishu / DingTalk
@@ -2670,100 +2792,8 @@ func main() {
 
 		api.Group(func(protected chi.Router) {
 			protected.Use(auth.Middleware(signer))
-			// /v1/version — manager binary version, used by the SPA to
-			// flag edges whose agent_version drifts from the manager's.
-			// Inline rather than its own handler package because the
-			// payload is one field; growing this past version + maybe a
-			// build SHA would warrant lifting it out.
-			protected.Get("/v1/version", func(w http.ResponseWriter, _ *http.Request) {
-				w.Header().Set("content-type", "application/json")
-				_, _ = w.Write([]byte(`{"manager_version":"` + version + `"}`))
-			})
-			// Hosted-page management (serve_page artifacts) for the operations
-			// UI. The page CONTENT is served publicly by token at
-			// /api/pages/{id}; these authed routes list + delete them.
-			protected.Get("/v1/pages", func(w http.ResponseWriter, r *http.Request) {
-				items, err := pageStore.List(r.Context())
-				if err != nil {
-					items = []pageMeta{}
-				}
-				w.Header().Set("content-type", "application/json")
-				_ = json.NewEncoder(w).Encode(map[string]any{"items": items, "total": len(items)})
-			})
-			protected.Delete("/v1/pages/{id}", func(w http.ResponseWriter, r *http.Request) {
-				if err := pageStore.Delete(r.Context(), chi.URLParam(r, "id")); err != nil {
-					http.Error(w, err.Error(), http.StatusBadRequest)
-					return
-				}
-				w.WriteHeader(http.StatusNoContent)
-			})
-			// Authed in-app read of a page (the SPA fetches this with its bearer
-			// and renders it via iframe srcdoc — the page is NOT public).
-			protected.Get("/pages/{id}", func(w http.ResponseWriter, r *http.Request) {
-				id := chi.URLParam(r, "id")
-				if !isHexToken(id) {
-					http.NotFound(w, r)
-					return
-				}
-				b, err := pageStore.readPageHTML(id)
-				if err != nil {
-					http.NotFound(w, r)
-					return
-				}
-				writePageHTML(w, b)
-			})
-			// Mint a TTL-bounded public share link for a page (off-platform,
-			// login-free) — mirrors POST /v1/reports/{id}/share.
-			protected.Post("/v1/pages/{id}/share", func(w http.ResponseWriter, r *http.Request) {
-				id := chi.URLParam(r, "id")
-				if _, err := pageStore.readPageHTML(id); err != nil {
-					http.NotFound(w, r)
-					return
-				}
-				exp := time.Now().Add(pageShareTTL)
-				tok := mintPageShareToken(cfg.JWT.Secret, id, exp)
-				w.Header().Set("content-type", "application/json")
-				_ = json.NewEncoder(w).Encode(map[string]any{
-					"share_token": tok,
-					"path":        "/api/p/" + tok,
-					"expires_at":  exp.UTC().Format(time.RFC3339),
-				})
-			})
-			iamHandler.RegisterProtected(protected)
-			edgeHandler.Register(protected)
-			edgeEnrollmentHandler.RegisterProtected(protected)
-			k8sHandler.RegisterProtected(protected)
-			webshellHandler.Register(protected)
-			deviceHandler.Register(protected)
-			topologyHandler.Register(protected)
-			metricHandler.Register(protected)
-			monitorHandler.Register(protected)
-			logsHandler.Register(protected)
-			tracesHandler.Register(protected)
-			apmHandler.Register(protected)
-			profilesHandler.Register(protected)
-			aiopsHandler.Register(protected)
-			alertHandler.Register(protected)
-			oncallHandler.Register(protected)
-			systemHealthHandler.Register(protected)
-			systemUpgradeHandler.Register(protected)
-			imbridgeHandler.RegisterProtected(protected)
-			skillHandler.Register(protected)
-			operatorRunHandler.Register(protected)
-			if knowledgeHandler != nil {
-				knowledgeHandler.Register(protected)
-			}
-			settingHandler.Register(protected)
-			integrationHandler.Register(protected)
-			marketplaceHandler.Register(protected)
-			secretHandler.Register(protected)
-			mcpHandler.Register(protected)
-			approvalHandler.Register(protected)
-			promProxyHandler.RegisterProtected(protected)
-			managerserveraudit.NewHandler(auditUC).Register(protected)
-			reportHandler.Register(protected)
-			flowHandler.Register(protected)
-			packetCaptureHandler.Register(protected)
+			externalMCP.tokens.Register(protected)
+			registerProtected(protected)
 		})
 	})
 
@@ -2780,6 +2810,9 @@ func main() {
 	metricsServer := httpserver.New(cfg.MetricsAddr, metricsMux, log.With(slog.String("listener", "metrics")))
 
 	eg, egCtx := errgroup.WithContext(rootCtx)
+	if externalMCP.engine != nil {
+		eg.Go(func() error { return externalMCP.engine.Run(egCtx) })
+	}
 	// PR-F: legacy metricIngester.Start flush loop removed — no MySQL writes.
 	// eg.Go(func() error { return metricIngester.Start(egCtx) })
 	eg.Go(func() error { return apiServer.Start(egCtx) })
