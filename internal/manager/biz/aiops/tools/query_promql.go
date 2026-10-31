@@ -99,7 +99,7 @@ func (r *Registry) executeQueryPromQL(ctx context.Context, args json.RawMessage)
 		in.LookbackSeconds = maxQueryPromQLLookbackSeconds
 	}
 
-	end := time.Now()
+	end := basetool.ObservationTime(ctx)
 	start := end.Add(-time.Duration(in.LookbackSeconds) * time.Second)
 	step := stepFor(in.LookbackSeconds)
 

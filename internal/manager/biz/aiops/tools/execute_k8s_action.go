@@ -14,6 +14,7 @@ import (
 
 	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/tools/basetool"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
+	"github.com/Zara1024/OpsPilot/internal/pkg/integrationauth"
 	"github.com/Zara1024/OpsPilot/internal/pkg/tenantctx"
 	"github.com/Zara1024/OpsPilot/internal/pkg/tunnel"
 	"github.com/cloudwego/eino/compose"
@@ -139,13 +140,26 @@ type K8sActionProposer interface {
 }
 
 type ExecuteK8sActionTool struct {
-	caller   Caller
-	reader   K8sSnapshotReader
-	proposer K8sActionProposer
-	log      *slog.Logger
+	persistent PreflightStore
+	caller     Caller
+	reader     K8sSnapshotReader
+	proposer   K8sActionProposer
+	log        *slog.Logger
 
 	preflightMu sync.Mutex
 	preflights  map[string]executeK8sActionPreflightGrant
+}
+
+// PreflightStore binds a one-use grant to the current external caller.
+type PreflightStore interface {
+	IssuePreflight(context.Context, string, []byte, time.Time) error
+	ConsumePreflight(context.Context, string, []byte) error
+}
+
+func NewPersistentK8sActionTool(caller Caller, reader K8sSnapshotReader, log *slog.Logger, store PreflightStore) *ExecuteK8sActionTool {
+	t := NewExecuteK8sActionTool(caller, reader, log)
+	t.persistent = store
+	return t
 }
 
 type executeK8sActionPreflightGrant struct {
@@ -239,7 +253,7 @@ func (t *ExecuteK8sActionTool) InvokableRun(ctx context.Context, argsJSON string
 		if t.proposer != nil && !basetool.AgentWriteAllowedFromContext(ctx) {
 			return `{"status":"blocked","message":"Agent write actions are disabled; the Kubernetes action was not proposed or run."}`, nil
 		}
-		if err := t.consumePreflight(strings.TrimSpace(in.PreflightToken), req, caller.UserID, basetool.SessionIDFromContext(ctx)); err != nil {
+		if err := t.consumeForContext(ctx, strings.TrimSpace(in.PreflightToken), req, caller.UserID, basetool.SessionIDFromContext(ctx)); err != nil {
 			return "", err
 		}
 		if t.proposer != nil {
@@ -324,7 +338,7 @@ func (t *ExecuteK8sActionTool) dispatch(ctx context.Context, req tunnel.Kubernet
 		approved := req
 		approved.DryRun = false
 		approved.ExpectedResourceVersion = strings.TrimSpace(resp.Preflight.ResourceVersion)
-		token, expiresAt, err := t.issuePreflight(approved, userID, sessionID)
+		token, expiresAt, err := t.issueForContext(ctx, approved, userID, sessionID)
 		if err != nil {
 			return "", err
 		}
@@ -339,6 +353,43 @@ func (t *ExecuteK8sActionTool) dispatch(ctx context.Context, req tunnel.Kubernet
 		return "", fmt.Errorf("%s: marshal response: %w", ToolNameExecuteK8sAction, err)
 	}
 	return string(out), nil
+}
+
+func (t *ExecuteK8sActionTool) issueForContext(ctx context.Context, req tunnel.KubernetesActionRequest, userID uint64, sessionID string) (string, time.Time, error) {
+	if t.persistent == nil {
+		return t.issuePreflight(req, userID, sessionID)
+	}
+	if _, ok := integrationauth.From(ctx); !ok {
+		return "", time.Time{}, errs.ErrForbidden
+	}
+	fingerprint, err := executeK8sActionFingerprint(req)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	b := make([]byte, 32)
+	if _, err = rand.Read(b); err != nil {
+		return "", time.Time{}, err
+	}
+	token := base64.RawURLEncoding.EncodeToString(b)
+	expires := time.Now().Add(executeK8sActionPreflightTTL)
+	if err = t.persistent.IssuePreflight(ctx, token, fingerprint[:], expires); err != nil {
+		return "", time.Time{}, err
+	}
+	return token, expires, nil
+}
+
+func (t *ExecuteK8sActionTool) consumeForContext(ctx context.Context, token string, req tunnel.KubernetesActionRequest, userID uint64, sessionID string) error {
+	if t.persistent == nil {
+		return t.consumePreflight(token, req, userID, sessionID)
+	}
+	if len(token) != 43 {
+		return errs.ErrInvalid
+	}
+	fingerprint, err := executeK8sActionFingerprint(req)
+	if err != nil {
+		return err
+	}
+	return t.persistent.ConsumePreflight(ctx, token, fingerprint[:])
 }
 
 func (t *ExecuteK8sActionTool) issuePreflight(req tunnel.KubernetesActionRequest, userID uint64, sessionID string) (string, time.Time, error) {

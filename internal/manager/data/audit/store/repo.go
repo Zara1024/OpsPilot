@@ -1,4 +1,4 @@
-// Package store is the persistence layer for HLD-010 audit_logs.
+﻿// Package store is the persistence layer for HLD-010 audit_logs.
 // Inserts are append-only; the only mutation is the retention sweep.
 package store
 
@@ -6,13 +6,14 @@ import (
 	"context"
 	"time"
 
+	"github.com/Zara1024/OpsPilot/internal/pkg/dbx"
 	"gorm.io/gorm"
 
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/audit"
 )
 
 // Repo wraps *gorm.DB with the audit_logs operations the biz layer
-// consumes. Kept thin — audit log doesn't have business rules, just
+// consumes. Kept thin 鈥?audit log doesn't have business rules, just
 // "write a row" + "list with filters" + "delete old".
 type Repo struct {
 	db *gorm.DB
@@ -25,11 +26,11 @@ func New(db *gorm.DB) *Repo {
 
 // Insert persists one log row. OccurredAt + CreatedAt are stamped by the
 // caller (biz.Usecase) and GORM autoCreate respectively. Failure must
-// not propagate to business code — the caller wraps with a warn-log
+// not propagate to business code 鈥?the caller wraps with a warn-log
 // (see biz.Usecase.Emit) to honour HLD-010's "audit write failure
 // must never block the request".
 func (r *Repo) Insert(ctx context.Context, log *model.Log) error {
-	return r.db.WithContext(ctx).Create(log).Error
+	return dbx.WithContext(ctx, r.db).Create(log).Error
 }
 
 // ListFilters captures all the GET /v1/admin/audit-logs querystring
@@ -50,7 +51,7 @@ type ListFilters struct {
 // same filters (excluding limit/offset) so the UI can render
 // "showing N of total".
 func (r *Repo) List(ctx context.Context, f ListFilters) ([]model.Log, int64, error) {
-	q := r.db.WithContext(ctx).Model(&model.Log{})
+	q := dbx.WithContext(ctx, r.db).Model(&model.Log{})
 	if f.UserEmail != "" {
 		q = q.Where("user_email = ?", f.UserEmail)
 	}
@@ -96,6 +97,7 @@ func (r *Repo) List(ctx context.Context, f ListFilters) ([]model.Log, int64, err
 // DeleteOlderThan implements the retention sweep. Returns the number of
 // rows removed. Called from the daily retention goroutine in biz layer.
 func (r *Repo) DeleteOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
-	res := r.db.WithContext(ctx).Where("occurred_at < ?", cutoff).Delete(&model.Log{})
+	res := dbx.WithContext(ctx, r.db).Where("occurred_at < ?", cutoff).Delete(&model.Log{})
 	return res.RowsAffected, res.Error
 }
+

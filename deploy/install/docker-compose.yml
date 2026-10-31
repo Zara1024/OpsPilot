@@ -163,6 +163,9 @@ services:
       # plugin endpoints — edges can't push logs/traces. install.sh
       # populates from operator's domain at first run.
       OPSPILOT_PUBLIC_URL: ${OPSPILOT_PUBLIC_URL:-}
+      OPSPILOT_EXTERNAL_MCP_ENABLED: ${OPSPILOT_EXTERNAL_MCP_ENABLED:-false}
+      OPSPILOT_EXTERNAL_MCP_WRITES_ENABLED: ${OPSPILOT_EXTERNAL_MCP_WRITES_ENABLED:-false}
+      OPSPILOT_EXTERNAL_MCP_ALLOWED_ORIGINS: ${OPSPILOT_EXTERNAL_MCP_ALLOWED_ORIGINS:-}
       OPSPILOT_TUNNEL_ADDR: ${OPSPILOT_TUNNEL_ADDR:-}
       # Private native PCAP parser. Docker-only HTTP is protected by the
       # signed request and single-use artifact capability below; the parser

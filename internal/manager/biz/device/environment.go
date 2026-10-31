@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/device"
+	"github.com/Zara1024/OpsPilot/internal/pkg/dbx"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 )
 
@@ -78,7 +79,7 @@ func (u *Usecase) SetEnvironment(ctx context.Context, id uint64, value string) (
 	if u.environmentChanged != nil {
 		for _, link := range links {
 			if link.Type == model.EdgeDeviceRelationHost {
-				u.environmentChanged(ctx, link.EdgeID)
+				dbx.AfterCommit(ctx, func() { u.environmentChanged(dbx.WithoutTransaction(context.WithoutCancel(ctx)), link.EdgeID) })
 			}
 		}
 	}

@@ -18,6 +18,7 @@ import (
 // Config is the top-level runtime configuration shared by opspilot and
 // opspilot-edge. Fields unused by one binary are simply ignored.
 type Config struct {
+	ExternalMCP ExternalMCPConfig
 	HTTPAddr    string
 	MetricsAddr string
 	TunnelAddr  string
@@ -61,6 +62,13 @@ type Config struct {
 	Profiles       ProfilesConfig
 	PacketCapture  PacketCaptureConfig
 	Skills         SkillsConfig
+}
+
+// ExternalMCPConfig controls the independent PAT-authenticated integration.
+type ExternalMCPConfig struct {
+	Enabled        bool
+	WritesEnabled  bool
+	AllowedOrigins []string
 }
 
 // SkillsConfig wires the manager-side subprocess skill loader. The
@@ -595,6 +603,9 @@ func Load() (*Config, error) {
 	c.Alert.EdgeOfflineThreshold = getEnvDuration("OPSPILOT_ALERT_EDGE_OFFLINE_THRESHOLD", 90*time.Second)
 	c.Alert.PromIngestFailLimit = getEnvInt("OPSPILOT_ALERT_PROM_INGEST_FAIL_LIMIT", 5)
 
+	c.ExternalMCP.Enabled = getEnvBool("OPSPILOT_EXTERNAL_MCP_ENABLED", false)
+	c.ExternalMCP.WritesEnabled = getEnvBool("OPSPILOT_EXTERNAL_MCP_WRITES_ENABLED", false)
+	c.ExternalMCP.AllowedOrigins = getEnvCSV("OPSPILOT_EXTERNAL_MCP_ALLOWED_ORIGINS", nil)
 	c.Skills.ExternalDirs = getEnvCSV("OPSPILOT_SKILLS_EXTERNAL_DIRS", nil)
 
 	return c, nil

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/monitor"
+	"github.com/Zara1024/OpsPilot/internal/pkg/dbx"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 )
 
@@ -160,7 +161,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*model.Panel, err
 	if err != nil {
 		return nil, err
 	}
-	s.kickSync("create", saved.ID)
+	dbx.AfterCommit(ctx, func() { s.kickSync("create", saved.ID) })
 	return saved, nil
 }
 
@@ -206,7 +207,7 @@ func (s *Service) Update(ctx context.Context, id uint64, in UpdateInput) (*model
 	if err != nil {
 		return nil, err
 	}
-	s.kickSync("update", id)
+	dbx.AfterCommit(ctx, func() { s.kickSync("update", id) })
 	return updated, nil
 }
 
@@ -217,7 +218,7 @@ func (s *Service) Delete(ctx context.Context, id uint64) error {
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return err
 	}
-	s.kickSync("delete", id)
+	dbx.AfterCommit(ctx, func() { s.kickSync("delete", id) })
 	return nil
 }
 
