@@ -31,32 +31,7 @@ type ListFilters = store.ListFilters
 
 // Event is the input shape for Emit. Caller fills what it knows; the
 // usecase stamps OccurredAt and serialises Payload.
-type Event struct {
-	// Actor — filled by the middleware from JWT claims, by handlers
-	// for failed-auth or anon paths.
-	UserID    *uint64
-	UserEmail string
-	Role      string
-	IP        string
-	UserAgent string
-	RequestID string
-
-	// Action — must be one of the canonical model.Action* constants.
-	Action       string
-	ResourceType string
-	ResourceID   string
-	ResourceName string
-
-	// Outcome.
-	Status       string // success|failure|denied
-	ErrorCode    string
-	ErrorMessage string
-
-	// Free-form structured detail. Caller is responsible for redacting
-	// secrets BEFORE passing in (LLM keys, passwords, tokens). Pass a
-	// map or struct; the usecase JSON-encodes.
-	Payload any
-}
+type Event = auditctx.Event
 
 // Usecase is the BC façade.
 type Usecase struct {
