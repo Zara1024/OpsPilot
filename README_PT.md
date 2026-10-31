@@ -63,15 +63,15 @@ Escolha o comando para a arquitetura do seu servidor:
 
 **AMD64**
 ```bash
-wget https://github.com/Zara1024/OpsPilot/releases/download/v1.1.3/opspilot-v1.1.3-linux-amd64.tar.xz
-tar -xf opspilot-v1.1.3-linux-amd64.tar.xz && cd opspilot-v1.1.3-linux-amd64
+wget https://github.com/Zara1024/OpsPilot/releases/download/v1.1.4/opspilot-v1.1.4-linux-amd64.tar.xz
+tar -xf opspilot-v1.1.4-linux-amd64.tar.xz && cd opspilot-v1.1.4-linux-amd64
 sudo ./install.sh
 ```
 
 **ARM64**
 ```bash
-wget https://github.com/Zara1024/OpsPilot/releases/download/v1.1.3/opspilot-v1.1.3-linux-arm64.tar.xz
-tar -xf opspilot-v1.1.3-linux-arm64.tar.xz && cd opspilot-v1.1.3-linux-arm64
+wget https://github.com/Zara1024/OpsPilot/releases/download/v1.1.4/opspilot-v1.1.4-linux-arm64.tar.xz
+tar -xf opspilot-v1.1.4-linux-arm64.tar.xz && cd opspilot-v1.1.4-linux-arm64
 sudo ./install.sh
 ```
 
