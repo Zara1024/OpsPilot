@@ -9,6 +9,7 @@ package approval
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -144,4 +145,29 @@ func (u *Usecase) Reject(ctx context.Context, approverID uint64, id, reason stri
 		"status": model.StatusRejected, "approved_by": approverID,
 		"reason": strings.TrimSpace(reason), "decided_at": now,
 	})
+}
+
+// InvalidatePending retires a proposal whose originating request can no longer
+// execute. The conditional decision never overwrites approval or rejection.
+func (u *Usecase) InvalidatePending(ctx context.Context, id, reason string) error {
+	result, err := json.Marshal(struct {
+		Error string `json:"error"`
+	}{Error: reason})
+	if err != nil {
+		return fmt.Errorf("encode invalidated approval: %w", err)
+	}
+	err = u.repo.Decide(ctx, id, map[string]any{"status": model.StatusFailed, "reason": reason, "result_json": string(result), "decided_at": time.Now().UTC()})
+	if errors.Is(err, errs.ErrNotFound) {
+		row, readErr := u.repo.Get(ctx, id)
+		if readErr != nil {
+			return fmt.Errorf("read invalidated approval: %w", readErr)
+		}
+		if row.Status != model.StatusPending {
+			return nil
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("invalidate pending approval: %w", err)
+	}
+	return nil
 }

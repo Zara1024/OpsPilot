@@ -1,4 +1,4 @@
-﻿package store
+package store
 
 import (
 	"context"
@@ -166,10 +166,14 @@ func applyNodeFilter(q *gorm.DB, f biz.NodeListFilter) *gorm.DB {
 	return q
 }
 
-// EnsureForDevice 浣跨敤宸叉湁 devices.node_id 浣滀负韬唤鏉ユ簮锛屼笉閫氳繃鍙彉鍚嶇О鍖归厤銆?// 涓庡洖濉叡鐢ㄤ簨鍔★紝閬垮厤骞跺彂娉ㄥ唽鎴栧洖濉骇鐢熷绔嬭妭鐐广€佽鐩栧凡鏈夌粦瀹氥€?func (r *NodeRepo) EnsureForDevice(ctx context.Context, deviceID uint64, name string) (*model.Node, error) {
+// EnsureForDevice 使用已有 devices.node_id 作为身份来源，不通过可变名称匹配。
+// 与回填共用事务，避免并发注册或回填产生孤立节点、覆盖已有绑定。
+func (r *NodeRepo) EnsureForDevice(ctx context.Context, deviceID uint64, name string) (*model.Node, error) {
 	var node model.Node
 	err := dbx.WithContext(ctx, r.db).Transaction(func(tx *gorm.DB) error {
-		// 鍏堣幏鍙栧啓閿侊細MySQL 閿佸畾璁惧琛岋紝SQLite 鑾峰彇鍐欎簨鍔￠攣锛岄伩鍏嶈鍚庡崌绾ч攣澶辫触銆?		// 涓嶆敼鍙樺瓧娈靛€硷紝涔熶笉瑙﹀彂 GORM 鐨?updated_at 鏇存柊銆?		if err := tx.Exec("UPDATE devices SET node_id = node_id WHERE id = ? AND deleted_at IS NULL", deviceID).Error; err != nil {
+		// 先获取写锁：MySQL 锁定设备行，SQLite 获取写事务锁，避免读后升级锁失败。
+		// 不改变字段值，也不触发 GORM 的 updated_at 更新。
+		if err := tx.Exec("UPDATE devices SET node_id = node_id WHERE id = ? AND deleted_at IS NULL", deviceID).Error; err != nil {
 			return err
 		}
 		var device struct {
@@ -205,4 +209,3 @@ func applyNodeFilter(q *gorm.DB, f biz.NodeListFilter) *gorm.DB {
 	}
 	return &node, nil
 }
-

@@ -172,3 +172,7 @@ func (r *EdgeDeviceRepo) ListEdgesForDevice(ctx context.Context, deviceID uint64
 	}
 	return rows, nil
 }
+
+func adoptHostPluginConfigs(tx *gorm.DB, hostID, edgeID uint64) error {
+	return nil
+}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/tools/basetool"
 	"github.com/Zara1024/OpsPilot/internal/pkg/promquery"
 )
 
