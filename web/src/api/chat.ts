@@ -1,3 +1,4 @@
+import type { AssistantPage } from '@/lib/assistantPage';
 import { ApiError, request } from './client';
 import { getToken } from '@/store/auth';
 
@@ -49,6 +50,7 @@ export type ChatMessage = {
 };
 
 export type ChatSession = {
+  page_context?: AssistantPage;
  apm_source?: { trace_id: string; repo_id: string; source_directory: string; revision: string; commit_sha: string; error?: string };
   id: string;
   user_id: number;
@@ -90,6 +92,7 @@ export function listSessions(params?: { related_incident_id?: number }) {
 }
 
 export function createSession(input: {
+  page_context?: AssistantPage;
  apm_source?: { trace_id: string; service_name: string; service_namespace: string; environment: string; service_version: string; instance_id: string };
   title: string;
   scope?: string[];
@@ -124,10 +127,10 @@ export function stopSession(sessionId: string | number) {
   );
 }
 
-export function getMessages(sessionId: string | number) {
+export function getMessages(sessionId: string | number, signal?: AbortSignal) {
   return request<{ items: ChatMessage[]; total: number }>(
     'GET',
-    `/chat/sessions/${encodeURIComponent(String(sessionId))}/messages`,
+    `/chat/sessions/${encodeURIComponent(String(sessionId))}/messages`, undefined, { signal },
   );
 }
 
@@ -225,9 +228,11 @@ export type LLMProvider = {
   model?: string;
 };
 
+export type ModelSelection = { provider: string; model: string };
+
 export type ModelCatalog = {
   providers: LLMProvider[];
-  default: { provider: string; model: string };
+  default: ModelSelection;
 };
 
 export function listModels() {
@@ -283,6 +288,9 @@ export type ApprovalPendingStreamEvent = {
   command?: string;
   credentials?: string[];
 };
+
+// Only a rejection before runtime dispatch guarantees that resubmission is safe.
+export class RejectedChatTurnError extends ApiError {}
 
 export type StreamCallbacks = {
   onAssistant?: (e: AssistantStreamEvent) => void;
@@ -399,8 +407,9 @@ function dispatchFrame(raw: string, cbs: StreamCallbacks) {
       cbs.onDone?.(payload as PostMessageResponse);
       break;
     case 'error': {
-      const obj = payload as { error?: string };
-      cbs.onError?.(new Error(obj.error || 'stream error'));
+      const obj = payload as { error?: string; code?: string; turn_rejected?: boolean };
+      const StreamError = obj.turn_rejected === true ? RejectedChatTurnError : ApiError;
+      cbs.onError?.(new StreamError(obj.error || 'stream error', 200, obj.code));
       break;
     }
     default:

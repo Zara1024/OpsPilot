@@ -1,3 +1,4 @@
+import { useAssistantPage } from '@/lib/assistantPage';
 import { Input, Label } from '@/components/ui';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { Select } from '@/components/ui/Select';
@@ -121,6 +122,12 @@ export default function SettingsChannels() {
       setTestingID(null);
     }
   }, []);
+
+    useAssistantPage('IM 渠道', 'IM channels', {
+    configured_count: items.length,
+    providers: configuredProviders.join(", "),
+    loading,
+  });
 
   return (
     <>

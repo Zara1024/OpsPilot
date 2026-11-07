@@ -68,6 +68,8 @@ type APMSourceScope struct {
 }
 
 type Session struct {
+	PageContext *PageContext `gorm:"serializer:json;type:text;column:page_context"`
+
 	APMSource *APMSourceScope `gorm:"serializer:json;type:text;column:apm_source"`
 
 	ID        string  `gorm:"primaryKey;type:char(36);column:id"`

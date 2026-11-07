@@ -395,8 +395,57 @@ func kubernetesReceiver(spec map[string]interface{}, edgeID uint64, clusterID, n
 		"include_file_path": true, "include_file_name": false,
 		"exclude_older_than": "24h", "max_log_size": "256KiB",
 		"resource":         resource,
-		"operators":        []interface{}{map[string]interface{}{"id": "container-parser", "type": "container", "max_log_size": "256KiB"}},
+		"operators":        kubernetesLogOperators(),
 		"retry_on_failure": receiverRetry(),
+	}
+}
+
+const (
+	javaClass     = `(?:[\w$]+\.)*[\w$]+`
+	javaFrame     = `[ \t]+at[ \t]+[^\s(]+\.[^\s(.]+\([^()\r\n]*\)`
+	javaStackLine = `(?:` + javaFrame +
+		`|[ \t]*(?:Caused by:|Suppressed:)[ \t]+(?:` + javaClass + `(?::|$)|\[CIRCULAR REFERENCE:)` +
+		`|[ \t]+(?:\[CIRCULAR REFERENCE:|\.\.\. [0-9]+ (?:more|common frames omitted)\b))`
+	javaContinuation = "^" + javaStackLine
+	javaThrowable    = "^" + javaClass + `(?::[^\r\n]*)?\n` + javaStackLine
+	javaLogHeader    = `(?i)^[ \t]*(?:(?:\d{4}-\d\d-\d\d[ T])?\d\d:\d\d:\d\d(?:[.,]\d+)?(?:Z|[+-]\d\d:?\d\d)?[ \t]+)?` +
+		`(?:\[[^\]\r\n]+\][ \t]+)*\[?(?:ERROR|WARN(?:ING)?|FATAL|SEVERE)\b[^\r\n]*$`
+)
+
+func kubernetesLogOperators() []map[string]interface{} {
+	const (
+		stream = `attributes.opspilot_java.stream`
+		line   = `attributes.opspilot_java.line`
+		tail   = `attributes.opspilot_java.tail`
+		// Docker includes its line ending in body. Keep the original body for single records.
+		plainLine = `trimSuffix(trimSuffix(body, "\n"), "\r")`
+	)
+	continuation := line + " matches " + strconv.Quote(javaContinuation)
+	throwable := line + " matches " + strconv.Quote(javaThrowable)
+	header := line + " matches " + strconv.Quote(javaLogHeader)
+	return []map[string]interface{}{
+		// The container parser buffers CRI fragments by file path. Isolate stderr
+		// before parsing so a stdout record cannot terminate a partial stderr line.
+		{"type": "router", "routes": []map[string]interface{}{
+			{"expr": `body matches "^[0-9]{4}-[^ ]+ stderr "`, "output": "cri-stderr"},
+		}, "default": "container-parser"},
+		{"id": "cri-stderr", "type": "container", "max_log_size": "256KiB", "output": "java-stream"},
+		{"id": "container-parser", "type": "container", "max_log_size": "256KiB", "output": "java-stream"},
+		{"id": "java-stream", "type": "add", "field": stream, "value": `EXPR(attributes["log.file.path"] + ":" + (attributes["log.iostream"] ?? ""))`},
+		{"id": "java-line", "type": "add", "field": line, "value": "EXPR(" + plainLine + ")"},
+		// shortcut: interleaved stacks on one stream are ambiguous, use per-line event IDs if the producer supplies them.
+		{"id": "java-stack", "type": "recombine", "source_identifier": stream, "combine_field": line,
+			"is_first_entry": "!(" + continuation + ")", "force_flush_period": "1s", "max_batch_size": 0, "max_log_size": "256KiB"},
+		// Only headers have an empty tail and stay pending. A stack or the "pass" marker
+		// exceeds one byte and flushes immediately. Each non-stack starts a new record.
+		{"id": "java-tail", "type": "add", "field": tail,
+			"value": fmt.Sprintf(`EXPR(%s ? %s : (%s ? "" : "pass"))`, throwable, line, header)},
+		{"id": "java-header", "type": "recombine", "source_identifier": stream, "combine_field": tail, "combine_with": "",
+			"is_first_entry": "!(" + throwable + ")", "max_batch_size": 2, "force_flush_period": "3s", "max_log_size": 1},
+		{"id": "java-header-body", "type": "add", "field": line, "if": tail + ` != "" && ` + header,
+			"value": `EXPR(` + line + ` + "\n" + ` + tail + `)`},
+		{"id": "java-body", "type": "add", "if": line + " != " + plainLine, "field": "body", "value": "EXPR(" + line + ")"},
+		{"type": "remove", "field": "attributes.opspilot_java"},
 	}
 }
 
@@ -612,8 +661,10 @@ func logsExporter(cfg plugins.PluginConfig, spec map[string]interface{}, backend
 		return "otlphttp/builtin_loki", exporter, nil
 	}
 
-	if _, present := spec["elasticsearch_api_key"]; present {
-		return "", nil, errors.New("logs plugin: inline Elasticsearch API key is forbidden")
+	for _, key := range []string{"elasticsearch_api_key", "elasticsearch_username", "elasticsearch_password", "elasticsearch_authorization"} {
+		if _, present := spec[key]; present {
+			return "", nil, errors.New("logs plugin: inline Elasticsearch credentials are forbidden")
+		}
 	}
 	endpoints := normalizedStrings(stringSlice(spec, "elasticsearch_endpoints"), 8)
 	if len(endpoints) == 0 {
@@ -630,8 +681,14 @@ func logsExporter(cfg plugins.PluginConfig, spec map[string]interface{}, backend
 		}
 	}
 	keyFile := strings.TrimSpace(stringSpec(spec, "elasticsearch_api_key_file"))
-	if !filepath.IsAbs(keyFile) || strings.Contains(keyFile, "..") {
-		return "", nil, errors.New("logs plugin: managed Elasticsearch API key file is required")
+	authFile := strings.TrimSpace(stringSpec(spec, "elasticsearch_authorization_file"))
+	if (keyFile == "") == (authFile == "") {
+		return "", nil, errors.New("logs plugin: exactly one managed Elasticsearch credential file is required")
+	}
+	for _, path := range []string{keyFile, authFile} {
+		if path != "" && (!filepath.IsAbs(path) || strings.Contains(path, "..")) {
+			return "", nil, errors.New("logs plugin: invalid managed Elasticsearch credential file")
+		}
 	}
 	tlsConfig := map[string]interface{}{
 		"insecure_skip_verify": esTLSInsecure,
@@ -646,7 +703,7 @@ func logsExporter(cfg plugins.PluginConfig, spec map[string]interface{}, backend
 		"flush_timeout": "1s", "min_size": 1_000_000, "max_size": 5_000_000, "sizer": "bytes",
 	}
 	exporter := map[string]interface{}{
-		"endpoints": endpoints, "api_key": "${file:" + keyFile + "}",
+		"endpoints": endpoints,
 		// Pin the only accepted mapping mode. New exporter releases ignore the
 		// deprecated mapping.mode knob and otherwise allow metadata to select a
 		// different document schema, which would invalidate the query adapter.
@@ -658,6 +715,11 @@ func logsExporter(cfg plugins.PluginConfig, spec map[string]interface{}, backend
 		},
 	}
 	generation := strings.TrimSpace(stringSpec(spec, "backend_generation"))
+	if authFile != "" {
+		exporter["headers"] = map[string]interface{}{"Authorization": "${file:" + authFile + "}"}
+	} else {
+		exporter["api_key"] = "${file:" + keyFile + "}"
+	}
 	parsedGeneration, err := strconv.ParseUint(generation, 10, 64)
 	if err != nil || parsedGeneration == 0 {
 		return "", nil, errors.New("logs plugin: Elasticsearch backend generation is required")
