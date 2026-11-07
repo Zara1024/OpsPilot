@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -166,6 +167,9 @@ func TestKubernetesNodeCredentialRecoveryChain(t *testing.T) {
 				}
 			}
 			for key, value := range map[string]string{
+				"OPSPILOT_EDGE_MODE": "k8s-node", "OPSPILOT_K8S_ROLE": "node", "OPSPILOT_K8S_MODE": "full-node", "OPSPILOT_K8S_NODE_UID": "",
+				"OPSPILOT_K8S_CLUSTER_ID": strconv.FormatUint(reg.Cluster.ID, 10), "OPSPILOT_K8S_BOOTSTRAP_TOKEN": reg.NodeBootstrapToken,
+				"OPSPILOT_MANAGER_PUBLIC_URL": manager.URL, "OPSPILOT_K8S_SERVICE_ACCOUNT_DIR": accountDir, "OPSPILOT_K8S_CREDENTIAL_SECRET": "",
 				"ONGRID_EDGE_MODE": "k8s-node", "ONGRID_K8S_ROLE": "node", "ONGRID_K8S_MODE": "full-node", "ONGRID_K8S_NODE_UID": "",
 				"ONGRID_K8S_CLUSTER_ID": strconv.FormatUint(reg.Cluster.ID, 10), "ONGRID_K8S_BOOTSTRAP_TOKEN": reg.NodeBootstrapToken,
 				"ONGRID_MANAGER_PUBLIC_URL": manager.URL, "ONGRID_K8S_SERVICE_ACCOUNT_DIR": accountDir, "ONGRID_K8S_CREDENTIAL_SECRET": "",
@@ -190,6 +194,8 @@ func TestKubernetesNodeCredentialRecoveryChain(t *testing.T) {
 					if err := os.WriteFile(file, legacy, 0600); err != nil {
 						t.Fatal(err)
 					}
+					t.Setenv("OPSPILOT_K8S_NODE_NAME", tc.name)
+					t.Setenv("OPSPILOT_K8S_CREDENTIAL_FILE", file)
 					t.Setenv("ONGRID_K8S_NODE_NAME", tc.name)
 					t.Setenv("ONGRID_K8S_CREDENTIAL_FILE", file)
 					cfg := &config.Config{}
@@ -227,8 +233,12 @@ func TestKubernetesNodeCredentialRecoveryChain(t *testing.T) {
 					}
 					var orphan devicemodel.Device
 					if !tc.replaced && startup == "manager-restart-after-failed-upgrade" {
-						// The unpatched registration creates a Host before rejecting its binding.
+						// Reproduce the old non-transactional insert before binding was rejected.
 						seed := fmt.Sprintf("k8s-node:%d:%s", reg.Cluster.ID, info.NodeUID)
+						hash := sha256.Sum256([]byte("hw:" + seed))
+						if _, err := devicestore.NewRepo(db).FindOrCreateByFingerprint(ctx, &devicemodel.Device{Fingerprint: fmt.Sprintf("fp_%x", hash[:16]), Name: tc.name, Hostname: tc.name}); err != nil {
+							t.Fatal(err)
+						}
 						if err := edges.HandleRegister(ctx, session.EdgeID, tunnel.HostInfo{Hostname: tc.name, Fingerprint: seed, HardwareFingerprint: seed}, "v0.19.0"); !errors.Is(err, errs.ErrInvalid) {
 							t.Fatalf("old registration did not reproduce the upgrade failure: %v", err)
 						}

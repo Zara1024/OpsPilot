@@ -60,7 +60,7 @@ func (r *Repo) Create(ctx context.Context, e *model.Edge) error {
 // by gorm's default DeletedAt handling.
 func (r *Repo) GetByID(ctx context.Context, id uint64) (*model.Edge, error) {
 	var e model.Edge
-	if err := r.db.WithContext(ctx).First(&e, id).Error; err != nil {
+	if err := dbx.WithContext(ctx, r.db).First(&e, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errs.ErrNotFound
 		}

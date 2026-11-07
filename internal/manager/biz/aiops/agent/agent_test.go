@@ -251,6 +251,9 @@ func newFakeEdgeRepoAgent(es ...*edgemodel.Edge) *fakeEdgeRepoAgent {
 	return r
 }
 
+func (r *fakeEdgeRepoAgent) WithLockedEdge(ctx context.Context, _ uint64, fn func(context.Context) error) error {
+	return fn(ctx)
+}
 func (r *fakeEdgeRepoAgent) Create(_ context.Context, _ *edgemodel.Edge) error { return nil }
 func (r *fakeEdgeRepoAgent) GetByID(_ context.Context, id uint64) (*edgemodel.Edge, error) {
 	if e, ok := r.byID[id]; ok {

@@ -894,7 +894,7 @@ func main() {
 	edgeAuthn := managerbizedge.NewAccessKeyAuthenticator(edgeRepo, log)
 	edgeSvc := managersvcedge.New(edgeUC, nil, log)
 	k8sRepo := managerk8sdata.NewRepo(db)
-	k8sUC := managerbizk8s.NewUsecase(k8sRepo, k8sEdgeIdentityIssuer{svc: edgeSvc}, managerbizk8s.Config{
+	k8sUC := managerbizk8s.NewUsecase(k8sRepo, managersvck8s.NewEdgeIdentityIssuer(edgeSvc), managerbizk8s.Config{
 		PublicURL:            cfg.PublicURL,
 		TunnelAddr:           cfg.TunnelAddr,
 		ImageTag:             version,
@@ -3079,51 +3079,6 @@ type llmResolverFunc struct {
 
 func newLLMResolver(svc *managerbizsetting.Service) *llmResolverFunc {
 	return &llmResolverFunc{svc: svc}
-}
-
-type k8sEdgeIdentityIssuer struct {
-	svc *managersvcedge.Service
-}
-
-func (i k8sEdgeIdentityIssuer) CreateEdgeIdentity(ctx context.Context, name string, createdBy *uint64) (*managerbizk8s.EdgeCredential, error) {
-	if i.svc == nil {
-		return nil, errs.ErrNotWiredYet
-	}
-	out, err := i.svc.Create(ctx, name, createdBy)
-	if err != nil {
-		return nil, err
-	}
-	return &managerbizk8s.EdgeCredential{
-		EdgeID:    out.Edge.ID,
-		AccessKey: out.AccessKey,
-		SecretKey: out.SecretKey,
-	}, nil
-}
-
-func (i k8sEdgeIdentityIssuer) RotateEdgeSecret(ctx context.Context, edgeID uint64) (*managerbizk8s.EdgeCredential, error) {
-	if i.svc == nil {
-		return nil, errs.ErrNotWiredYet
-	}
-	edge, err := i.svc.Get(ctx, edgeID)
-	if err != nil {
-		return nil, err
-	}
-	secret, err := i.svc.RotateManagedSecret(ctx, edgeID)
-	if err != nil {
-		return nil, err
-	}
-	return &managerbizk8s.EdgeCredential{
-		EdgeID:    edgeID,
-		AccessKey: edge.AccessKeyID,
-		SecretKey: secret,
-	}, nil
-}
-
-func (i k8sEdgeIdentityIssuer) DeleteEdge(ctx context.Context, edgeID uint64) error {
-	if i.svc == nil {
-		return errs.ErrNotWiredYet
-	}
-	return i.svc.DeleteManaged(ctx, edgeID)
 }
 
 // pluginEndpointResolver implements edgebiz.EndpointResolver: maps a

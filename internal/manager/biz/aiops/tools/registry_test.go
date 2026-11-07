@@ -34,6 +34,9 @@ func newFakeEdgeRepo(edges ...*edgemodel.Edge) *fakeEdgeRepo {
 	return r
 }
 
+func (r *fakeEdgeRepo) WithLockedEdge(ctx context.Context, _ uint64, fn func(context.Context) error) error {
+	return fn(ctx)
+}
 func (r *fakeEdgeRepo) Create(_ context.Context, _ *edgemodel.Edge) error { return nil }
 func (r *fakeEdgeRepo) GetByID(_ context.Context, id uint64) (*edgemodel.Edge, error) {
 	if e, ok := r.byID[id]; ok {
