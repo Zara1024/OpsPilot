@@ -439,14 +439,28 @@ jobs:
           release_notes="$(cat "$RUNNER_TEMP/release-notes.md")"
           release_flags=()
           [[ "$tag" == *-* ]] && release_flags+=(--prerelease)
-          gh release create "$tag" \
-            "dist/out/opspilot-${tag}-linux-amd64.tar.xz" \
-            "dist/out/opspilot-${tag}-linux-amd64.tar.xz.sha256" \
-            "dist/out/opspilot-${tag}-linux-arm64.tar.xz" \
-            "dist/out/opspilot-${tag}-linux-arm64.tar.xz.sha256" \
-            "dist/out/latest.json" \
-            --verify-tag \
-            --title "OpsPilot ${tag}" \
-            --generate-notes \
-            --notes "$release_notes" \
-            "${release_flags[@]}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" \
+              --title "OpsPilot ${tag}" \
+              --notes "$release_notes" \
+              "${release_flags[@]}"
+            gh release upload "$tag" \
+              "dist/out/opspilot-${tag}-linux-amd64.tar.xz" \
+              "dist/out/opspilot-${tag}-linux-amd64.tar.xz.sha256" \
+              "dist/out/opspilot-${tag}-linux-arm64.tar.xz" \
+              "dist/out/opspilot-${tag}-linux-arm64.tar.xz.sha256" \
+              "dist/out/latest.json" \
+              --clobber
+          else
+            gh release create "$tag" \
+              "dist/out/opspilot-${tag}-linux-amd64.tar.xz" \
+              "dist/out/opspilot-${tag}-linux-amd64.tar.xz.sha256" \
+              "dist/out/opspilot-${tag}-linux-arm64.tar.xz" \
+              "dist/out/opspilot-${tag}-linux-arm64.tar.xz.sha256" \
+              "dist/out/latest.json" \
+              --verify-tag \
+              --title "OpsPilot ${tag}" \
+              --generate-notes \
+              --notes "$release_notes" \
+              "${release_flags[@]}"
+          fi
