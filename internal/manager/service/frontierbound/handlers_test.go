@@ -340,6 +340,10 @@ func (rejectingNodeRegistry) HandleRegister(context.Context, uint64, *uint64, tu
 	return errors.New("node identity rejected")
 }
 
+func (rejectingNodeRegistry) PrepareNodeHost(context.Context, uint64, tunnel.KubernetesInfo, tunnel.HostInfo) (tunnel.HostInfo, error) {
+	return tunnel.HostInfo{}, errors.New("node identity rejected")
+}
+
 func TestInstall_RegisterNodeValidatesIdentityBeforeHostLookup(t *testing.T) {
 	fs, _, _ := installAndDispatch(t, Wiring{K8sRegistry: rejectingNodeRegistry{}})
 	body, err := json.Marshal(tunnel.RegisterEdgeRequest{
