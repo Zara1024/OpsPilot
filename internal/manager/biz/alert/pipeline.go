@@ -384,19 +384,6 @@ func (e *PipelineEvaluator) evaluatePromQuery(ctx context.Context, now time.Time
 				ruleTitle = rule.RuleKey
 			}
 
-			// 提取设备名称做友好标题
-			devDisplayName := ""
-			if dn, ok := ent.Metric["device_name"]; ok && dn != "" {
-				parts := strings.Split(dn, ":")
-				devDisplayName = parts[len(parts)-1]
-			}
-
-			title := ruleTitle
-			if devDisplayName != "" {
-				title = fmt.Sprintf("%s - %s", ruleTitle, devDisplayName)
-			} else if valStr != "" && rule.RuleKey != "device_offline" {
-				title = fmt.Sprintf("%s (当前值: %s)", ruleTitle, valStr)
-			}
 			summary := fmt.Sprintf("%s: %s ⇒ %s (value=%s)", rule.RuleKey, rule.Expr, labelSetKey(ent.Metric), valStr)
 
 			var devID *uint64
