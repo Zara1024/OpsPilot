@@ -1,4 +1,4 @@
-﻿package externalmcp_test
+package externalmcp_test
 
 import (
 	"context"

@@ -1,4 +1,4 @@
-﻿package integrationtoken_test
+package integrationtoken_test
 
 import (
 	"context"

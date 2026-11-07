@@ -1,4 +1,4 @@
-﻿// Package store is the persistence layer for HLD-010 audit_logs.
+// Package store is the persistence layer for HLD-010 audit_logs.
 // Inserts are append-only; the only mutation is the retention sweep.
 package store
 

@@ -76,12 +76,11 @@ func (r *ShellRunner) Run(ctx context.Context, spec Spec) (Result, error) {
 	cmd.Stdout = outBuf
 	cmd.Stderr = errBuf
 
-	wait, err := StartCommand(cctx, cmd)
-	if err != nil {
-		return Result{}, fmt.Errorf("runner: start: %w", err)
-	}
 	start := time.Now()
-	runErr := wait()
+	wait, runErr := StartCommand(cctx, cmd)
+	if runErr == nil {
+		runErr = wait()
+	}
 	dur := time.Since(start)
 
 	res := Result{

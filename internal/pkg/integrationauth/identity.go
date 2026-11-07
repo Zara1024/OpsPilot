@@ -1,4 +1,4 @@
-﻿// Package integrationauth defines the request identity shared by IAM and
+// Package integrationauth defines the request identity shared by IAM and
 // external integrations. It carries no credential secret.
 package integrationauth
 

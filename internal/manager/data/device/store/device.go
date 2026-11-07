@@ -1,4 +1,4 @@
-﻿// Package sqlite is the GORM-backed implementation of biz/device.Repo
+// Package sqlite is the GORM-backed implementation of biz/device.Repo
 // and biz/device.EdgeDeviceRepo. Despite the package name it works
 // against MySQL too 鈥?GORM hides the dialect at this level.
 package store

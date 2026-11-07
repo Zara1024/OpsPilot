@@ -414,7 +414,7 @@ func (e *PipelineEvaluator) evaluatePromQuery(ctx context.Context, now time.Time
 				DeviceID:   devID,
 				DedupeKey:  dedupeKey,
 				OccurredAt: now,
-				Title:      title,
+				Title:      summary,
 				Summary:    summary,
 				RunbookURL: rule.RunbookURL,
 				Labels:     mergeLabels(rule.Labels, ent.Metric, map[string]string{"rule": rule.RuleKey, "trigger": "ticker"}),

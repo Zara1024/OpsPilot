@@ -1,4 +1,4 @@
-﻿// Package externalmcp exposes the authenticated, sessionless MCP transport.
+// Package externalmcp exposes the authenticated, sessionless MCP transport.
 package externalmcp
 
 import (

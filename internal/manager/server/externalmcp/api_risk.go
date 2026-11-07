@@ -1,4 +1,4 @@
-﻿package externalmcp
+package externalmcp
 
 import (
 	"slices"

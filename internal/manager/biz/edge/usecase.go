@@ -348,9 +348,6 @@ func (u *Usecase) HandleRegister(ctx context.Context, edgeID uint64, info tunnel
 	if u.repo == nil || u.devices == nil {
 		return errs.ErrNotWiredYet
 	}
-	if u.links == nil {
-		return errs.ErrNotWiredYet
-	}
 
 	var edge *model.Edge
 	var dev *devicemodel.Device
@@ -390,8 +387,10 @@ func (u *Usecase) HandleRegister(ctx context.Context, edgeID uint64, info tunnel
 		if err != nil {
 			return fmt.Errorf("upsert device: %w", err)
 		}
-		if err := u.links.Link(ctx, edgeID, dev.ID, devicemodel.EdgeDeviceRelationHost); err != nil {
-			return fmt.Errorf("link edge to host: %w", err)
+		if u.links != nil {
+			if err := u.links.Link(ctx, edgeID, dev.ID, devicemodel.EdgeDeviceRelationHost); err != nil {
+				return fmt.Errorf("link edge to host: %w", err)
+			}
 		}
 		return nil
 	})
@@ -427,11 +426,6 @@ func (u *Usecase) HandleRegister(ctx context.Context, edgeID uint64, info tunnel
 			}
 		} else {
 			dev.NodeID = &nodeID
-		}
-	}
-	if u.links != nil {
-		if err := u.links.Link(ctx, edgeID, dev.ID, devicemodel.EdgeDeviceRelationHost); err != nil {
-			return fmt.Errorf("link edge<->device(host): %w", err)
 		}
 	}
 	if edge.DeviceID == nil || *edge.DeviceID != dev.ID {

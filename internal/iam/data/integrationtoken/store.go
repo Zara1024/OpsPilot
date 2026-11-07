@@ -1,4 +1,4 @@
-﻿package integrationtoken
+package integrationtoken
 
 import (
 	"context"

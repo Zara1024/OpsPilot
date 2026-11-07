@@ -81,7 +81,7 @@ type Device struct {
 	// application NAS) can carry several bits at once; 0 means "未分类".
 	// Moved from Edge during the May 2026 split — this is host metadata,
 	// not agent metadata.
-	Roles uint8 `gorm:"not null;default:0;index:idx_devices_roles;check:roles BETWEEN 0 AND 15;column:roles"`
+	Roles uint8 `gorm:"not null;default:0;index:idx_devices_roles;check:roles BETWEEN 0 AND 31;column:roles"`
 
 	// Online / LastSeenAt mirror the most recently observed agent
 	// presence on this host. They are denormalised from Edge for fast

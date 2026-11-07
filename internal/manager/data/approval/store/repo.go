@@ -1,4 +1,4 @@
-﻿// Package store is the GORM-backed persistence for the approval inbox.
+// Package store is the GORM-backed persistence for the approval inbox.
 package store
 
 import (

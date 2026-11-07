@@ -1,4 +1,4 @@
-﻿// Package externalmcp owns the fixed, scoped integration tool contract.
+// Package externalmcp owns the fixed, scoped integration tool contract.
 package externalmcp
 
 import (
