@@ -336,6 +336,10 @@ func main() {
 	} else if migrated > 0 {
 		log.Info("migrated legacy workflow IM notification tools", slog.Int("flow_count", migrated))
 	}
+	if err := managerk8sdata.RepairNodeHostIdentities(rootCtx, db, log); err != nil {
+		log.Error("repair kubernetes host identities", slog.Any("err", err))
+		os.Exit(1)
+	}
 	// The encrypted credential vault is shared by multiple bounded contexts.
 	// Construct it immediately after migrations so log backend wiring can use
 	// separate read/write API keys without delaying the HTTP/query services.
@@ -1718,6 +1722,10 @@ func main() {
 
 	aiopsSvc := managersvcaiops.NewWithKernel(aiopsAgent, aiopsRuntime, kernel, aiopsRepo, aiopsUsage, log)
 	aiopsSvc.SetMutatingProposalRepo(mutatingProposalRepo)
+	aiopsSvc.SetPageIncidentCheck(func(ctx context.Context, caller managersvcaiops.Caller, id uint64) error {
+		_, err := alertSvc.GetIncident(ctx, managersvcalert.Caller{UserID: caller.UserID, Role: caller.Role}, id)
+		return err
+	})
 	aiopsSvc.WithAPMSourceResolver(apmService)
 	aiopsSvc.SetAttachmentRepo(aiopsRepo)
 	aiopsSvc.SetModelCatalog(llmRouter)

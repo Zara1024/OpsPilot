@@ -1,3 +1,4 @@
+import { useAssistantPage } from '@/lib/assistantPage';
 import { Label, Input, Button, EmptyStateCard } from '@/components/ui';
 import { Hint } from '@/components/ui/Tooltip';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
@@ -272,6 +273,10 @@ function CatalogTab() {
       );
     });
   }, [items, query, category, scope]);
+
+    useAssistantPage('技能目录', 'Skill catalog', {
+    category, scope, visible_skills: filtered.length, selected_skill: viewing?.name, loading,
+  });
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">

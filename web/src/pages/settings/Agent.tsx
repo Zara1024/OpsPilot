@@ -1,3 +1,4 @@
+import { useAssistantPage } from '@/lib/assistantPage';
 import { Label, Input } from '@/components/ui';
 import { Switch } from '@/components/ui/Switch';
 import { Select } from '@/components/ui/Select';
@@ -109,6 +110,11 @@ export default function SettingsAgent() {
       setSavingLocale(false);
     }
   }, [outputLocale]);
+
+  useAssistantPage('Agent 设置', 'Agent settings', {
+    write_enabled: writeEnabled,
+    loading,
+  });
 
   return (
     <div className="space-y-4">

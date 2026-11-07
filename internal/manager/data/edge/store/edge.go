@@ -6,9 +6,11 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	biz "github.com/Zara1024/OpsPilot/internal/manager/biz/edge"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/edge"
+	"github.com/Zara1024/OpsPilot/internal/pkg/dbx"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 )
 
@@ -23,6 +25,26 @@ func NewRepo(db *gorm.DB) *Repo { return &Repo{db: db} }
 
 // compile-time interface check.
 var _ biz.Repo = (*Repo)(nil)
+
+func (r *Repo) WithLockedEdge(ctx context.Context, edgeID uint64, fn func(context.Context) error) error {
+	return dbx.Transaction(ctx, r.db, func(ctx context.Context) error {
+		tx := dbx.WithContext(ctx, r.db)
+		if tx.Dialector.Name() == "sqlite" {
+			// Acquire the writer lock before reading; SQLite ignores FOR UPDATE.
+			if err := tx.Model(&model.Edge{}).Where("id = ?", edgeID).UpdateColumn("id", gorm.Expr("id")).Error; err != nil {
+				return err
+			}
+		}
+		var edge model.Edge
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&edge, edgeID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errs.ErrNotFound
+			}
+			return err
+		}
+		return fn(ctx)
+	})
+}
 
 // Create inserts e. Any insert-side failure (unique violation, etc.) is
 // returned unwrapped so the caller can errors.Is on gorm.ErrDuplicatedKey
@@ -172,7 +194,9 @@ func (r *Repo) MarkRegistered(ctx context.Context, id uint64, registeredAt time.
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return errs.ErrNotFound
+		// A concurrent registration can write the same values within MySQL's timestamp precision.
+		_, err := r.GetByID(ctx, id)
+		return err
 	}
 	return nil
 }
@@ -187,7 +211,8 @@ func (r *Repo) UpdateName(ctx context.Context, id uint64, name string) error {
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return errs.ErrNotFound
+		_, err := r.GetByID(ctx, id)
+		return err
 	}
 	return nil
 }
@@ -227,7 +252,8 @@ func (r *Repo) SetAgentVersion(ctx context.Context, id uint64, version string) e
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return errs.ErrNotFound
+		_, err := r.GetByID(ctx, id)
+		return err
 	}
 	return nil
 }
