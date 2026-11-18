@@ -5,7 +5,7 @@ const now = '2026-07-14T00:00:00Z';
 
 async function useEnglish(page: Page) {
   await page.addInitScript(() => {
-    localStorage.setItem('opspilot-locale', 'en-US');
+    localStorage.setItem('ongrid-locale', 'en-US');
   });
 }
 

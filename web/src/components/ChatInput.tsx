@@ -34,6 +34,7 @@ import {
   type MentionItem,
   type MentionType,
   type LLMProvider,
+  type ModelSelection,
 } from '@/api/chat';
 import { ModelIcon } from '@/components/icons/Provider';
 import { Modal } from '@/components/Modal';
@@ -54,7 +55,7 @@ type PendingAttachment = { file: File; previewURL: string };
 // ModelSelection is the per-session (provider, model) pair. The host
 // page persists this into chat session state; ChatInput renders it
 // as a pill above the toolbar.
-export type ModelSelection = { provider: string; model: string };
+export type { ModelSelection } from '@/api/chat';
 
 type Props = {
   value?: string;
@@ -479,11 +480,12 @@ export function ChatInput({
         )}
 
         <div className="flex items-center justify-between gap-2 px-3 pb-3 pt-1">
-          <div className="flex items-center gap-1.5">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
             <ModelDropdown
               providers={providers ?? []}
               selected={selectedModel ?? null}
               onPick={onModelChange}
+              disabled={disabled}
             />
             <WebSearchToggle
               enabled={!!webSearchEnabled}

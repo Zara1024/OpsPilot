@@ -47,7 +47,7 @@ func TestCompileDraftCombinesMetricRawExprOperatorThreshold(t *testing.T) {
 		Rule: RuleConfigInput{
 			Kind: "metric_raw",
 			Spec: map[string]interface{}{
-				"expr":      `sum by (device_id, opspilot_source) (pg_stat_database_numbackends) / max by (device_id, opspilot_source) (pg_settings_max_connections) * 100`,
+				"expr":      `sum by (device_id, ongrid_source) (pg_stat_database_numbackends) / max by (device_id, ongrid_source) (pg_settings_max_connections) * 100`,
 				"operator":  ">",
 				"threshold": 85,
 			},
@@ -58,7 +58,7 @@ func TestCompileDraftCombinesMetricRawExprOperatorThreshold(t *testing.T) {
 		t.Fatalf("CompileDraft: %v", err)
 	}
 	expr, _ := got.Rule.Spec["expr"].(string)
-	want := `(sum by (device_id, opspilot_source) (pg_stat_database_numbackends) / max by (device_id, opspilot_source) (pg_settings_max_connections) * 100) > 85`
+	want := `(sum by (device_id, ongrid_source) (pg_stat_database_numbackends) / max by (device_id, ongrid_source) (pg_settings_max_connections) * 100) > 85`
 	if expr != want {
 		t.Fatalf("expr = %q, want %q", expr, want)
 	}

@@ -13,8 +13,7 @@ import (
 // incident-investigator agent, finalised by a second LLM pass that
 // extracts the structured fields from the worker transcript.
 //
-// The transcript lives in chat_sessions (kind='investigation') â€”
-// reference via AuditSessionID for drill-down. The report itself is
+// The transcript lives in chat_sessions (kind='investigation') â€?// reference via AuditSessionID for drill-down. The report itself is
 // the operator-facing artifact: one row, one alert, one finding.
 type InvestigationReport struct {
 	ID string `gorm:"primaryKey;type:char(36);column:id"`
@@ -25,11 +24,11 @@ type InvestigationReport struct {
 	IncidentID uint64 `gorm:"column:incident_id;not null;uniqueIndex:uniq_invreports_incident"`
 
 	// Status drives the IncidentDetail UI badge:
-	//   pending  â€” queued, worker not started yet
-	//   running  â€” worker spawned, tool loop running
-	//   ready    â€” final report written
-	//   failed   â€” worker crashed / LLM error / timeout
-	//   skipped  â€” gate dropped it (severity too low / dedup / budget)
+	//   pending  â€?queued, worker not started yet
+	//   running  â€?worker spawned, tool loop running
+	//   ready    â€?final report written
+	//   failed   â€?worker crashed / LLM error / timeout
+	//   skipped  â€?gate dropped it (severity too low / dedup / budget)
 	Status string `gorm:"column:status;size:16;not null;default:'pending';index:idx_invreports_status_created,priority:1"`
 
 	// StatusReason is the human-readable explanation for skipped /
@@ -41,7 +40,7 @@ type InvestigationReport struct {
 	// applies to every text/longtext column below.
 	StatusReason string `gorm:"column:status_reason;type:text;not null"`
 
-	// RootCause is the one-line conclusion. Operator-facing â€” shows up
+	// RootCause is the one-line conclusion. Operator-facing â€?shows up
 	// in alert list inline summary. Set on status=ready only.
 	RootCause string `gorm:"column:root_cause;size:1024;not null;default:''"`
 
@@ -52,7 +51,7 @@ type InvestigationReport struct {
 	AffectedWindow string `gorm:"column:affected_window;size:64;not null;default:''"`
 
 	// PinpointedTargetJSON is the structured "what specific entity"
-	// â€” typically {device_id, pid, cmd, service}. Schema is open;
+	// â€?typically {device_id, pid, cmd, service}. Schema is open;
 	// LLM fills it per available signal.
 	PinpointedTargetJSON string `gorm:"column:pinpointed_target_json;type:text;not null"`
 
@@ -64,9 +63,11 @@ type InvestigationReport struct {
 	// produced the conclusion. Each entry references a
 	// chat_tool_calls row for raw drill-down.
 	EvidenceJSON string `gorm:"column:evidence_json;type:text;not null"`
+	// Nullable for historical reports and rolling upgrades; absence never means checked.
+	EvidenceCheckJSON *string `gorm:"column:evidence_check_json;type:text"`
 
 	// SuggestedActionsJSON is the array of recommended next steps.
-	// First version is display-only (no one-click execute) â€” operators
+	// First version is display-only (no one-click execute) â€?operators
 	// follow the deep-link or copy the command.
 	SuggestedActionsJSON string `gorm:"column:suggested_actions_json;type:text;not null"`
 
@@ -87,7 +88,7 @@ type InvestigationReport struct {
 	// that holds the full tool-loop transcript. Nullable while pending.
 	AuditSessionID *string `gorm:"column:audit_session_id;size:36;index"`
 
-	// WorkerID is the chatruntime worker handle â€” bookkeeping for
+	// WorkerID is the chatruntime worker handle â€?bookkeeping for
 	// cancellation / re-attach if the manager restarts mid-run.
 	WorkerID *string `gorm:"column:worker_id;size:64"`
 

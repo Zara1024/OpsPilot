@@ -14,8 +14,8 @@ import (
 // metricCollectors bundles the Prom collectors registered by the metric
 // decorator. Allocated lazily per Registerer so multiple Wrap() calls
 // against the same registerer share collectors (avoiding
-// "already registered" panics in tests). — MetricTool
-// (记 opspilot_tool_invocations_total).
+// "already registered" panics in tests). �?MetricTool
+// (�?ongrid_tool_invocations_total).
 type metricCollectors struct {
 	invocations *prometheus.CounterVec
 	duration    *prometheus.HistogramVec
@@ -28,7 +28,7 @@ var (
 
 // getMetricCollectors returns (and lazily creates / registers) the
 // collectors for reg. Identical pattern to internal/pkg/llm/metrics.go's
-// registerOrExisting — we treat AlreadyRegisteredError as "reuse the
+// registerOrExisting �?we treat AlreadyRegisteredError as "reuse the
 // existing collector" so multiple decorator chains over the same
 // registry don't panic.
 func getMetricCollectors(reg prometheus.Registerer) *metricCollectors {
@@ -42,15 +42,15 @@ func getMetricCollectors(reg prometheus.Registerer) *metricCollectors {
 	}
 	inv := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "opspilot_tool_invocations_total",
-			Help: "Total opspilot tool invocations, split by name and result.",
+			Name: "ongrid_tool_invocations_total",
+			Help: "Total ongrid tool invocations, split by name and result.",
 		},
 		[]string{"name", "result"},
 	)
 	dur := prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "opspilot_tool_duration_seconds",
-			Help:    "opspilot tool invocation duration in seconds.",
+			Name:    "ongrid_tool_duration_seconds",
+			Help:    "ongrid tool invocation duration in seconds.",
 			Buckets: prometheus.ExponentialBuckets(0.05, 2, 10), // ~50ms .. ~25s
 		},
 		[]string{"name"},
@@ -77,9 +77,7 @@ func regOrExist(reg prometheus.Registerer, c prometheus.Collector) prometheus.Co
 }
 
 // MetricTool wraps inner so each invocation increments a Prom counter
-// and observes a duration histogram. — MetricTool 装饰器
-// 层。Cardinality red line: labels are {name, result} only —
-// never user_id / tenant / device_id.
+// and observes a duration histogram. �?MetricTool 装饰�?// 层。Cardinality red line: labels are {name, result} only �?// never user_id / tenant / device_id.
 type MetricTool struct {
 	inner      basetool.BaseTool
 	collectors *metricCollectors
@@ -95,14 +93,14 @@ func WithMetric(inner basetool.BaseTool, reg prometheus.Registerer) basetool.Bas
 	}
 }
 
-// Info passes through — collectors don't affect schema.
+// Info passes through �?collectors don't affect schema.
 func (m *MetricTool) Info(ctx context.Context) (*basetool.ToolInfo, error) {
 	return m.inner.Info(ctx)
 }
 
 // InvokableRun runs the inner tool, then increments
-// opspilot_tool_invocations_total{name=..,result=success|error} and
-// observes opspilot_tool_duration_seconds{name=..} regardless of outcome.
+// ongrid_tool_invocations_total{name=..,result=success|error} and
+// observes ongrid_tool_duration_seconds{name=..} regardless of outcome.
 func (m *MetricTool) InvokableRun(ctx context.Context, argsJSON string, opts ...basetool.InvokeOption) (string, error) {
 	name := ""
 	if info, err := m.inner.Info(ctx); err == nil && info != nil {

@@ -1,35 +1,18 @@
-// Package tools holds the manager/aiops tool registry: JSON-schema
-// definitions + executors that dispatch reverse calls to edges via the
-// frontierbound service-end SDK.
-//
-// Each tool definition is a (name, description, JSON-schema, executor) quad.
-// The registry exposes Schemas() in the llm.ToolSchema shape for passing
-// straight into llm.Chat, and Invoke(name, args) for the agent loop to
-// dispatch after the model returns a tool_call.
-//
-// Cross-subdomain import of manager/biz/edge is explicit and deliberate
-// (same-BC subdomains may import each other). Reverse
-// calls travel through a Caller ‚Äî concretely the frontierbound.Client
-// wrapping github.com/singchia/frontier ‚Äî so this package stays free of
-// any geminio / SDK-level types.
+// Package tools assembles and implements the manager AIOps BaseTools.
 package tools
 
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/toolresult"
 	"log/slog"
+	"os"
+	"strconv"
 
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
-
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/tools/basetool"
 	devicebiz "github.com/Zara1024/OpsPilot/internal/manager/biz/device"
 	edgebiz "github.com/Zara1024/OpsPilot/internal/manager/biz/edge"
 	topologybiz "github.com/Zara1024/OpsPilot/internal/manager/biz/topology"
-	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
-	"github.com/Zara1024/OpsPilot/internal/pkg/llm"
-	"github.com/Zara1024/OpsPilot/internal/pkg/tracing"
 )
 
 // Caller is the narrow seam this package needs from the frontierbound SDK
@@ -45,8 +28,8 @@ type Caller interface {
 // which the agent uses to populate the chat_tool_calls.device_id audit
 // column.
 //
-// Post-split (May 2026): renamed EdgeID ‚Üí DeviceID. Numerically the
-// values are the same ‚Äî the legacy chat_tool_calls.edge_id column is
+// Post-split (May 2026): renamed EdgeID ‚Ü?DeviceID. Numerically the
+// values are independent ‚Ä?the legacy chat_tool_calls.edge_id column is
 // kept as the storage column name (audit-only) but the semantic
 // interpretation is the host device id.
 type ExecuteResult struct {
@@ -54,31 +37,23 @@ type ExecuteResult struct {
 	DeviceID   *uint64
 }
 
-// Tool is one exposed action: its name, description, JSON Schema of its
-// argument object, and the executor that fulfils a call.
-type Tool struct {
-	Name        string
-	Description string
-	Schema      json.RawMessage
-	Execute     func(ctx context.Context, args json.RawMessage) (ExecuteResult, error)
-}
-
-// Registry bundles the Caller + edge usecase so tool executors can
-// dispatch RPCs to edges. It indexes tools by name. promQuery / logQuery /
-// traceQuery / alertUC are optional; when nil the corresponding query_* /
+// Registry holds dependencies for BuildBaseTools and its tool executors.
+// promQuery, logQuery, traceQuery and alertUC are optional; when nil the corresponding query_* /
 // composite tool is not registered (graceful degradation for deployments
 // without that signal). alertUC is a narrow interface (AlertUsecase) so
 // tests can inject a fake without standing up the full alert biz repo.
 type Registry struct {
-	caller     Caller
-	edges      *edgebiz.Usecase
-	devices    *devicebiz.Usecase
-	alertUC    AlertUsecase
-	promQuery  PromQuerier
-	logQuery   LogQuerier
-	traceQuery TraceQuerier
+	results     *toolresult.Usecase
+	skillRunner SkillRunner
+	caller      Caller
+	edges       *edgebiz.Usecase
+	devices     *devicebiz.Usecase
+	alertUC     AlertUsecase
+	promQuery   PromQuerier
+	logQuery    LogQuerier
+	traceQuery  TraceQuerier
 	// knowledge is the user-curated knowledge base + git repo searcher.
-	// nil-safe ‚Äî when nil the query_knowledge tool isn't registered.
+	// nil-safe ‚Ä?when nil the query_knowledge tool isn't registered.
 	knowledge KnowledgeSearcher
 	// topology bundles deployment-level facts (manager version, configured
 	// backend URLs, channel-count callback) consumed by the get_topology
@@ -91,7 +66,7 @@ type Registry struct {
 	// expand_topology / find_topology_node. Distinct from the
 	// deployment-level `topology` field above (which feeds get_topology);
 	// the naming overlap is unfortunate but the two surfaces address
-	// different audiences. nil-safe ‚Äî the two BaseTools simply aren't
+	// different audiences. nil-safe ‚Ä?the two BaseTools simply aren't
 	// registered when this is nil.
 	topologyGraph *topologybiz.Usecase
 
@@ -104,7 +79,7 @@ type Registry struct {
 	// to validate subagent_type at args-parse time. nil-safe.
 	subagentRegistry SubagentRegistry
 
-	// auditLister feeds query_change_events (HLD-013 Phase 2 ‚Äî "what
+	// auditLister feeds query_change_events (HLD-013 Phase 2 ‚Ä?"what
 	// changed near T"). nil-safe: the tool isn't registered when unset.
 	// Wired post-construction from cmd/main.go via SetAuditLister.
 	auditLister AuditLister
@@ -118,58 +93,52 @@ type Registry struct {
 
 	// cloudBashProposer wires the cloud_bash tool to the human approval
 	// inbox. Set post-construction (cmd/main.go) via SetCloudBashProposer;
-	// nil ‚Üí cloud_bash is NOT registered.
+	// nil ‚Ü?cloud_bash is NOT registered.
 	cloudBashProposer CloudBashProposer
 	// hostBashProposer wires mutating host_bash commands to the same inline
-	// approval flow. nil ‚Üí host_bash remains read-only only.
-	hostBashProposer HostBashProposer
+	// approval flow. nil ‚Ü?host_bash remains read-only only.
+	hostBashProposer              HostBashProposer
+	hostBashPolicyApprovalEnabled func(context.Context) bool
 
 	// notificationSender wires send_notification to the channel store + notify
-	// router. Set post-construction; nil ‚Üí the tool is not registered.
+	// router. Set post-construction; nil ‚Ü?the tool is not registered.
 	notificationSender NotificationSender
 	// imMessageSender wires send_im_message to the IM Bridge's direct group
 	// sender. It is separate from notificationSender by design.
 	imMessageSender IMMessageSender
 
 	// pageStore wires serve_page to the hosted-pages store + static route.
-	// Set post-construction (cmd/main.go); nil ‚Üí serve_page NOT registered.
+	// Set post-construction (cmd/main.go); nil ‚Ü?serve_page NOT registered.
 	pageStore PageStore
 
 	// k8sSnapshot feeds query_k8s_snapshot. It reads manager DB snapshots,
 	// not the live Kubernetes API.
 	k8sSnapshot           K8sSnapshotReader
-	k8sActionProposer     K8sActionProposer
-	legacyK8sActionTool   *ExecuteK8sActionTool
 	packetCapture         PacketCaptureCreator
 	packetOperationCreate PacketCaptureOperationCreator
 
-	log   *slog.Logger
-	tools map[string]Tool
+	log *slog.Logger
 }
 
-// SetCloudBashProposer wires the cloud_bash ‚Üí approval-inbox seam. Call
+// SetCloudBashProposer wires the cloud_bash ‚Ü?approval-inbox seam. Call
 // after NewRegistry (cmd/main.go).
 func (r *Registry) SetCloudBashProposer(p CloudBashProposer) { r.cloudBashProposer = p }
 
 // SetHostBashProposer wires mutating host_bash commands to the approval inbox.
 func (r *Registry) SetHostBashProposer(p HostBashProposer) { r.hostBashProposer = p }
 
-// SetK8sActionProposer wires the default legacy kernel to the human approval
-// inbox. The tool is registered only when caller, snapshot reader, and
-// proposer are all available, so a partial boot never exposes an unfulfillable
-// or approval-bypassing Kubernetes write surface.
-func (r *Registry) SetK8sActionProposer(p K8sActionProposer) {
-	r.k8sActionProposer = p
-	r.registerLegacyK8sAction()
+// SetHostBashPolicyApprovalEnabledProvider wires the live opt-in setting.
+func (r *Registry) SetHostBashPolicyApprovalEnabledProvider(fn func(context.Context) bool) {
+	r.hostBashPolicyApprovalEnabled = fn
 }
 
-// SetNotificationSender wires send_notification ‚Üí channel store + notify router.
+// SetNotificationSender wires send_notification ‚Ü?channel store + notify router.
 func (r *Registry) SetNotificationSender(s NotificationSender) { r.notificationSender = s }
 
 // SetIMMessageSender wires send_im_message to an IM Bridge group sender.
 func (r *Registry) SetIMMessageSender(s IMMessageSender) { r.imMessageSender = s }
 
-// SetPageStore wires serve_page ‚Üí hosted-pages store.
+// SetPageStore wires serve_page ‚Ü?hosted-pages store.
 func (r *Registry) SetPageStore(p PageStore) { r.pageStore = p }
 
 // SetPacketCaptureOperationCreator wires durable Operation creation into the
@@ -179,114 +148,29 @@ func (r *Registry) SetPacketCaptureOperationCreator(create PacketCaptureOperatio
 	r.packetOperationCreate = create
 }
 
-// SetK8sSnapshotReader wires query_k8s_snapshot. Call after NewRegistry
-// because the Kubernetes service is assembled before, but kept out of
-// NewRegistry's already-heavy constructor.
-func (r *Registry) SetK8sSnapshotReader(k K8sSnapshotReader) {
-	r.k8sSnapshot = k
-	r.registerLegacyK8sAction()
-	if k != nil {
-		r.Register(Tool{
-			Name:        ToolNameQueryK8sSnapshot,
-			Description: QueryK8sSnapshotDescription,
-			Schema:      QueryK8sSnapshotSchema,
-			Execute:     r.executeQueryK8sSnapshot,
-		})
-		if r.caller != nil {
-			r.Register(Tool{
-				Name:        ToolNameDescribeK8sResource,
-				Description: DescribeK8sResourceDescription,
-				Schema:      DescribeK8sResourceSchema,
-				Execute:     r.executeDescribeK8sResource,
-			})
-			r.Register(Tool{
-				Name:        ToolNameQueryK8sLogs,
-				Description: QueryK8sLogsDescription,
-				Schema:      QueryK8sLogsSchema,
-				Execute:     r.executeQueryK8sLogs,
-			})
-		}
-	}
-}
-
-func (r *Registry) registerLegacyK8sAction() {
-	delete(r.tools, ToolNameExecuteK8sAction)
-	r.legacyK8sActionTool = nil
-	if r.caller == nil || r.k8sSnapshot == nil || r.k8sActionProposer == nil {
-		return
-	}
-	tool := NewExecuteK8sActionToolWithProposer(r.caller, r.k8sSnapshot, r.k8sActionProposer, r.log)
-	r.legacyK8sActionTool = tool
-	r.Register(Tool{
-		Name:        ToolNameExecuteK8sAction,
-		Description: ExecuteK8sActionDescription,
-		Schema:      ExecuteK8sActionSchema,
-		Execute: func(ctx context.Context, args json.RawMessage) (ExecuteResult, error) {
-			out, err := tool.InvokableRun(ctx, string(args))
-			if err != nil {
-				return ExecuteResult{}, err
-			}
-			return ExecuteResult{ResultJSON: json.RawMessage(out)}, nil
-		},
-	})
-}
-
-// RunApprovedK8sAction executes an exact payload after the approval usecase
-// has recorded an admin decision. It deliberately reuses the same tool object
-// that issued and consumed the legacy preflight grant.
-func (r *Registry) RunApprovedK8sAction(ctx context.Context, args ExecuteK8sActionArgs, userID uint64, sessionID string) (string, error) {
-	if r.legacyK8sActionTool == nil {
-		return "", fmt.Errorf("%s: legacy approval executor is not configured", ToolNameExecuteK8sAction)
-	}
-	return r.legacyK8sActionTool.RunApproved(ctx, args, userID, sessionID)
-}
+// SetK8sSnapshotReader wires Kubernetes snapshot access for BaseTools.
+func (r *Registry) SetK8sSnapshotReader(k K8sSnapshotReader) { r.k8sSnapshot = k }
 
 // SetAuditLister wires the audit query seam consumed by
 // query_change_events. Call after NewRegistry (cmd/main.go).
 func (r *Registry) SetAuditLister(a AuditLister) { r.auditLister = a }
 
-// SetPluginConfigLister wires the plugin config source discovery seam used by
-// list_database_sources / analyze_database_status. Call after NewRegistry
-// (cmd/main.go).
-func (r *Registry) SetPluginConfigLister(p PluginConfigLister) {
-	r.pluginConfigs = p
-	if p != nil && r.edges != nil {
-		r.Register(Tool{
-			Name:        ToolNameListDatabaseSources,
-			Description: ListDatabaseSourcesDescription,
-			Schema:      ListDatabaseSourcesSchema,
-			Execute:     r.executeListDatabaseSources,
-		})
-		if r.promQuery != nil {
-			r.Register(Tool{
-				Name:        ToolNameAnalyzeDatabaseStatus,
-				Description: AnalyzeDatabaseStatusDescription,
-				Schema:      AnalyzeDatabaseStatusSchema,
-				Execute:     r.executeAnalyzeDatabaseStatus,
-			})
-		}
-	}
-}
+// SetPluginConfigLister wires database source discovery for BaseTools.
+func (r *Registry) SetPluginConfigLister(p PluginConfigLister) { r.pluginConfigs = p }
 
 // SetConfigManager wires the conversational configuration tools consumed by
-// the graph BaseTool registry. The legacy closure-style registry does not
-// expose these mutating flows.
+// the BaseTool registry.
 func (r *Registry) SetConfigManager(m ConfigManager) { r.configManager = m }
 
 // SetPacketCaptureCreator wires capture_pcap into the BaseTool registry.
 func (r *Registry) SetPacketCaptureCreator(p PacketCaptureCreator) { r.packetCapture = p }
 
-// NewRegistry builds a Registry and auto-registers the two MVP tools
-// (get_host_load, get_process_list). When promQuery / logQuery /
-// traceQuery are non-nil, the matching query_promql / query_logql /
-// query_traceql tool is also registered. The composite correlate_incident
-// tool is registered when prom + log + trace + alertUC are ALL non-nil.
-// Callers may Register additional tools afterwards.
+// NewRegistry stores dependencies used by BuildBaseTools.
 func NewRegistry(caller Caller, edges *edgebiz.Usecase, devices *devicebiz.Usecase,
 	promQuery PromQuerier, logQuery LogQuerier, traceQuery TraceQuerier,
 	alertUC AlertUsecase,
 	log *slog.Logger) *Registry {
-	r := &Registry{
+	return &Registry{
 		caller:     caller,
 		edges:      edges,
 		devices:    devices,
@@ -295,124 +179,7 @@ func NewRegistry(caller Caller, edges *edgebiz.Usecase, devices *devicebiz.Useca
 		logQuery:   logQuery,
 		traceQuery: traceQuery,
 		log:        log,
-		tools:      map[string]Tool{},
 	}
-	r.Register(Tool{
-		Name:        ToolNameGetHostLoad,
-		Description: GetHostLoadDescription,
-		Schema:      GetHostLoadSchema,
-		Execute:     r.executeGetHostLoad,
-	})
-	r.Register(Tool{
-		Name:        ToolNameGetProcessList,
-		Description: GetProcessListDescription,
-		Schema:      GetProcessListSchema,
-		Execute:     r.executeGetProcessList,
-	})
-	if promQuery != nil {
-		r.Register(Tool{
-			Name:        ToolNameQueryPromQL,
-			Description: QueryPromQLDescription,
-			Schema:      QueryPromQLSchema,
-			Execute:     r.executeQueryPromQL,
-		})
-		r.Register(Tool{
-			Name:        ToolNameListMetricCatalog,
-			Description: ListMetricCatalogDescription,
-			Schema:      ListMetricCatalogSchema,
-			Execute:     r.executeListMetricCatalog,
-		})
-	}
-	if logQuery != nil {
-		r.Register(Tool{
-			Name:        ToolNameQueryLogQL,
-			Description: QueryLogQLDescription,
-			Schema:      QueryLogQLSchema,
-			Execute:     r.executeQueryLogQL,
-		})
-	}
-	if traceQuery != nil {
-		r.Register(Tool{
-			Name:        ToolNameQueryTraceQL,
-			Description: QueryTraceQLDescription,
-			Schema:      QueryTraceQLSchema,
-			Execute:     r.executeQueryTraceQL,
-		})
-	}
-	// Read-only opspilot business-data tools. query_edges + get_topology are
-	// always registered (only need the edge usecase, which is required).
-	// rank_edges / find_outlier_edges are gated on promQuery because they
-	// build PromQL under the hood. The alert-flavored tools are gated on
-	// alertUC so unit tests that pass nil alertUC don't see them.
-	if edges != nil {
-		r.Register(Tool{
-			Name:        ToolNameQueryEdges,
-			Description: QueryEdgesDescription,
-			Schema:      QueryEdgesSchema,
-			Execute:     r.executeQueryEdges,
-		})
-		r.Register(Tool{
-			Name:        ToolNameGetTopology,
-			Description: GetTopologyDescription,
-			Schema:      GetTopologySchema,
-			Execute:     r.executeGetTopology,
-		})
-	}
-	if edges != nil && promQuery != nil {
-		r.Register(Tool{
-			Name:        ToolNameRankEdges,
-			Description: RankEdgesDescription,
-			Schema:      RankEdgesSchema,
-			Execute:     r.executeRankEdges,
-		})
-		r.Register(Tool{
-			Name:        ToolNameFindOutlierEdges,
-			Description: FindOutlierEdgesDescription,
-			Schema:      FindOutlierEdgesSchema,
-			Execute:     r.executeFindOutlierEdges,
-		})
-	}
-	if alertUC != nil {
-		r.Register(Tool{
-			Name:        ToolNameQueryIncidents,
-			Description: QueryIncidentsDescription,
-			Schema:      QueryIncidentsSchema,
-			Execute:     r.executeQueryIncidents,
-		})
-		r.Register(Tool{
-			Name:        ToolNameGetIncidentDetail,
-			Description: GetIncidentDetailDescription,
-			Schema:      GetIncidentDetailSchema,
-			Execute:     r.executeGetIncidentDetail,
-		})
-		r.Register(Tool{
-			Name:        ToolNameQueryAlertRules,
-			Description: QueryAlertRulesDescription,
-			Schema:      QueryAlertRulesSchema,
-			Execute:     r.executeQueryAlertRules,
-		})
-	}
-	if edges != nil {
-		r.Register(Tool{
-			Name:        ToolNameGetEdgeSummary,
-			Description: GetEdgeSummaryDescription,
-			Schema:      GetEdgeSummarySchema,
-			Execute:     r.executeGetEdgeSummary,
-		})
-	}
-	// correlate_incident is the AIOps killer composite ‚Äî it pulls
-	// metrics + logs + traces + edge state in one shot. Only registers
-	// when ALL four sources are wired (prom + log + trace + alertUC) so
-	// it never returns a half-empty bundle that confuses the LLM.
-	if alertUC != nil && promQuery != nil && logQuery != nil && traceQuery != nil {
-		r.Register(Tool{
-			Name:        ToolNameCorrelateIncident,
-			Description: CorrelateIncidentDescription,
-			Schema:      CorrelateIncidentSchema,
-			Execute:     r.executeCorrelateIncident,
-		})
-	}
-	return r
 }
 
 // SetTopologyInfo populates the deployment-level facts surfaced by the
@@ -425,8 +192,7 @@ func (r *Registry) SetTopologyInfo(info TopologyInfo) {
 
 // SetWorkerSpawner wires the chatruntime.Runtime seam used by the
 // coordinator-only AgentTool / SendMessageTool / TaskStopTool (
-// Called from cmd/main.go after the Runtime is constructed ‚Äî
-// the Registry exists earlier in the boot sequence so we use a
+// Called from cmd/main.go after the Runtime is constructed ‚Ä?// the Registry exists earlier in the boot sequence so we use a
 // post-construction setter to avoid a circular wiring order. registry
 // MAY be nil; AgentTool then forwards subagent_type verbatim and lets
 // the runtime return its own "agent not found" error.
@@ -443,50 +209,244 @@ func (r *Registry) SetKnowledgeSearcher(k KnowledgeSearcher) {
 
 // SetTopologyGraph wires the topology usecase consumed by
 // expand_topology / find_topology_node. Same post-construction pattern
-// as the other setters ‚Äî cmd/main.go invokes it after topologyUC is
+// as the other setters ‚Ä?cmd/main.go invokes it after topologyUC is
 // built so NewRegistry's signature stays stable.
 func (r *Registry) SetTopologyGraph(t *topologybiz.Usecase) {
 	r.topologyGraph = t
 }
 
-// Register adds (or replaces) a tool in the registry. Re-registration is a
-// silent overwrite; the caller is responsible for uniqueness.
-func (r *Registry) Register(t Tool) {
-	if t.Name == "" || t.Execute == nil {
-		return
+// envIntDefault parses an env-var-string into an int. Returns def when
+// the env is unset, empty, or unparseable. We deliberately keep this
+// helper local to the tools package ‚Ä?the only call site is
+// BuildBaseTools' threshold knob and there's no value in pulling in
+// a generic config layer just for one int.
+func envIntDefault(name string, def int) int {
+	v := os.Getenv(name)
+	if v == "" {
+		return def
 	}
-	r.tools[t.Name] = t
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return def
+	}
+	return n
 }
 
-// Schemas returns the tool schemas in the llm.ToolSchema shape. Order is
-// unspecified (map iteration).
-func (r *Registry) Schemas() []llm.ToolSchema {
-	out := make([]llm.ToolSchema, 0, len(r.tools))
-	for _, t := range r.tools {
-		out = append(out, llm.ToolSchema{
-			Name:        t.Name,
-			Description: t.Description,
-			Parameters:  t.Schema,
-		})
+// defaultDeferralThreshold is the default toolBag size above which
+// deferral kicks in. 30 was chosen because the May 2026
+// roster (14 core + 4 alert/host-files + 1 mutating ‚â?19) sits well
+// below it; the threshold only trips once one or two marketplace packs
+// land. Operators can override via ONGRID_TOOLBAG_DEFERRAL_THRESHOLD.
+const defaultDeferralThreshold = 30
+
+// BuildBaseTools constructs every BaseTool implementation paired with
+// the dependencies the Registry was given, then wraps the slice in a
+// *ToolBag ‚Ä?the deferred-loading layer
+//
+// Wiring contract for callers (cmd/ongrid/main.go):
+//
+//   - Use bag.SchemasForLLM() when feeding the graph (this is what the
+//     ChatModel sees; deferral may be active).
+//   - Pass the *ToolBag itself into anything that needs the unredacted
+//     view (chatruntime.Runtime.SetToolBag, ToolSearch).
+//   - bag.Append(...) to bolt on extra tools post-construction
+//     (mirrors the previous slice-append semantics for
+//     AppendHostFilesTools).
+//
+// Tools requiring optional dependencies are omitted when those dependencies are nil.
+//
+// ToolSearch is registered unconditionally (via bag.WithExtra). When
+// deferral is off it's a harmless no-op tool the LLM almost never
+// calls; when deferral is on it's the load-bearing entry the LLM uses
+// to fetch redacted schemas.
+func (r *Registry) BuildBaseTools() *ToolBag {
+	out := make([]basetool.BaseTool, 0, 14)
+
+	// 1-2: host_load + process_list always paired with the caller +
+	// edge usecase. devices is passed for device_id ‚Ü?edge_id resolution
+	// (post N+15 batch refactor ‚Ä?the schemas now take device_ids[]
+	// rather than edge_name).
+	out = append(out, NewGetHostLoadTool(r.caller, r.edges, r.devices, r.log))
+	out = append(out, NewGetProcessListTool(r.caller, r.edges, r.devices, r.log))
+
+	// 3: query_promql ‚Ä?gated on Prom client.
+	if r.promQuery != nil {
+		out = append(out, NewQueryPromQLTool(r.promQuery, r.log))
+		out = append(out, NewListMetricCatalogTool(r.promQuery, r.log))
 	}
-	return out
+	// 3a: list_database_sources ‚Ä?configured databasemetrics /
+	// database-tagged custommetrics inventory, no PromQL.
+	if r.edges != nil && r.pluginConfigs != nil {
+		out = append(out, NewListDatabaseSourcesTool(r.edges, r.devices, r.pluginConfigs, r.log))
+	}
+	// 3b: database status ‚Ä?curated PromQL checks over databasemetrics /
+	// database-tagged custommetrics sources.
+	if r.promQuery != nil && r.edges != nil && r.pluginConfigs != nil {
+		out = append(out, NewAnalyzeDatabaseStatusTool(r.promQuery, r.edges, r.devices, r.pluginConfigs, r.log))
+	}
+	// 4: query_logql ‚Ä?the stable log-query tool. Its implementation routes
+	// through the selected Loki or Elasticsearch backend.
+	if r.logQuery != nil {
+		out = append(out, NewQueryLogQLTool(r.logQuery))
+	}
+	// 5: query_traceql ‚Ä?gated on Tempo client.
+	if r.traceQuery != nil {
+		out = append(out, NewQueryTraceQLTool(r.traceQuery, r.log))
+	}
+	// 5b: query_knowledge ‚Ä?operator-curated docs + git repos.
+	// Gated on knowledge service; nil-safe (tool stays out of the bag).
+	if r.knowledge != nil {
+		out = append(out, NewQueryKnowledgeTool(r.knowledge, r.log))
+	}
+	// 5c: code-aware analysis (HLD-012) ‚Ä?read/list/grep the SOURCE of
+	// registered git repos (the on-disk clone Repos-sync keeps). The
+	// knowledge service is typed as the narrow KnowledgeSearcher here, so
+	// type-assert to CodeBrowser: the concrete *knowledge.Usecase satisfies
+	// both, while test fakes (search-only) leave these tools unregistered.
+	if cb, ok := r.knowledge.(CodeBrowser); ok && cb != nil {
+		out = append(out, NewListRepoSourcesTool(cb, r.log))
+		out = append(out, NewReadSourceTool(cb, r.log))
+		out = append(out, NewGrepSourceTool(cb, r.log))
+	}
+	// 5d: Kubernetes manager DB snapshot. This is deliberately DB-backed
+	// so homepage questions such as "ÂΩìÂâçÊúâÂ§öÂ∞?Pod" do not fan out to the
+	// live Kubernetes API.
+	if r.k8sSnapshot != nil {
+		out = append(out, NewQueryK8sSnapshotTool(r.k8sSnapshot, r.log))
+		if r.caller != nil {
+			out = append(out, NewDescribeK8sResourceTool(r.caller, r.k8sSnapshot, r.log))
+			out = append(out, NewQueryK8sLogsTool(r.caller, r.k8sSnapshot, r.log))
+			out = append(out, NewExecuteK8sActionTool(r.caller, r.k8sSnapshot, r.log))
+		}
+	}
+	// 6-7: query_devices + get_topology require the edge or device usecase.
+	if r.edges != nil || r.devices != nil {
+		out = append(out, NewQueryEdgesTool(r.devices, r.edges, r.log))
+	}
+	if r.devices != nil && r.devices.NetworkDiscovery() != nil {
+		out = append(out, NewQueryNetworkDevicesTool(r.devices, r.devices.NetworkDiscovery(), r.log))
+		out = append(out, NewQueryNetworkInterfacesTool(r.devices, r.devices.NetworkDiscovery(), r.log))
+	}
+	if r.edges != nil || r.devices != nil {
+		out = append(out, NewGetTopologyTool(r.edges, r.alertUC, r.topology, r.log).WithDevices(r.devices))
+	}
+	// 8: host ranking ‚Ä?gated on Prom + devices
+	if r.promQuery != nil && r.devices != nil {
+		out = append(out, NewRankHostsTool(r.promQuery, r.devices, r.log))
+		out = append(out, NewFindOutlierHostsTool(r.promQuery, r.devices, r.log))
+	}
+	// 9-11: alert-flavoured tools ‚Ä?gated on alertUC.
+	if r.alertUC != nil {
+		out = append(out, NewQueryIncidentsTool(r.alertUC, r.log))
+		out = append(out, NewGetIncidentDetailTool(r.alertUC, r.log))
+		out = append(out, NewQueryAlertRulesTool(r.alertUC, r.log))
+	}
+	// query_change_events ‚Ä?RCA "what changed near T" (HLD-013 Phase 2).
+	// Gated on the audit seam; nil-safe (tool stays out of the bag).
+	if r.auditLister != nil {
+		out = append(out, NewQueryChangeEventsTool(r.auditLister, r.log))
+	}
+	// 12: get_host_summary ‚Ä?gated on devices (alert/caller are
+	// best-effort).
+	if r.devices != nil {
+		out = append(out, NewGetHostSummaryTool(r.caller, r.edges, r.devices, r.alertUC, r.log))
+	}
+	// 13: correlate_incident requires all four signal sources.
+	if r.alertUC != nil && r.promQuery != nil && r.logQuery != nil && r.traceQuery != nil {
+		tool := NewCorrelateIncidentTool(
+			r.alertUC, r.promQuery, r.logQuery, r.traceQuery, r.edges, r.devices, r.log,
+		)
+		out = append(out, tool)
+	}
+
+	// Conversational configuration: draft_config_change is read-only and
+	// apply_config_change is Class="write" so viewer sessions cannot see it.
+	// The apply implementation also requires confirmed=true and an admin caller.
+	if r.configManager != nil {
+		out = append(out,
+			NewDraftConfigChangeTool(r.configManager, r.log),
+			NewApplyConfigChangeTool(r.configManager, r.log),
+		)
+	}
+
+	// 14-16: Coordinator-only sub-agent control tools.
+	// Gated on r.spawner ‚Ä?set via SetWorkerSpawner after the
+	// chatruntime.Runtime is constructed in main.go. When the spawner is
+	// nil we omit all three so the LLM never sees a tool it can't fulfil.
+	// These tools live ONLY on the coordinator's tool bag ‚Ä?workers
+	// shouldn't be able to spawn nested workers in this first version.
+	if r.spawner != nil {
+		out = append(out, NewAgentTool(r.spawner, r.subagentRegistry, r.log))
+		out = append(out, NewSendMessageTool(r.spawner, r.log))
+		out = append(out, NewTaskStopTool(r.spawner, r.log))
+	}
+
+	// 17: restart_service ‚Ä?first MUTATING BaseTool (SOP).
+	// Class="write"; the ReviewGate decorator (chain.go's Wrap)
+	// intercepts the call and spawns a reviewer worker before
+	// dispatch. Gated on the same dependency triple as host_files
+	// (caller + edges + devices); without those there is no tunnel
+	// path to reach the edge handler.
+	if r.caller != nil && r.edges != nil && r.devices != nil {
+		out = append(out, NewRestartServiceTool(r.caller, r.edges, r.devices, r.log))
+	}
+	if r.packetCapture != nil {
+		out = append(out, NewCapturePCAPTool(r.packetCapture, r.log, r.packetOperationCreate))
+		out = append(out, NewGetPacketCaptureSessionTool(r.packetCapture))
+	}
+
+	// 19-20: topology graph tools. expand_topology does a
+	// BFS for blast radius; find_topology_node turns a name into a
+	// node_id so expand_topology has something to walk from. Both gated
+	// on r.topologyGraph set via SetTopologyGraph after the topology UC
+	// is built in main.go. expand_topology also takes the device usecase
+	// so it can resolve a device_id shortcut into the linked node_id.
+	if r.topologyGraph != nil {
+		out = append(out, NewExpandTopologyTool(r.topologyGraph, r.devices, r.log))
+		out = append(out, NewFindTopologyNodeTool(r.topologyGraph, r.log))
+		if r.devices != nil {
+			out = append(out, NewGetNetworkNeighborsTool(r.devices, r.topologyGraph, r.log))
+		}
+	}
+
+	// 18: bash ‚Ä?generic host shell skill. Read commands use the edge
+	// read-only cmdpolicy; mutating commands only run through the optional
+	// approval proposer. Class stays "read" so diagnostic bash remains
+	// visible when writes are disabled.
+	if r.caller != nil && r.edges != nil && r.devices != nil {
+		out = append(out, NewBashToolWithProposer(r.caller, r.edges, r.devices, r.hostBashProposer, r.hostBashPolicyApprovalEnabled, r.log))
+	}
+
+	// cloud_bash ‚Ä?manager-side command runner (sibling of host_bash). Gated
+	// on the approval-inbox proposer so it can't run without the human-in-
+	// the-loop path wired (HLD-017).
+	if r.cloudBashProposer != nil {
+		out = append(out, NewCloudBashTool(r.cloudBashProposer, r.log))
+	}
+	if r.notificationSender != nil {
+		out = append(out, NewSendNotificationTool(r.notificationSender, r.log))
+	}
+	if r.imMessageSender != nil {
+		out = append(out, NewSendIMMessageTool(r.imMessageSender, r.log))
+	}
+	if r.pageStore != nil {
+		out = append(out, NewServePageTool(r.pageStore, r.log))
+	}
+
+	// ÊâÄÊúâÊ∂àË¥πÊñπÂÖ±Áî®ÂÆåÊï¥ÈùôÊÄÅÁõÆÂΩïÔºåÈÅøÂÖçÂ∑•‰ΩúÊµÅÁîªÂ∏ÉÊºèÊé?host-files„Ä?	if r.caller != nil && r.edges != nil && r.devices != nil {
+		out = append(out, NewFindLargeFilesTool(r.caller, r.edges, r.devices, r.log), NewDuSummaryTool(r.caller, r.edges, r.devices, r.log), NewStatFileTool(r.caller, r.edges, r.devices, r.log))
+	}
+	out = r.appendSafeSkillTools(out)
+
+	threshold := envIntDefault("ONGRID_TOOLBAG_DEFERRAL_THRESHOLD", defaultDeferralThreshold)
+	bag := NewToolBag(out, threshold)
+
+	// ToolSearch is always registered. When deferral is off it's a
+	// harmless no-op (the LLM has full schemas anyway); when deferral
+	// is on it's the only path to a redacted tool's parameters.
+	bag = bag.WithExtra(NewToolSearchTool(bag, r.log))
+	return bag
 }
 
-// Invoke dispatches a tool call by name. Unknown names return errs.ErrNotFound.
-// Nil args are replaced by an empty object `{}` for tools that take no
-// arguments (matches OpenAI's tool_call shape when the model decides to call
-// a zero-arg tool).
-func (r *Registry) Invoke(ctx context.Context, name string, args json.RawMessage) (result ExecuteResult, retErr error) {
-	t, ok := r.tools[name]
-	if !ok {
-		return ExecuteResult{}, fmt.Errorf("%w: tool %q", errs.ErrNotFound, name)
-	}
-	ctx, span := otel.Tracer("github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/tools").Start(ctx, "aiops.Tool."+name,
-		trace.WithAttributes(attribute.String("aiops.tool.name", name)),
-	)
-	defer func() { tracing.EndSpan(span, retErr) }()
-	if len(args) == 0 {
-		args = json.RawMessage(`{}`)
-	}
-	return t.Execute(ctx, args)
-}
+func (r *Registry) SetToolResults(u *toolresult.Usecase) { r.results = u }
+func (r *Registry) ToolResults() *toolresult.Usecase     { return r.results }

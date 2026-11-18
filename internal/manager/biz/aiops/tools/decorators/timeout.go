@@ -6,7 +6,7 @@
 // Each decorator returns a basetool.BaseTool so chains compose without
 // concrete types leaking. Decorators are stateless apart from injected
 // dependencies (audit sink, limiter, registerer) and safe to share across
-// goroutines — the underlying BaseTool implementations carry the
+// goroutines �?the underlying BaseTool implementations carry the
 // concurrency contract.
 package decorators
 
@@ -25,15 +25,14 @@ import (
 var ErrToolTimeout = errors.New("tool timed out")
 
 // TimeoutTool wraps inner so InvokableRun runs under a context.WithTimeout.
-// — TimeoutTool 装饰器层。
-type TimeoutTool struct {
+// �?TimeoutTool 装饰器层�?type TimeoutTool struct {
 	inner   basetool.BaseTool
 	timeout time.Duration
 }
 
 // WithTimeout returns inner wrapped so InvokableRun is bounded by d.
-// Zero or negative d adds no deadline: inner is returned
-// unchanged and only the caller context bounds the call.
+// Zero or negative d adds no deadline; the caller and tool retain ownership
+// of cancellation and operation-specific budgets.
 func WithTimeout(inner basetool.BaseTool, d time.Duration) basetool.BaseTool {
 	if d <= 0 {
 		return inner
@@ -41,7 +40,7 @@ func WithTimeout(inner basetool.BaseTool, d time.Duration) basetool.BaseTool {
 	return &TimeoutTool{inner: inner, timeout: d}
 }
 
-// Info passes through unchanged — schema metadata is not affected by
+// Info passes through unchanged �?schema metadata is not affected by
 // the timeout wrapper.
 func (t *TimeoutTool) Info(ctx context.Context) (*basetool.ToolInfo, error) {
 	return t.inner.Info(ctx)
@@ -57,7 +56,7 @@ func (t *TimeoutTool) InvokableRun(ctx context.Context, argsJSON string, opts ..
 	out, err := t.inner.InvokableRun(callCtx, argsJSON, opts...)
 	if err != nil {
 		// If the parent ctx is alive but the call ctx died, the
-		// timeout we imposed is the cause — surface that explicitly.
+		// timeout we imposed is the cause �?surface that explicitly.
 		if errors.Is(callCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
 			return "", fmt.Errorf("%w after %s: %v", ErrToolTimeout, t.timeout, err)
 		}
@@ -65,7 +64,7 @@ func (t *TimeoutTool) InvokableRun(ctx context.Context, argsJSON string, opts ..
 	}
 	// Even on successful inner return, check the deadline so a tool
 	// that ignores ctx and races past doesn't slip through. This is
-	// belt-and-braces — well-behaved tools respect ctx.
+	// belt-and-braces �?well-behaved tools respect ctx.
 	if errors.Is(callCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
 		return "", fmt.Errorf("%w after %s", ErrToolTimeout, t.timeout)
 	}

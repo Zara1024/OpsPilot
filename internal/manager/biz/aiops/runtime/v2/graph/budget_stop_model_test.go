@@ -1,0 +1,404 @@
+package graph
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	einomodel "github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
+	"github.com/prometheus/client_golang/prometheus"
+	openai "github.com/sashabaranov/go-openai"
+
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/tools/basetool"
+	"github.com/Zara1024/OpsPilot/internal/pkg/llm"
+)
+
+func TestBudgetStopModel_SynthesisKeepsSystemFirst(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		for _, withSystem := range []bool{false, true} {
+			t.Run(fmt.Sprintf("stream=%t/system=%t", stream, withSystem), func(t *testing.T) {
+				inner := newScriptedChatModel(makeAssistantNoTools("summary"))
+				wrapped := wrapBudgetStopModel(inner)
+				input := []*schema.Message{
+					schema.UserMessage("Inspect device_id=1"),
+					makeAssistantToolCall("", "call_1", "host_bash", `{}`),
+					schema.ToolMessage(`{"status":"call_budget_exceeded","tool":"host_bash","final_answer_required":true}`, "call_1", schema.WithToolName("host_bash")),
+				}
+				system := &schema.Message{Role: schema.System, Content: "Respond in English.", Name: "policy"}
+				if withSystem {
+					input = append([]*schema.Message{system}, input...)
+				}
+				before := append([]*schema.Message(nil), input...)
+				var got *schema.Message
+				var err error
+				if stream {
+					sr, streamErr := wrapped.Stream(context.Background(), input)
+					if streamErr != nil {
+						t.Fatal(streamErr)
+					}
+					defer sr.Close()
+					got, err = sr.Recv()
+				} else {
+					got, err = wrapped.Generate(context.Background(), input)
+				}
+				if err != nil || got == nil || got.Content != "summary" {
+					t.Fatalf("synthesis = %+v, err = %v", got, err)
+				}
+				if inner.generateCalls() != 1 {
+					t.Fatalf("model calls = %d, want 1", inner.generateCalls())
+				}
+				prompt := inner.st.inputsLog[0]
+				if prompt[0].Role != schema.System || !strings.Contains(prompt[0].Content, "per-tool circuit breaker for `host_bash`") {
+					t.Fatalf("first message missing system reminder: %+v", prompt[0])
+				}
+				history := input
+				if withSystem {
+					history = input[1:]
+					if prompt[0] == system || !strings.HasPrefix(prompt[0].Content, system.Content+"\n\n") || prompt[0].Name != system.Name {
+						t.Fatalf("original system prompt was not copied and preserved: %+v", prompt[0])
+					}
+				}
+				if !reflect.DeepEqual(prompt[1:], history) {
+					t.Fatalf("history changed: %+v", prompt[1:])
+				}
+				if !reflect.DeepEqual(input, before) || system.Content != "Respond in English." {
+					t.Fatal("synthesis mutated the input history")
+				}
+			})
+		}
+	}
+}
+
+func TestBuildReActGraph_ToolBudgetSynthesisWithStrictUpstream(t *testing.T) {
+	const summary = "The collected checks completed; further evidence is needed to establish a root cause."
+	var mu sync.Mutex
+	var requests []openai.ChatCompletionRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		var req openai.ChatCompletionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode request: %v", err)
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+		requests = append(requests, req)
+		w.Header().Set("Content-Type", "application/json")
+		for i, msg := range req.Messages {
+			if i > 0 && msg.Role == "system" {
+				w.WriteHeader(http.StatusBadRequest)
+				if _, err := fmt.Fprint(w, `{"error":{"message":"System message must be at the beginning.","type":"invalid_request_error"}}`); err != nil {
+					t.Errorf("write rejection: %v", err)
+				}
+				return
+			}
+		}
+		choice := openai.ChatCompletionChoice{Message: openai.ChatCompletionMessage{Role: "assistant", Content: summary}, FinishReason: "stop"}
+		if len(req.Messages) == 0 || !strings.Contains(req.Messages[0].Content, "per-tool circuit breaker") {
+			name := "host_bash"
+			if len(requests) == 1 {
+				name = "query_devices"
+			}
+			choice.Message.Content = ""
+			choice.Message.ToolCalls = []openai.ToolCall{{
+				ID: fmt.Sprintf("call_%d", len(requests)), Type: "function",
+				Function: openai.FunctionCall{Name: name, Arguments: fmt.Sprintf(`{"step":%d}`, len(requests))},
+			}}
+			choice.FinishReason = "tool_calls"
+		}
+		if err := json.NewEncoder(w).Encode(openai.ChatCompletionResponse{ID: "test", Choices: []openai.ChatCompletionChoice{choice}}); err != nil {
+			t.Errorf("write response: %v", err)
+		}
+	}))
+	defer server.Close()
+	client := llm.New(llm.Config{APIKey: "test-key", Model: "strict-test-model", BaseURL: server.URL + "/v1"}, nil, prometheus.NewRegistry())
+	model, err := llm.NewClientChatModel(llm.ClientChatModelConfig{Client: client})
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := &fakeBaseTool{name: "host_bash", class: "read", parameters: `{"type":"object","properties":{"step":{"type":"integer"}}}`, runResp: `{"ok":true}`}
+	devices := &fakeBaseTool{name: "query_devices", class: "read", parameters: `{"type":"object","properties":{"step":{"type":"integer"}}}`, runResp: `{"count":1,"devices":[{"device_id":1}]}`}
+	g, err := BuildReActGraph(model.(einomodel.ToolCallingChatModel), []basetool.BaseTool{host, devices}, Config{MaxIterations: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	out, err := g.Invoke(ctx, &Input{SystemPrompt: "Inspect the selected device.", UserText: "Inspect device_id=1"})
+	mu.Lock()
+	defer mu.Unlock()
+	t.Logf("query_devices=%d host_bash=%d HTTP requests=%d; error=%v", devices.calls.Load(), host.calls.Load(), len(requests), err)
+	if err != nil {
+		t.Fatalf("tool budget synthesis failed: %v", err)
+	}
+	if out == nil || out.AssistantMessage == nil || out.AssistantMessage.Content != summary || len(out.AssistantMessage.ToolCalls) != 0 {
+		t.Fatalf("expected model synthesis without more tool calls, got %+v", out)
+	}
+	if host.calls.Load() != 10 || devices.calls.Load() != 1 || len(requests) != 13 {
+		t.Fatalf("host_bash=%d query_devices=%d HTTP requests=%d, want 10/1/13", host.calls.Load(), devices.calls.Load(), len(requests))
+	}
+	decision, synthesis := requests[11].Messages, requests[12].Messages
+	if decision[0].Content != "Inspect the selected device." || !strings.HasPrefix(synthesis[0].Content, decision[0].Content+"\n\n") {
+		t.Fatal("original system instruction was changed or lost")
+	}
+	if !reflect.DeepEqual(decision[1:], synthesis[1:]) {
+		t.Fatal("synthesis changed the preceding user/assistant/tool messages")
+	}
+}
+
+func TestIterationFinalizationRemovesProviderTools(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req openai.ChatCompletionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Error(err)
+			http.Error(w, "invalid", 400)
+			return
+		}
+		calls++
+		if len(req.Tools) != 0 {
+			t.Errorf("summary request still contains %d tools", len(req.Tools))
+		}
+		if req.ToolChoice != nil {
+			t.Errorf("summary tool_choice=%v", req.ToolChoice)
+		}
+		if len(req.Messages) < 2 || !strings.Contains(req.Messages[0].Content, "final response") {
+			t.Error("missing summary instruction")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(openai.ChatCompletionResponse{Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{Role: "assistant", Content: "summary"}, FinishReason: "stop"}}}); err != nil {
+			t.Error(err)
+		}
+	}))
+	defer server.Close()
+	client := llm.New(llm.Config{APIKey: "test", Model: "test", BaseURL: server.URL + "/v1"}, nil, prometheus.NewRegistry())
+	cm, err := llm.NewClientChatModel(llm.ClientChatModelConfig{Client: client})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := []*schema.ToolInfo{{Name: "read", ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{})}}
+	bound, err := cm.(einomodel.ToolCallingChatModel).WithTools(info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapped := wrapBudgetStopModel(bound, 1)
+	result, err := wrapped.Generate(context.Background(), []*schema.Message{schema.UserMessage("inspect")}, einomodel.WithTools(info))
+	if err != nil || result.Content != "summary" || calls != 1 {
+		t.Fatalf("result=%+v calls=%d err=%v", result, calls, err)
+	}
+}
+
+func TestBudgetStopModel_DraftRepairDoesNotConsumeSuccessfulDraftLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		result string
+	}{
+		{"catalog preflight", `{"status":"blocked","error":"metric_catalog_required"}`},
+		{"validation failure", `{"kind":"config_validation_failed","validation":{"status":"failed"}}`},
+		{"tool error", `{"status":"failed","error":"invalid scope"}`},
+		{"incomplete draft", `{"kind":"config_draft"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			call := makeAssistantToolCall("", "retry_draft", toolNameDraftConfigChange, `{}`)
+			inner := newScriptedChatModel(call)
+			got, err := wrapBudgetStopModel(inner).Generate(context.Background(), []*schema.Message{
+				schema.UserMessage("创建一�?K8s 告警规则"),
+				schema.ToolMessage(tc.result, "first_draft", schema.WithToolName(toolNameDraftConfigChange)),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got.ToolCalls) != 1 || got.ToolCalls[0].ID != "retry_draft" || inner.generateCalls() != 1 {
+				t.Fatalf("repair should reach the tool without budget synthesis: message=%+v model calls=%d", got, inner.generateCalls())
+			}
+		})
+	}
+}
+
+func TestBudgetStopModel_ConfirmedDraftReturnsPendingConfirmation(t *testing.T) {
+	call := makeAssistantToolCall("", "second_draft", toolNameDraftConfigChange, `{}`)
+	inner := newScriptedChatModel(call, call)
+	got, err := wrapBudgetStopModel(inner).Generate(context.Background(), []*schema.Message{
+		schema.UserMessage("创建几个 K8s 告警规则"),
+		schema.ToolMessage(`{"kind":"config_draft","draft_hash":"sha256:valid","summary":"CPU high","scope":{"type":"host","label":"主机�?}}`, "first_draft", schema.WithToolName(toolNameDraftConfigChange)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.ToolCalls) != 0 || inner.generateCalls() != 1 {
+		t.Fatalf("second successful draft should remain blocked: message=%+v model calls=%d", got, inner.generateCalls())
+	}
+	for _, want := range []string{"CPU high", "主机�?, "尚未应用", "确认", "后续消息"} {
+		if !strings.Contains(got.Content, want) {
+			t.Fatalf("pending draft reply missing %q: %s", want, got.Content)
+		}
+	}
+}
+
+func TestBudgetStopModel_StreamReturnsPendingDraftAtBudget(t *testing.T) {
+	for _, scope := range []struct{ kind, label string }{{"host", "host-level"}, {"global", "global"}, {"monitoring_pipeline", "monitoring platform"}} {
+		t.Run(scope.kind, func(t *testing.T) {
+			inner := newScriptedChatModel(makeAssistantToolCall("", "again", toolNameDraftConfigChange, `{}`))
+			stream, err := wrapBudgetStopModel(inner).Stream(context.Background(), []*schema.Message{
+				schema.SystemMessage("Respond in English."),
+				schema.UserMessage("Create several alert rules"),
+				schema.ToolMessage(`{"kind":"config_draft","draft_hash":"sha256:valid","summary":"CPU high","scope":{"type":"`+scope.kind+`","label":"中文范围"},"confirmation_prompt":"中文确认"}`, "first", schema.WithToolName(toolNameDraftConfigChange)),
+				schema.ToolMessage(toolBudgetExceeded(toolNameDraftConfigChange, 1), "blocked", schema.WithToolName(toolNameDraftConfigChange)),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stream.Close()
+			got, err := stream.Recv()
+			if err != nil || got == nil {
+				t.Fatalf("message=%+v err=%v", got, err)
+			}
+			for _, want := range []string{"CPU high", "Scope: " + scope.label, "not been applied", "reply “ok�?, "one at a time", "later message"} {
+				if !strings.Contains(got.Content, want) {
+					t.Fatalf("reply missing %q: %s", want, got.Content)
+				}
+			}
+			if inner.generateCalls() != 0 || len(got.ToolCalls) != 0 || strings.Contains(got.Content, "中文") {
+				t.Fatalf("pending draft should end the turn in English: %+v, model calls=%d", got, inner.generateCalls())
+			}
+		})
+	}
+}
+
+func TestBuildReActGraph_StreamStopsAfterSecondDraftAttempt(t *testing.T) {
+	model := newScriptedChatModel(
+		makeAssistantToolCall("", "first", toolNameDraftConfigChange, `{}`),
+		makeAssistantToolCall("", "second", toolNameDraftConfigChange, `{"rule":{"name":"second"}}`),
+	)
+	result := `{"kind":"config_draft","draft_hash":"sha256:valid","summary":"CPU high","scope":{"type":"host","label":"主机�?}}`
+	draft := &fakeBaseTool{name: toolNameDraftConfigChange, class: "read", parameters: `{"type":"object"}`, runResp: result}
+	g, err := BuildReActGraph(model, []basetool.BaseTool{draft}, Config{MaxIterations: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := g.Stream(context.Background(), &Input{UserText: "创建几个告警规则"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	out, err := stream.Recv()
+	if err != nil || out == nil || out.AssistantMessage == nil {
+		t.Fatalf("output=%+v err=%v", out, err)
+	}
+	if !strings.Contains(out.AssistantMessage.Content, "CPU high") || !strings.Contains(out.AssistantMessage.Content, "尚未应用") || len(out.AssistantMessage.ToolCalls) != 0 || draft.calls.Load() != 1 || model.generateCalls() != 2 {
+		t.Fatalf("message=%+v draft=%d model=%d", out.AssistantMessage, draft.calls.Load(), model.generateCalls())
+	}
+}
+
+func TestBuildReActGraph_MixedToolBudgetsPreservePendingDraft(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		for _, draftFirst := range []bool{false, true} {
+			t.Run(fmt.Sprintf("stream=%t/draft_first=%t", stream, draftFirst), func(t *testing.T) {
+				replies := make([]*schema.Message, 0, maxToolCallsPerRun+2)
+				for i := 0; i < maxToolCallsPerRun; i++ {
+					replies = append(replies, makeAssistantToolCall("", fmt.Sprintf("catalog_%d", i), toolNameListMetricCatalog, fmt.Sprintf(`{"query":"metric_%d"}`, i)))
+				}
+				replies = append(replies, makeAssistantToolCall("", "first_draft", toolNameDraftConfigChange, `{}`))
+				repeat := makeAssistantToolCall("", "catalog_again", toolNameListMetricCatalog, `{"query":"more"}`)
+				repeat.ToolCalls = append(repeat.ToolCalls, makeAssistantToolCall("", "second_draft", toolNameDraftConfigChange, `{"rule":{"name":"Second"}}`).ToolCalls...)
+				if draftFirst {
+					repeat.ToolCalls[0], repeat.ToolCalls[1] = repeat.ToolCalls[1], repeat.ToolCalls[0]
+				}
+				replies = append(replies, repeat)
+				model := newScriptedChatModel(replies...)
+				draft := &fakeBaseTool{name: toolNameDraftConfigChange, class: "read", parameters: `{"type":"object"}`, runResp: `{"kind":"config_draft","draft_hash":"sha256:valid","summary":"First","scope":{"type":"host","label":"主机�?}}`}
+				catalog := &fakeBaseTool{name: toolNameListMetricCatalog, class: "read", parameters: `{"type":"object"}`, runResp: `{"metrics":[{"name":"up"}]}`}
+				g, err := BuildReActGraph(model, []basetool.BaseTool{draft, catalog}, Config{MaxIterations: maxToolCallsPerRun + 5})
+				if err != nil {
+					t.Fatal(err)
+				}
+				input := &Input{UserText: "创建几个告警规则"}
+				var out *Output
+				if stream {
+					sr, streamErr := g.Stream(context.Background(), input)
+					if streamErr != nil {
+						t.Fatal(streamErr)
+					}
+					defer sr.Close()
+					out, err = sr.Recv()
+				} else {
+					out, err = g.Invoke(context.Background(), input)
+				}
+				if err != nil || out == nil || out.AssistantMessage == nil {
+					t.Fatalf("output=%+v err=%v", out, err)
+				}
+				content := out.AssistantMessage.Content
+				for _, want := range []string{"First", "主机�?, "尚未应用", "确认", "后续消息"} {
+					if !strings.Contains(content, want) {
+						t.Fatalf("pending draft reply missing %q: %s", want, content)
+					}
+				}
+				if len(out.AssistantMessage.ToolCalls) != 0 || draft.calls.Load() != 1 || catalog.calls.Load() != maxToolCallsPerRun || model.generateCalls() != maxToolCallsPerRun+2 {
+					t.Fatalf("message=%+v draft=%d catalog=%d model=%d", out.AssistantMessage, draft.calls.Load(), catalog.calls.Load(), model.generateCalls())
+				}
+			})
+		}
+	}
+}
+
+func TestPendingConfigDraftContent_OnlyUsesPendingDraftInCurrentTurn(t *testing.T) {
+	draft := schema.ToolMessage(`{"kind":"config_draft","draft_hash":"sha256:valid","summary":"CPU high"}`, "first", schema.WithToolName(toolNameDraftConfigChange))
+	for _, tc := range []struct {
+		name     string
+		messages []*schema.Message
+	}{
+		{"empty", nil},
+		{"previous turn", []*schema.Message{draft, schema.UserMessage("Create another rule")}},
+		{"apply attempted", []*schema.Message{draft, schema.ToolMessage(`{"status":"applied"}`, "apply", schema.WithToolName("apply_config_change"))}},
+		{"missing hash", []*schema.Message{schema.ToolMessage(`{"kind":"config_draft"}`, "bad", schema.WithToolName(toolNameDraftConfigChange))}},
+		{"failed validation", []*schema.Message{schema.ToolMessage(`{"kind":"config_validation_failed","draft_hash":"sha256:invalid"}`, "bad", schema.WithToolName(toolNameDraftConfigChange))}},
+		{"malformed", []*schema.Message{schema.ToolMessage(`not JSON`, "bad", schema.WithToolName(toolNameDraftConfigChange))}},
+		{"other tool", []*schema.Message{schema.ToolMessage(draft.Content, "other", schema.WithToolName("query_alert_rules"))}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := pendingConfigDraftContent(tc.messages); got != "" {
+				t.Fatalf("unexpected pending draft: %s", got)
+			}
+		})
+	}
+	if got := pendingConfigDraftContent([]*schema.Message{schema.UserMessage("create"), draft, nil, schema.UserMessage("<system-reminder>finish</system-reminder>")}); !strings.Contains(got, "CPU high") {
+		t.Fatalf("system reminder hid the current draft: %s", got)
+	}
+}
+
+func TestBuildReActGraph_RepairsDraftAfterMetricCatalogPreflight(t *testing.T) {
+	const args = `{"domain":"alert_rule","rule":{"kind":"metric_raw","spec":{"expr":"up == 0"}}}`
+	const result = `{"kind":"config_draft","draft_hash":"sha256:valid"}`
+	model := newScriptedChatModel(
+		makeAssistantToolCall("", "draft_before_catalog", toolNameDraftConfigChange, args),
+		makeAssistantToolCall("", "catalog", toolNameListMetricCatalog, `{}`),
+		makeAssistantToolCall("", "draft_after_catalog", toolNameDraftConfigChange, args),
+		makeAssistantNoTools("请确认草案�?),
+	)
+	draft := &fakeBaseTool{name: toolNameDraftConfigChange, class: "read", parameters: `{"type":"object"}`, runResp: result}
+	catalog := &fakeBaseTool{name: toolNameListMetricCatalog, class: "read", parameters: `{"type":"object"}`, runResp: `{"metrics":[{"name":"up"}]}`}
+	sink := &recordingToolPersistence{}
+	g, err := BuildReActGraph(model, []basetool.BaseTool{draft, catalog}, Config{MaxIterations: 8, ToolPersistence: sink})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := g.Invoke(context.Background(), &Input{UserText: "创建一�?K8s 告警规则"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.AssistantMessage.Content != "请确认草案�? || draft.calls.Load() != 1 || catalog.calls.Load() != 1 {
+		t.Fatalf("draft should execute after catalog repair: message=%+v draft calls=%d catalog calls=%d", out.AssistantMessage, draft.calls.Load(), catalog.calls.Load())
+	}
+	_, ends := sink.records()
+	if len(ends) != 3 || ends[2] != toolNameDraftConfigChange+":"+result {
+		t.Fatalf("confirmable draft should be persisted after the blocked attempt: %v", ends)
+	}
+}

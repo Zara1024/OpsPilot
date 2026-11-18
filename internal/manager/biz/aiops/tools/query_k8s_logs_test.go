@@ -142,13 +142,10 @@ func TestNormalizeQueryK8sLogsArgsBounds(t *testing.T) {
 	}
 }
 
-func TestQueryK8sLogsRegisteredInClosureAndBaseToolPaths(t *testing.T) {
+func TestQueryK8sLogsRegisteredInBaseToolCatalog(t *testing.T) {
 	reg := NewRegistry(&fakeCaller{}, nil, nil, nil, nil, nil, nil, slog.Default())
 	reg.SetK8sSnapshotReader(newFakeK8sSnapshotReader())
 
-	if !containsName(schemaNames(reg.Schemas()), ToolNameQueryK8sLogs) {
-		t.Fatalf("closure registry missing %q", ToolNameQueryK8sLogs)
-	}
 	names := toolInfoNames(t, reg.BuildBaseTools().AllTools())
 	if !containsName(names, ToolNameQueryK8sLogs) {
 		t.Fatalf("base tool registry missing %q: %v", ToolNameQueryK8sLogs, names)
@@ -159,3 +156,9 @@ func TestQueryK8sLogsRegisteredInClosureAndBaseToolPaths(t *testing.T) {
 }
 
 var _ basetool.BaseTool = (*QueryK8sLogsTool)(nil)
+
+func TestQueryK8sLogsRejectsBelowMinimumBytes(t *testing.T) {
+	if _, err := normalizeQueryK8sLogsArgs(QueryK8sLogsArgs{ClusterID: 1, Namespace: "default", Pod: "api", LimitBytes: 1}); err == nil {
+		t.Fatal("limit_bytes below schema minimum accepted")
+	}
+}

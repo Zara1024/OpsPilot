@@ -24,7 +24,7 @@ var DescribeK8sResourceSchema = json.RawMessage(`{
     "cluster_id": {
       "type": "integer",
       "minimum": 1,
-      "description": "Kubernetes cluster id in opspilot."
+      "description": "Kubernetes cluster id in ongrid."
     },
     "kind": {
       "type": "string",
@@ -59,7 +59,7 @@ const describeK8sResourceWhenToUse = "When the user explicitly asks to describe 
 	"or needs current Events for one named object. NOT for counts/lists/overview (use query_k8s_snapshot). " +
 	"Read-only only; does not execute kubectl, exec, logs, scale, restart, or delete."
 
-const describeK8sResourceCallTimeout = 15 * time.Second
+const describeK8sResourceCallTimeout = 60 * time.Second
 
 type DescribeK8sResourceTool struct {
 	caller Caller
@@ -181,13 +181,4 @@ func normalizeDescribeK8sResourceArgs(in DescribeK8sResourceArgs) (tunnel.Kubern
 		IncludeEvents: includeEvents,
 		EventsLimit:   eventsLimit,
 	}, nil
-}
-
-func (r *Registry) executeDescribeK8sResource(ctx context.Context, args json.RawMessage) (ExecuteResult, error) {
-	tool := NewDescribeK8sResourceTool(r.caller, r.k8sSnapshot, r.log)
-	out, err := tool.InvokableRun(ctx, string(args))
-	if err != nil {
-		return ExecuteResult{}, err
-	}
-	return ExecuteResult{ResultJSON: json.RawMessage(out)}, nil
 }

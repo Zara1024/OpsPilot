@@ -5,8 +5,15 @@ package opspilot.manager.setting.v1;
 option go_package = "github.com/Zara1024/OpsPilot/api/gen/manager/setting/v1;settingv1";
 
 // SettingService 管理管理员可编辑的运行时配置。
+// agent.runtime_version accepts "release" (follow this release default) or
+// "v3" or "v2" (pin new sessions). v1 is no longer supported and is rejected.
+// Existing sessions retain their runtime; legacy unversioned sessions stay v3.
+// Read/write via the existing system-settings category/key API.
 // Legacy platform.auto_apm_enabled values are retained but no longer affect discovery.
 service SettingService {
+    // PUT /api/v1/integrations/llm/default; admin only, no inference call.
+    // Atomically saves provider, model, and its default reasoning effort.
+    rpc SaveLLMDefault(SaveLLMDefaultRequest) returns (SaveLLMDefaultResponse);
     // ApplyBuiltInObservabilityLimits saves storage limits and recreates only
     // the selected built-in Compose service in explicitly enabled test setups.
     // HTTP implementation:
@@ -28,6 +35,9 @@ service SettingService {
     // ValidateWebSearchConfiguration 使用未落库的 provider 配置执行最小查询。
     // HTTP 实现：POST /api/v1/integrations/websearch/test。
     rpc ValidateWebSearchConfiguration(ValidateWebSearchConfigurationRequest) returns (ValidateWebSearchConfigurationResponse);
+    // POST /api/v1/integrations/websearch/validate-and-save; admin only.
+    // Validates primary and backup, then atomically saves the complete draft.
+    rpc ValidateAndSaveWebSearchConfiguration(ValidateAndSaveWebSearchConfigurationRequest) returns (ValidateAndSaveWebSearchConfigurationResponse);
     // ValidateLLMConfiguration 使用未落库的草稿配置发起最小模型请求，
     // 返回可机器识别的失败原因。HTTP 实现：
     // POST /api/v1/integrations/llm/test。
@@ -96,14 +106,38 @@ message ValidateTempoConfigurationResponse {
     string status = 1 [json_name = "status"];
 }
 
+// websearch settings also accept fallback_provider (empty disables fallback),
+// searxng_engines (comma-separated names), request_timeout_seconds (2..60),
+// and total_timeout_seconds (5..120). Fallback requires explicit admin selection.
 message ValidateWebSearchConfigurationRequest {
     string provider = 1 [json_name = "provider"];
     string searxng_url = 2 [json_name = "searxng_url"];
     string tavily_api_key = 3 [json_name = "tavily_api_key"];
     string brave_api_key = 4 [json_name = "brave_api_key"];
+    string fallback_provider = 5 [json_name = "fallback_provider"];
+    string searxng_engines = 6 [json_name = "searxng_engines"];
+    string request_timeout_seconds = 7 [json_name = "request_timeout_seconds"];
+    string total_timeout_seconds = 8 [json_name = "total_timeout_seconds"];
 }
 
 message ValidateWebSearchConfigurationResponse {
+    string status = 1 [json_name = "status"];
+    string provider = 2 [json_name = "provider"];
+    string sample = 3 [json_name = "sample"];
+}
+
+message ValidateAndSaveWebSearchConfigurationRequest {
+    string provider = 1 [json_name = "provider"];
+    string searxng_url = 2 [json_name = "searxng_url"];
+    string tavily_api_key = 3 [json_name = "tavily_api_key"];
+    string brave_api_key = 4 [json_name = "brave_api_key"];
+    string fallback_provider = 5 [json_name = "fallback_provider"];
+    string searxng_engines = 6 [json_name = "searxng_engines"];
+    string request_timeout_seconds = 7 [json_name = "request_timeout_seconds"];
+    string total_timeout_seconds = 8 [json_name = "total_timeout_seconds"];
+}
+
+message ValidateAndSaveWebSearchConfigurationResponse {
     string status = 1 [json_name = "status"];
     string provider = 2 [json_name = "provider"];
     string sample = 3 [json_name = "sample"];
@@ -121,6 +155,9 @@ message ValidateLLMConfigurationRequest {
     string default_model = 4 [json_name = "default_model"];
     // models 是保存后会暴露给调用方的完整模型列表；校验会逐一实际调用。
     repeated string models = 5 [json_name = "models"];
+    bool tls_insecure = 6 [json_name = "tls_insecure"];
+    // 缺省保留已有覆盖；空对象恢复自动；* 配置未知模型的默认规则。
+    map<string, ReasoningOverride> reasoning_overrides = 7 [json_name = "reasoning_overrides"];
 }
 
 message ValidateLLMConfigurationResponse {
@@ -146,6 +183,9 @@ message ValidateAndSaveLLMConfigurationRequest {
     string default_model = 4 [json_name = "default_model"];
     // models 是保存后会暴露给调用方的完整模型列表；校验会逐一实际调用。
     repeated string models = 5 [json_name = "models"];
+    bool tls_insecure = 6 [json_name = "tls_insecure"];
+    // 缺省保留已有覆盖；空对象恢复自动；* 配置未知模型的默认规则。
+    map<string, ReasoningOverride> reasoning_overrides = 7 [json_name = "reasoning_overrides"];
 }
 
 message ValidateAndSaveLLMConfigurationResponse {
@@ -161,4 +201,22 @@ message ValidateAndSaveLLMConfigurationResponse {
     bool saved = 7 [json_name = "saved"];
     // disabled 表示空 api_key 已作为显式禁用覆盖落库。
     bool disabled = 8 [json_name = "disabled"];
+}
+
+// 推理档位和厂商参数格式；空 levels 仅显示默认选项。
+message ReasoningOverride {
+    repeated string levels = 1 [json_name = "levels"];
+    string mode = 2 [json_name = "mode"];
+}
+
+message SaveLLMDefaultRequest {
+    string provider = 1 [json_name = "provider"];
+    string model = 2 [json_name = "model"];
+    // Empty uses the provider default. Non-empty must be supported by the model.
+    string reasoning_effort = 3 [json_name = "reasoning_effort"];
+}
+message SaveLLMDefaultResponse {
+    string provider = 1 [json_name = "provider"];
+    string model = 2 [json_name = "model"];
+    string reasoning_effort = 3 [json_name = "reasoning_effort"];
 }

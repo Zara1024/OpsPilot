@@ -1,9 +1,9 @@
-// noderegistry.go — the node-type registry (HLD-016 node abstraction).
+// noderegistry.go �?the node-type registry (HLD-016 node abstraction).
 //
 // A node type is a first-class, self-describing entity: one NodeSpec
 // declares its structural behaviour (Kind), palette grouping (Category),
 // control ports, and executor. The engine, graph validation, and trigger
-// detection all DERIVE from the registry — there is no per-type switch,
+// detection all DERIVE from the registry �?there is no per-type switch,
 // no "trigger." string-prefix convention, no knownTypes map. Adding a node
 // type = RegisterNode(one spec); nothing in the core engine changes.
 package flow
@@ -27,12 +27,12 @@ const (
 )
 
 // ExecuteFunc is the universal node contract: resolved config + read-only
-// run context → (data output, control port) | error. Stateless — the
+// run context �?(data output, control port) | error. Stateless �?the
 // Executors seam bundle is passed in, not captured, so a spec can be
 // registered globally.
 type ExecuteFunc func(ctx context.Context, x Executors, cfg map[string]any, rc *RunContext) (NodeResult, error)
 
-// ConfigFieldSpec declares one config form field — the frontend renders
+// ConfigFieldSpec declares one config form field �?the frontend renders
 // the config drawer from these instead of hardcoding per type.
 type ConfigFieldSpec struct {
 	Key         string   `json:"key"`
@@ -43,7 +43,7 @@ type ConfigFieldSpec struct {
 	Options     []string `json:"options,omitempty"` // for kind=select
 }
 
-// NodeSpec is the complete declaration of one node type — structural
+// NodeSpec is the complete declaration of one node type �?structural
 // behaviour, palette presentation, config form, and output shape. The
 // engine, validator, AND frontend all derive from it (the frontend keeps
 // only a type→icon/color visual map).
@@ -99,17 +99,17 @@ func registerBuiltins() {
 		Type: NodeTriggerAlert, Kind: KindTrigger, Category: "trigger",
 		LabelZh: "告警触发", LabelEn: "On alert",
 		ConfigFields: []ConfigFieldSpec{
-			{Key: "rule", LabelZh: "规则名包含（留空=所有告警）", LabelEn: "Rule name contains (blank = all alerts)", Kind: "text", Placeholder: "如 disk / cpu"},
-			{Key: "min_severity", LabelZh: "最低严重度（warning/error/critical，留空=不限）", LabelEn: "Min severity (warning/error/critical; blank = any)", Kind: "text", Placeholder: "critical"},
+			{Key: "rule", LabelZh: "规则名包含（留空=所有告警）", LabelEn: "Rule name contains (blank = all alerts)", Kind: "text", Placeholder: "�?disk / cpu"},
+			{Key: "min_severity", LabelZh: "最低严重度（warning/error/critical，留�?不限�?, LabelEn: "Min severity (warning/error/critical; blank = any)", Kind: "text", Placeholder: "critical"},
 		},
-		OutputShape: []string{"incident_id", "rule", "severity", "edge_id", "device_id", "labels", "fired_at"},
+		OutputShape: []string{"incident_id", "rule", "severity", "device_id", "labels", "fired_at"},
 		Execute:     execTrigger,
 	})
 	RegisterNode(&NodeSpec{
 		Type: NodeTriggerCron, Kind: KindTrigger, Category: "trigger",
 		LabelZh: "定时触发", LabelEn: "On schedule",
 		ConfigFields: []ConfigFieldSpec{
-			{Key: "cron", LabelZh: "定时表达式（标准 5 段 cron，UTC）", LabelEn: "Cron schedule (standard 5-field, UTC)", Kind: "text", Placeholder: "0 8 * * *  (每天 UTC 08:00)"},
+			{Key: "cron", LabelZh: "定时表达式（标准 5 �?cron，UTC�?, LabelEn: "Cron schedule (standard 5-field, UTC)", Kind: "text", Placeholder: "0 8 * * *  (每天 UTC 08:00)"},
 		},
 		OutputShape: []string{"fired_at", "cron"},
 		Execute:     execTrigger,
@@ -118,9 +118,9 @@ func registerBuiltins() {
 		Type: NodeAgent, Kind: KindAction, Category: "ai",
 		LabelZh: "Agent（自主）", LabelEn: "Agent",
 		ConfigFields: []ConfigFieldSpec{
-			{Key: "persona", LabelZh: "角色 (persona)", LabelEn: "Persona", Kind: "text", Placeholder: "default / specialist-network / …"},
-			{Key: "instruction", LabelZh: "指令（支持 {{…}} 模板）", LabelEn: "Instruction ({{…}} templates)", Kind: "textarea", Placeholder: "诊断 {{trigger.host}} 上的磁盘告警…"},
-			{Key: "output_schema", LabelZh: "输出 schema（可选，JSON Schema。声明后下游才能引用 structured 字段）", LabelEn: "Output schema (optional; required for structured downstream refs)", Kind: "json"},
+			{Key: "persona", LabelZh: "角色 (persona)", LabelEn: "Persona", Kind: "text", Placeholder: "default / specialist-network / �?},
+			{Key: "instruction", LabelZh: "指令（支�?{{…}} 模板�?, LabelEn: "Instruction ({{…}} templates)", Kind: "textarea", Placeholder: "诊断 {{trigger.host}} 上的磁盘告警�?},
+			{Key: "output_schema", LabelZh: "输出 schema（可选，JSON Schema。声明后下游才能引用 structured 字段�?, LabelEn: "Output schema (optional; required for structured downstream refs)", Kind: "json"},
 		},
 		OutputShape: []string{"answer"},
 		Execute:     execAgent,
@@ -129,9 +129,9 @@ func registerBuiltins() {
 		Type: NodeLLM, Kind: KindAction, Category: "ai",
 		LabelZh: "LLM（单次）", LabelEn: "LLM",
 		ConfigFields: []ConfigFieldSpec{
-			{Key: "system", LabelZh: "系统提示（可选）", LabelEn: "System prompt (optional)", Kind: "textarea", Placeholder: "你是运维助手，简洁回答。"},
-			{Key: "prompt", LabelZh: "提示词（支持 {{…}} 模板）", LabelEn: "Prompt ({{…}} templates)", Kind: "textarea", Placeholder: "把这段诊断总结成一句话：{{nodes.diag.output.answer}}"},
-			{Key: "output_schema", LabelZh: "输出 schema（可选，JSON Schema。声明后下游才能引用 structured 字段）", LabelEn: "Output schema (optional; required for structured downstream refs)", Kind: "json"},
+			{Key: "system", LabelZh: "系统提示（可选）", LabelEn: "System prompt (optional)", Kind: "textarea", Placeholder: "你是运维助手，简洁回答�?},
+			{Key: "prompt", LabelZh: "提示词（支持 {{…}} 模板�?, LabelEn: "Prompt ({{…}} templates)", Kind: "textarea", Placeholder: "把这段诊断总结成一句话：{{nodes.diag.output.answer}}"},
+			{Key: "output_schema", LabelZh: "输出 schema（可选，JSON Schema。声明后下游才能引用 structured 字段�?, LabelEn: "Output schema (optional; required for structured downstream refs)", Kind: "json"},
 		},
 		OutputShape: []string{"answer"},
 		Execute:     execLLM,
@@ -146,7 +146,7 @@ func registerBuiltins() {
 		Type: NodeCondition, Kind: KindControl, Category: "flow",
 		LabelZh: "条件", LabelEn: "Condition", Ports: []string{PortTrue, PortFalse},
 		ConfigFields: []ConfigFieldSpec{
-			{Key: "expr", LabelZh: "表达式", LabelEn: "Expression", Kind: "text", Placeholder: `{{nodes.diag.output.structured.severity}} == "critical"`},
+			{Key: "expr", LabelZh: "表达�?, LabelEn: "Expression", Kind: "text", Placeholder: `{{nodes.diag.output.structured.severity}} == "critical"`},
 		},
 		OutputShape: []string{"result"},
 		Execute:     execCondition,
@@ -155,9 +155,9 @@ func registerBuiltins() {
 		Type: NodeNotify, Kind: KindAction, Category: "action", PaletteHidden: true,
 		LabelZh: "通知", LabelEn: "Notification",
 		ConfigFields: []ConfigFieldSpec{
-			{Key: "channel_ids", LabelZh: "通知渠道 ID（JSON 数组；设置 → 通知）", LabelEn: "Notification channel IDs (JSON array; Settings → Notifications)", Kind: "json", Placeholder: "[1]"},
+			{Key: "channel_ids", LabelZh: "通知渠道 ID（JSON 数组；设�?�?通知�?, LabelEn: "Notification channel IDs (JSON array; Settings �?Notifications)", Kind: "json", Placeholder: "[1]"},
 			{Key: "title", LabelZh: "通知标题", LabelEn: "Notification title", Kind: "text"},
-			{Key: "message", LabelZh: "通知内容（支持 {{…}}）", LabelEn: "Notification message ({{…}} templates)", Kind: "textarea"},
+			{Key: "message", LabelZh: "通知内容（支�?{{…}}�?, LabelEn: "Notification message ({{…}} templates)", Kind: "textarea"},
 		},
 		OutputShape: []string{"sent", "channels"},
 		Execute:     execNotify,
@@ -166,8 +166,8 @@ func registerBuiltins() {
 		Type: NodeSet, Kind: KindData, Category: "data",
 		LabelZh: "变量", LabelEn: "Set var",
 		ConfigFields: []ConfigFieldSpec{
-			{Key: "name", LabelZh: "变量名", LabelEn: "Variable name", Kind: "text"},
-			{Key: "value", LabelZh: "值（支持 {{…}}）", LabelEn: "Value ({{…}} templates)", Kind: "text"},
+			{Key: "name", LabelZh: "变量�?, LabelEn: "Variable name", Kind: "text"},
+			{Key: "value", LabelZh: "值（支持 {{…}}�?, LabelEn: "Value ({{…}} templates)", Kind: "text"},
 		},
 		OutputShape: []string{"name", "value"},
 		Execute:     execSet,
@@ -176,7 +176,7 @@ func registerBuiltins() {
 		Type: NodeTransform, Kind: KindData, Category: "data",
 		LabelZh: "字段映射", LabelEn: "Edit Fields",
 		ConfigFields: []ConfigFieldSpec{
-			{Key: "fields", LabelZh: "字段映射（JSON，每个字段值支持 {{…}}）。把上游数据重组成下游需要的字段。", LabelEn: "Field mapping (JSON; each value accepts {{…}}). Reshape upstream data into the fields a downstream node needs.", Kind: "json"},
+			{Key: "fields", LabelZh: "字段映射（JSON，每个字段值支�?{{…}}）。把上游数据重组成下游需要的字段�?, LabelEn: "Field mapping (JSON; each value accepts {{…}}). Reshape upstream data into the fields a downstream node needs.", Kind: "json"},
 		},
 		// OutputShape dynamic (the declared field names); frontend reads config.fields keys.
 		Execute: execTransform,
@@ -186,10 +186,10 @@ func registerBuiltins() {
 		LabelZh: "HTTP 请求", LabelEn: "HTTP Request",
 		ConfigFields: []ConfigFieldSpec{
 			{Key: "method", LabelZh: "方法", LabelEn: "Method", Kind: "select", Options: []string{"GET", "POST", "PUT", "PATCH", "DELETE"}},
-			{Key: "url", LabelZh: "URL（支持 {{…}}）", LabelEn: "URL ({{…}} templates)", Kind: "text", Placeholder: "https://api.example.com/v1/{{nodes.a.output.result.id}}"},
-			{Key: "headers", LabelZh: "请求头（JSON 对象，值支持 {{…}}）", LabelEn: "Headers (JSON object; values accept {{…}})", Kind: "json", Placeholder: `{"Authorization": "Bearer {{vars.token}}"}`},
-			{Key: "body", LabelZh: "请求体（JSON / 文本，支持 {{…}}）", LabelEn: "Body (JSON / text; {{…}} templates)", Kind: "textarea", Placeholder: `{"text": "{{nodes.diag.output.answer}}"}`},
-			{Key: "timeout_seconds", LabelZh: "超时秒数（默认 30，最大 120）", LabelEn: "Timeout seconds (default 30, max 120)", Kind: "text", Placeholder: "30"},
+			{Key: "url", LabelZh: "URL（支�?{{…}}�?, LabelEn: "URL ({{…}} templates)", Kind: "text", Placeholder: "https://api.example.com/v1/{{nodes.a.output.result.id}}"},
+			{Key: "headers", LabelZh: "请求头（JSON 对象，值支�?{{…}}�?, LabelEn: "Headers (JSON object; values accept {{…}})", Kind: "json", Placeholder: `{"Authorization": "Bearer {{vars.token}}"}`},
+			{Key: "body", LabelZh: "请求体（JSON / 文本，支�?{{…}}�?, LabelEn: "Body (JSON / text; {{…}} templates)", Kind: "textarea", Placeholder: `{"text": "{{nodes.diag.output.answer}}"}`},
+			{Key: "timeout_seconds", LabelZh: "超时秒数（默�?30，最�?120�?, LabelEn: "Timeout seconds (default 30, max 120)", Kind: "text", Placeholder: "30"},
 		},
 		OutputShape: []string{"status", "body", "headers"},
 		Execute:     execHTTP,
@@ -259,9 +259,8 @@ func execLLM(ctx context.Context, x Executors, cfg map[string]any, _ *RunContext
 		sb, _ := json.Marshal(schema)
 		prompt = prompt + "\n\nReturn ONLY a single JSON object matching this JSON Schema (no prose, no code fence):\n" + string(sb)
 	}
-	lctx, cancel := context.WithTimeout(ctx, llmNodeTimeout)
-	defer cancel()
-	answer, err := x.LLM.RunLLM(lctx, system, prompt)
+	// Let the LLM client apply the configured request timeout.
+	answer, err := x.LLM.RunLLM(ctx, system, prompt)
 	if err != nil {
 		return NodeResult{}, fmt.Errorf("llm node: %w", err)
 	}
@@ -347,7 +346,7 @@ func execSet(_ context.Context, _ Executors, cfg map[string]any, _ *RunContext) 
 		return NodeResult{}, fmt.Errorf("set node: missing var name")
 	}
 	val := cfg["value"]
-	// Hand the var write back to the engine to apply under its lock — do
+	// Hand the var write back to the engine to apply under its lock �?do
 	// NOT touch rc.Vars here (this executor runs outside the lock).
 	return NodeResult{
 		Output: map[string]any{"name": name, "value": val},
@@ -356,12 +355,12 @@ func execSet(_ context.Context, _ Executors, cfg map[string]any, _ *RunContext) 
 	}, nil
 }
 
-// execTransform — the "edit fields" data node. config.fields is an
+// execTransform �?the "edit fields" data node. config.fields is an
 // object {outName: value}; the engine has already template-resolved every
 // value, so the node just emits that constructed object. Lets a user
 // reshape upstream data into the exact fields a downstream node needs
 // (the field-adapter glue for a weakly-typed flow), with no code and no
-// new dependency — values are plain {{...}} templates.
+// new dependency �?values are plain {{...}} templates.
 func execTransform(_ context.Context, _ Executors, cfg map[string]any, _ *RunContext) (NodeResult, error) {
 	fields, _ := cfg["fields"].(map[string]any)
 	if fields == nil {

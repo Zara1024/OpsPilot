@@ -16,7 +16,7 @@ import (
 // their channel_id FK.
 //
 // Endpoint URLs and webhook secrets land in config_json so the operator can
-// inspect a single column when debugging â€” handy for runbooks.
+// inspect a single column when debugging â€?handy for runbooks.
 //
 // This function is idempotent: every boot rewrites config_json + enabled for
 // rows whose name matches; new names are inserted, names not present in cfg
@@ -39,7 +39,7 @@ func SeedChannelsFromConfig(ctx context.Context, repo *Repo, cfg config.Notifica
 		// Factory default ships ZERO notification channels: only seed a
 		// candidate the operator actually configured (enabled, or a URL
 		// set via env). Skipping the empty placeholders keeps a fresh
-		// install's channel list clean â€” the operator adds channels from
+		// install's channel list clean â€?the operator adds channels from
 		// the UI when they want them. (Without this, the four type
 		// placeholders showed up disabled+empty and even produced no-op
 		// "notification_sent" timeline noise.)

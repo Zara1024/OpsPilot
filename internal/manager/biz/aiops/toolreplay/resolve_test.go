@@ -55,7 +55,7 @@ func TestResolve_MismatchedToolName_DropsAssistant(t *testing.T) {
 				{ToolName: "expected", ArgumentsJSON: `{}`},
 			},
 		},
-		// next tool answers a DIFFERENT tool â€” could be from a different
+		// next tool answers a DIFFERENT tool â€?could be from a different
 		// turn or corrupt data. Drop a1 entirely rather than mispairing.
 		{ID: "t1", Role: aiopsmodel.RoleTool, Content: sp("r"), ToolCallID: sp("x"), ToolName: sp("different")},
 	}
@@ -71,7 +71,7 @@ func TestResolve_NoFollowingTool_DropsAssistant(t *testing.T) {
 			ID: "a1", Role: aiopsmodel.RoleAssistant, Content: nil,
 			ToolCalls: []aiopsmodel.ToolCall{{ToolName: "x", ArgumentsJSON: `{}`}},
 		},
-		// User came back before any tool result â€” corrupt session.
+		// User came back before any tool result â€?corrupt session.
 		{ID: "u1", Role: aiopsmodel.RoleUser, Content: sp("hello?")},
 	}
 	got := Resolve(history)
@@ -111,7 +111,7 @@ func TestIndexToolMessagesByCallID(t *testing.T) {
 		{Role: aiopsmodel.RoleTool, ToolCallID: sp("call_a"), ToolName: sp("tool_a")},
 		{Role: aiopsmodel.RoleTool, ToolCallID: sp("call_b"), ToolName: sp("tool_b")},
 		{Role: aiopsmodel.RoleTool, ToolCallID: sp("call_agent"), ToolName: sp("AgentTool")},
-		// orphan from polluted-data era â€” must NOT land under "".
+		// orphan from polluted-data era â€?must NOT land under "".
 		{Role: aiopsmodel.RoleTool, ToolCallID: nil},
 	}
 	got := IndexToolMessagesByCallID(history)
@@ -128,15 +128,15 @@ func TestIndexToolMessagesByCallID(t *testing.T) {
 
 func TestMarkAllFollowingToolsForSkip(t *testing.T) {
 	// Polluted-data shape: assistant content=NULL, no hydrated
-	// ToolCalls, followed by N tool rows with synthetic ids â€” drop
+	// ToolCalls, followed by N tool rows with synthetic ids â€?drop
 	// all of them or DeepSeek orphans them with HTTP 400.
 	history := []*aiopsmodel.Message{
 		{Role: aiopsmodel.RoleAssistant, Content: nil}, // idx 0
-		{Role: aiopsmodel.RoleTool},                    // idx 1 â€” drop
-		{Role: aiopsmodel.RoleTool},                    // idx 2 â€” drop
-		{Role: aiopsmodel.RoleTool},                    // idx 3 â€” drop
-		{Role: aiopsmodel.RoleAssistant},               // idx 4 â€” boundary
-		{Role: aiopsmodel.RoleTool},                    // idx 5 â€” keep (next turn)
+		{Role: aiopsmodel.RoleTool},                    // idx 1 â€?drop
+		{Role: aiopsmodel.RoleTool},                    // idx 2 â€?drop
+		{Role: aiopsmodel.RoleTool},                    // idx 3 â€?drop
+		{Role: aiopsmodel.RoleAssistant},               // idx 4 â€?boundary
+		{Role: aiopsmodel.RoleTool},                    // idx 5 â€?keep (next turn)
 	}
 	skip := map[int]bool{}
 	MarkAllFollowingToolsForSkip(history, 0, skip)

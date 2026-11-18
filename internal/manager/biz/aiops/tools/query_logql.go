@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/tools/basetool"
 	"github.com/Zara1024/OpsPilot/internal/pkg/logquery"
 )
 
@@ -17,7 +18,7 @@ const ToolNameQueryLogQL = "query_logql"
 // QueryLogQLDescription is the single-sentence description shown to the LLM.
 // The public name and schema stay stable while the implementation follows the
 // log backend selected by the operator.
-const QueryLogQLDescription = "Run a log query against OpsPilot's selected Loki or Elasticsearch backend using the stable LogQL interface. " +
+const QueryLogQLDescription = "Run a log query against Ongrid's selected Loki or Elasticsearch backend using the stable LogQL interface. " +
 	"Use this to investigate log content, patterns, or a specific device. Loki supports full native LogQL; Elasticsearch supports stream selectors and line filters but not parser stages, unwrap, or metric LogQL. " +
 	"When device_id is set, start with {} plus a line filter because the backend injects the device selector; do not guess job/hostname/instance labels. " +
 	"Once a scoped query returns matching lines, summarize them unless the user asks for a narrower follow-up. " +
@@ -152,17 +153,7 @@ func logQLStreamSelectorEnd(query string) (int, bool) {
 
 // queryLogqlCallTimeout caps how long a single dispatch may wait. Mirrors
 // query_promql for symmetry across signal types.
-const queryLogqlCallTimeout = 30 * time.Second
-
-// executeQueryLogQL runs the query against the selected backend and hands its
-// compact backend-specific result shape back to the LLM via ResultJSON.
-func (r *Registry) executeQueryLogQL(ctx context.Context, args json.RawMessage) (ExecuteResult, error) {
-	out, err := runQueryLogQL(ctx, r.logQuery, args)
-	if err != nil {
-		return ExecuteResult{}, err
-	}
-	return ExecuteResult{ResultJSON: out}, nil
-}
+const queryLogqlCallTimeout = 60 * time.Second
 
 func runQueryLogQL(ctx context.Context, querier LogQuerier, args []byte) ([]byte, error) {
 	if querier == nil {
@@ -203,7 +194,7 @@ func runQueryLogQL(ctx context.Context, querier LogQuerier, args []byte) ([]byte
 		}
 		start = t
 	} else if in.End != "" {
-		// User pinned end but not start â€” keep the 1h window relative to
+		// User pinned end but not start â€?keep the 1h window relative to
 		// the supplied end so the call is still bounded.
 		start = end.Add(-time.Hour)
 	}
@@ -212,11 +203,17 @@ func runQueryLogQL(ctx context.Context, querier LogQuerier, args []byte) ([]byte
 	if limit <= 0 {
 		limit = 200
 	}
+	if limit > 5000 {
+		return nil, fmt.Errorf("query_logql: limit must not exceed 5000")
+	}
 	direction := in.Direction
 	if direction == "" {
 		direction = "backward"
 	}
 
+	if direction != "backward" && direction != "forward" {
+		return nil, fmt.Errorf("query_logql: direction must be backward or forward")
+	}
 	callCtx, cancel := context.WithTimeout(ctx, queryLogqlCallTimeout)
 	defer cancel()
 
@@ -241,4 +238,43 @@ func runQueryLogQL(ctx context.Context, querier LogQuerier, args []byte) ([]byte
 // selected-backend logs service. Declared here so tests can inject a fake.
 type LogQuerier interface {
 	QueryLogQL(ctx context.Context, opts logquery.QueryRangeOptions) (logquery.QueryLogQLResult, error)
+}
+
+// QueryLogQLTool queries the configured log backend.
+type QueryLogQLTool struct {
+	logQuery LogQuerier
+}
+
+// NewQueryLogQLTool builds the BaseTool variant.
+func NewQueryLogQLTool(lq LogQuerier) *QueryLogQLTool {
+	return &QueryLogQLTool{logQuery: lq}
+}
+
+// queryLogQLWhenToUse â€?the canonical reverse-guard for log search.
+// explicit "do NOT use for ..." steers the model away from
+// the metric / trace tools when the question is really about log content.
+const queryLogQLWhenToUse = "When the user asks about log CONTENT â€?grep error / panic / fatal, see the line text " +
+	"that explains why a service failed, or inspect backend-selected log streams. Use stream selectors and line filters for portable Loki/Elasticsearch queries; metric LogQL is Loki-only. " +
+	"NOT for filesystem state, file names or file sizes (use a host_files skill). " +
+	"NOT for metric trends like cpu/mem (use query_promql). " +
+	"NOT for traces / span timelines (use query_traceql)."
+
+// Info returns metadata. Class=read.
+func (t *QueryLogQLTool) Info(_ context.Context) (*basetool.ToolInfo, error) {
+	return &basetool.ToolInfo{
+		Name:        ToolNameQueryLogQL,
+		Description: QueryLogQLDescription,
+		WhenToUse:   queryLogQLWhenToUse,
+		Parameters:  QueryLogQLSchema,
+		Class:       "read",
+	}, nil
+}
+
+// InvokableRun runs the LogQL range query.
+func (t *QueryLogQLTool) InvokableRun(ctx context.Context, argsJSON string, _ ...basetool.InvokeOption) (string, error) {
+	out, err := runQueryLogQL(ctx, t.logQuery, []byte(argsJSON))
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
 }

@@ -4,7 +4,7 @@
 // streams (filename label values) and inserts a structured reference
 // the agent can resolve when running.
 //
-// This package is read-only â€” it never mutates platform state. It also
+// This package is read-only â€?it never mutates platform state. It also
 // never returns full bodies; only the minimum (id + label + subtitle)
 // needed to render a popover row and to round-trip the reference back
 // to the agent. The agent itself is responsible for any deeper hydration
@@ -12,7 +12,7 @@
 //
 // Multi-tenant note: ownership scoping is the caller's responsibility.
 // In v1 the platform is single-tenant, so we don't filter by user_id /
-// tenant_id at this layer â€” when tenancy lands, add an owner argument
+// tenant_id at this layer â€?when tenancy lands, add an owner argument
 // to Search and propagate it to each repo call. The wire shape stays
 // stable.
 package mentions
@@ -65,7 +65,7 @@ type Searcher struct {
 	logClient logQuerier
 }
 
-// logQuerier is the narrow surface we need from logquery â€” only label
+// logQuerier is the narrow surface we need from logquery â€?only label
 // values for the `filename` label, which we use as the file picker's
 // data source. Defined here (instead of importing logquery's Client
 // type directly) so tests can stub it. The real *logquery.Client
@@ -76,7 +76,7 @@ type logQuerier interface {
 
 // New builds a Searcher. Any of the three deps may be nil; the
 // corresponding type just returns no results in that case (graceful
-// degradation â€” a deployment without Loki still gets device / incident
+// degradation â€?a deployment without Loki still gets device / incident
 // / rule mentions).
 func New(devices *device.Usecase, alerts *alert.Usecase, logClient logQuerier) *Searcher {
 	return &Searcher{devices: devices, alerts: alerts, logClient: logClient}
@@ -86,15 +86,15 @@ func New(devices *device.Usecase, alerts *alert.Usecase, logClient logQuerier) *
 type Query struct {
 	// Term is the user's search text (post-`@`). Trimmed by the caller.
 	Term string
-	// Filter narrows to one type; empty â†’ all types.
+	// Filter narrows to one type; empty â†?all types.
 	Filter Type
 	// Limit caps results per type (and total across types when Filter
-	// is empty). 0 â†’ 10. Caps at 50 to keep popover responsive.
+	// is empty). 0 â†?10. Caps at 50 to keep popover responsive.
 	Limit int
 }
 
 // Search dispatches the term to each enabled sub-search. Results are
-// returned in a stable type order (device â†’ incident â†’ rule â†’ file)
+// returned in a stable type order (device â†?incident â†?rule â†?file)
 // so the popover renders predictably.
 func (s *Searcher) Search(ctx context.Context, q Query) ([]Item, error) {
 	if s == nil {
@@ -139,7 +139,7 @@ func (s *Searcher) searchDevices(ctx context.Context, term string, limit int) ([
 	if s.devices == nil {
 		return nil, nil
 	}
-	// Try numeric id match first when the term is all digits â€” operators
+	// Try numeric id match first when the term is all digits â€?operators
 	// often paste a device id directly.
 	var idMatch *Item
 	if isAllDigits(term) {
@@ -154,8 +154,8 @@ func (s *Searcher) searchDevices(ctx context.Context, term string, limit int) ([
 		}
 	}
 	// Substring search by name + hostname. The Repo Hostname/Name
-	// filter both LIKE-match â€” we run two queries and union, capped at
-	// limit. Empty term â†’ most-recent N.
+	// filter both LIKE-match â€?we run two queries and union, capped at
+	// limit. Empty term â†?most-recent N.
 	out := make([]Item, 0, limit)
 	if idMatch != nil {
 		out = append(out, *idMatch)
@@ -206,7 +206,7 @@ func (s *Searcher) searchIncidents(ctx context.Context, term string, limit int) 
 	// Then rule_key contains. The biz IncidentFilter only takes an
 	// exact RuleKey match; we use it as a substring proxy by passing
 	// term verbatim. The repo SQL is `rule = ?` (exact) so the only
-	// matches are when the user typed the rule key in full â€” for
+	// matches are when the user typed the rule key in full â€?for
 	// MVP that's fine; popover users typically copy/paste keys.
 	rows, _ := s.alerts.ListIncidents(ctx, alert.IncidentFilter{RuleKey: term, Limit: limit})
 	for _, inc := range rows {
@@ -218,7 +218,7 @@ func (s *Searcher) searchIncidents(ctx context.Context, term string, limit int) 
 			break
 		}
 	}
-	// Empty term â†’ recent incidents.
+	// Empty term â†?recent incidents.
 	if term == "" && len(out) < limit {
 		rows, _ := s.alerts.ListIncidents(ctx, alert.IncidentFilter{Limit: limit})
 		for _, inc := range rows {
@@ -263,8 +263,7 @@ func (s *Searcher) searchFiles(ctx context.Context, term string, limit int) ([]I
 	if s.logClient == nil {
 		return nil, nil
 	}
-	// Loki LabelValues over the last 24h is enough for the picker â€”
-	// most operators want the file they're actively writing to. Any
+	// Loki LabelValues over the last 24h is enough for the picker â€?	// most operators want the file they're actively writing to. Any
 	// quieter file beyond that is reachable via free-text.
 	to := time.Now().UTC()
 	from := to.Add(-24 * time.Hour)
@@ -294,7 +293,7 @@ func (s *Searcher) searchFiles(ctx context.Context, term string, limit int) ([]I
 // Resolve hydrates a list of Mention references into one human-readable
 // bullet per mention. The agent inlines the result into the system
 // prompt so the LLM has structured context without spending a tool
-// round-trip. Failures degrade silently â€” a deleted device shouldn't
+// round-trip. Failures degrade silently â€?a deleted device shouldn't
 // kill the agent run.
 func (s *Searcher) Resolve(ctx context.Context, mentions []Mention) []string {
 	if len(mentions) == 0 || s == nil {
@@ -362,7 +361,7 @@ func (s *Searcher) resolveOne(ctx context.Context, m Mention) string {
 			}
 		}
 	case TypeFile:
-		// No hydration â€” the filename is itself the descriptor.
+		// No hydration â€?the filename is itself the descriptor.
 		return fmt.Sprintf("- log file %s", m.ID)
 	}
 	// Generic fallback so the agent at least sees the user's intent.
@@ -420,7 +419,7 @@ func ruleToItem(r *alertmodel.Rule) Item {
 	return Item{
 		Type:     TypeRule,
 		ID:       r.RuleKey,
-		Label:    fmt.Sprintf("%s â€” %s", r.RuleKey, r.Name),
+		Label:    fmt.Sprintf("%s â€?%s", r.RuleKey, r.Name),
 		Subtitle: r.Severity + " Â· " + r.ScopeType,
 	}
 }
@@ -447,6 +446,6 @@ func isAllDigits(s string) bool {
 }
 
 // LogQuerierAdapter wraps *logquery.Client so its method set matches
-// the local logQuerier interface (signatures already align â€” this is a
+// the local logQuerier interface (signatures already align â€?this is a
 // type alias for clarity at wiring sites).
 type LogQuerierAdapter = logquery.Client

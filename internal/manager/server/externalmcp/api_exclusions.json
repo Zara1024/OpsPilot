@@ -103,5 +103,8 @@
   {"method":"POST","path":"/v1/oncall/voice/test-call","reason":"On-call scheduling and alert dispatch policies remain in the trusted administrator console."},
   {"method":"GET","path":"/v1/oncall/calendar/subscribe/{token}.ics","reason":"Internal, public, or browser-only route; use the authenticated product surface."},
   {"method":"POST","path":"/v1/oncall/voice/callback/aliyun","reason":"External callback endpoint; authenticates via provider-specific signatures."},
-  {"method":"POST","path":"/v1/oncall/voice/callback/tencent","reason":"External callback endpoint; authenticates via provider-specific signatures."}
+  {"method":"POST","path":"/v1/oncall/voice/callback/tencent","reason":"External callback endpoint; authenticates via provider-specific signatures."},
+  {"method":"GET","path":"/v1/chat/sessions/{id}/tool-results/{resultID}","reason":"Saved tool evidence is scoped to an authenticated chat session; external MCP has no session capability."},
+  {"method":"GET","path":"/v1/chat/sessions/{id}/tool-results/{resultID}/{resultAction}","reason":"Saved tool evidence is scoped to an authenticated chat session; external MCP has no session capability."},
+  {"method":"POST","path":"/v1/chat/sessions/{id}/tool-results/{resultID}/{resultAction}","reason":"Saved tool evidence is scoped to an authenticated chat session; external MCP has no session capability."}
 ]

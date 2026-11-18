@@ -9,8 +9,8 @@ import (
 	"time"
 
 	biz "github.com/Zara1024/OpsPilot/internal/manager/biz/aiops"
-	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/agent"
-	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/chatruntime"
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/chatprotocol"
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/runtime/v3/chatruntime"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/aiops"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 )
@@ -28,7 +28,7 @@ func (f *fakeRuntime) Handle(_ context.Context, req *chatruntime.Request) (*chat
 	f.calls.Add(1)
 	// Drive the SSE adapter through one full sequence so the frame
 	// translation is exercised end-to-end. The call site asserts on
-	// the resulting agent.Event slice.
+	// the resulting chatprotocol.Event slice.
 	if req.Emit != nil {
 		now := time.Now().UTC()
 		end := now.Add(20 * time.Millisecond)
@@ -94,10 +94,12 @@ func (m *memSessions) ListSessions(_ context.Context, _ uint64, _, _ int, _ *uin
 func (m *memSessions) ListByParent(_ context.Context, _ string) ([]*model.Session, error) {
 	return nil, nil
 }
-func (m *memSessions) CloseSession(_ context.Context, _ string) error             { return nil }
-func (m *memSessions) RenameSession(_ context.Context, _, _ string) error         { return nil }
-func (m *memSessions) UpdateSessionModel(_ context.Context, _, _, _ string) error { return nil }
-func (m *memSessions) DeleteSession(_ context.Context, _ string) error            { return nil }
+func (m *memSessions) CloseSession(_ context.Context, _ string) error     { return nil }
+func (m *memSessions) RenameSession(_ context.Context, _, _ string) error { return nil }
+func (m *memSessions) UpdateSessionModel(_ context.Context, _, _, _ string, reasoningEffort string) error {
+	return nil
+}
+func (m *memSessions) DeleteSession(_ context.Context, _ string) error { return nil }
 func (m *memSessions) AppendMessage(_ context.Context, _ *model.Message) error {
 	return nil
 }
@@ -119,57 +121,7 @@ func newSeededSessions(uid uint64) (*memSessions, string) {
 	return store, id
 }
 
-// TestParseKernel_Defaults exercises the env→Kernel parsing.
-//
-//	unset / empty / garbage → legacy
-//	"graph"                 → graph
-func TestParseKernel_Defaults(t *testing.T) {
-	cases := []struct {
-		in   string
-		want Kernel
-	}{
-		{"", KernelGraph},
-		{"legacy", KernelLegacy},
-		{"GRAPH", KernelGraph},
-		{"  graph  ", KernelGraph},
-		{"garbage", KernelGraph},
-	}
-	for _, c := range cases {
-		if got := ParseKernel(c.in); got != c.want {
-			t.Errorf("ParseKernel(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
-// TestService_KernelLegacy_DispatchesToAgent verifies the default
-// kernel routes through the legacy agent.Agent path. We can't easily
-// stand up a real agent here (it needs an LLM client + tools.Registry)
-// — instead, the test confirms the runtime is NOT consulted and the
-// legacy path runs (errors with ErrNotWiredYet because we pass a nil
-// agent on purpose).
-func TestService_KernelLegacy_DispatchesToAgent(t *testing.T) {
-	store, sid := newSeededSessions(7)
-	rt := &fakeRuntime{}
-	svc := NewWithKernel(nil, rt, KernelLegacy, store, nil, nil)
-
-	caller := Caller{UserID: 7}
-	_, err := svc.PostMessage(context.Background(), caller, sid, "hello")
-	// Legacy path is not wired (nil agent) — we expect a panic-free
-	// failure that is NOT runtime.Handle (rt.calls must stay 0).
-	if rt.calls.Load() != 0 {
-		t.Errorf("legacy kernel must NOT consult runtime, got %d calls", rt.calls.Load())
-	}
-	if err == nil {
-		t.Errorf("expected error from nil legacy agent path")
-	}
-}
-
-// TestService_KernelGraph_DispatchesToRuntime asserts that when
-// kernel=graph and runtime != nil, every chat-send path goes through
-// runtime.Handle. The fakeRuntime emits one of each event; we
-// translate them to legacy frame names through the service's SSE
-// adapter and assert the names + sequence.
-func TestService_KernelGraph_DispatchesToRuntime(t *testing.T) {
+func TestService_Graph_DispatchesToRuntime(t *testing.T) {
 	store, sid := newSeededSessions(7)
 	body := "all done"
 	rt := &fakeRuntime{
@@ -184,13 +136,13 @@ func TestService_KernelGraph_DispatchesToRuntime(t *testing.T) {
 			Iterations: 2,
 		},
 	}
-	svc := NewWithKernel(nil, rt, KernelGraph, store, nil, nil)
+	svc := New(rt, store, nil, nil)
 
 	var (
 		evtMu sync.Mutex
-		evts  []agent.Event
+		evts  []chatprotocol.Event
 	)
-	emit := func(ev agent.Event) {
+	emit := func(ev chatprotocol.Event) {
 		evtMu.Lock()
 		defer evtMu.Unlock()
 		evts = append(evts, ev)
@@ -212,10 +164,10 @@ func TestService_KernelGraph_DispatchesToRuntime(t *testing.T) {
 
 	evtMu.Lock()
 	defer evtMu.Unlock()
-	wantSequence := []agent.EventType{
-		agent.EventAssistant,
-		agent.EventToolStart,
-		agent.EventToolEnd,
+	wantSequence := []chatprotocol.EventType{
+		chatprotocol.EventAssistant,
+		chatprotocol.EventToolStart,
+		chatprotocol.EventToolEnd,
 	}
 	if len(evts) < len(wantSequence) {
 		t.Fatalf("got %d events, want at least %d (got %#v)", len(evts), len(wantSequence), evts)
@@ -225,7 +177,7 @@ func TestService_KernelGraph_DispatchesToRuntime(t *testing.T) {
 			t.Errorf("event[%d] type = %q, want %q", i, evts[i].Type, want)
 		}
 	}
-	// Tool fields must round-trip — Status and ToolCallID are the
+	// Tool fields must round-trip �?Status and ToolCallID are the
 	// SSE handler's correlation keys.
 	if evts[1].Tool == nil || evts[1].Tool.ToolCallID != "tc1" {
 		t.Errorf("tool_start did not carry tool_call_id")
@@ -238,30 +190,26 @@ func TestService_KernelGraph_DispatchesToRuntime(t *testing.T) {
 	}
 }
 
-// TestService_KernelGraph_NilRuntime_FallsBackToLegacy guards
-// against the misconfig where OPSPILOT_AGENT_KERNEL=graph but the
+// TestService_MissingRuntimeFailsExplicitly guards
+// against the misconfig where ONGRID_AGENT_KERNEL=graph but the
 // runtime fails to build. We must fall back to legacy; the test
 // confirms runtime is never called.
-func TestService_KernelGraph_NilRuntime_FallsBackToLegacy(t *testing.T) {
+// 运行时不可用时应返回稳定错误，不能隐式执行另一套循环�?func TestService_MissingRuntimeFailsExplicitly(t *testing.T) {
 	store, sid := newSeededSessions(7)
-	svc := NewWithKernel(nil, nil, KernelGraph, store, nil, nil)
-	caller := Caller{UserID: 7}
-	_, err := svc.PostMessage(context.Background(), caller, sid, "hello")
-	if err == nil {
-		t.Errorf("expected error from nil legacy agent path with graph kernel + nil runtime")
+	svc := New(nil, store, nil, nil)
+	_, err := svc.PostMessage(context.Background(), Caller{UserID: 7}, sid, "hello")
+	if !errors.Is(err, errs.ErrNotWiredYet) {
+		t.Fatalf("error=%v, want runtime unavailable", err)
 	}
-	// Defensive: a fakeRuntime that's nil on the service AND a
-	// legacy agent that's nil yields a panic-free error path.
-	_ = errors.Is(err, errs.ErrNotWiredYet) // tolerate either err shape
 }
 
-// TestService_KernelGraph_Ownership respects the owner check in
-// the GetSession indirection — non-owner gets ErrNotFound BEFORE the
+// TestService_Graph_Ownership respects the owner check in
+// the GetSession indirection �?non-owner gets ErrNotFound BEFORE the
 // runtime is consulted.
-func TestService_KernelGraph_Ownership(t *testing.T) {
+func TestService_Graph_Ownership(t *testing.T) {
 	store, sid := newSeededSessions(7)
 	rt := &fakeRuntime{}
-	svc := NewWithKernel(nil, rt, KernelGraph, store, nil, nil)
+	svc := New(rt, store, nil, nil)
 
 	caller := Caller{UserID: 99}
 	_, err := svc.PostMessage(context.Background(), caller, sid, "hello")
@@ -270,5 +218,21 @@ func TestService_KernelGraph_Ownership(t *testing.T) {
 	}
 	if rt.calls.Load() != 0 {
 		t.Errorf("runtime must NOT be consulted for non-owner, got %d", rt.calls.Load())
+	}
+}
+
+func TestTurnRejectionEndsAtRuntimeDispatch(t *testing.T) {
+	store, id := newSeededSessions(7)
+	rt := &fakeRuntime{err: errs.ErrNotFound}
+	service := New(rt, store, nil, nil)
+	for _, tc := range []struct {
+		user     uint64
+		rejected bool
+	}{{8, true}, {7, false}} {
+		_, err := service.PostMessageStream(context.Background(), Caller{UserID: tc.user}, id, "hello", nil)
+		var rejected *TurnRejectedError
+		if !errors.Is(err, errs.ErrNotFound) || errors.As(err, &rejected) != tc.rejected {
+			t.Fatalf("user %d: got %T %v, want not-found with rejected=%v", tc.user, err, err, tc.rejected)
+		}
 	}
 }

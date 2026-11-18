@@ -77,11 +77,11 @@ func TestResolve_FileBullet(t *testing.T) {
 
 func TestIsAllDigits(t *testing.T) {
 	cases := map[string]bool{
-		"":    false,
-		"123": true,
-		"12a": false,
-		"0":   true,
-		"-12": false,
+		"":     false,
+		"123":  true,
+		"12a":  false,
+		"0":    true,
+		"-12":  false,
 	}
 	for in, want := range cases {
 		if got := isAllDigits(in); got != want {

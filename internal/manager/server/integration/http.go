@@ -1,4 +1,4 @@
-// Package integration hosts HTTP routes that bridge opspilot to third-party
+// Package integration hosts HTTP routes that bridge ongrid to third-party
 // observability stacks (today: Grafana). They delegate to the matching
 // biz/{grafana,...} services; the handlers themselves are thin auth +
 // error-mapping shims.
@@ -58,7 +58,7 @@ type WebSearchProbe interface {
 
 // LLMRouterInvalidator drops the in-process LLM provider catalog cache
 // so the next chat call re-reads system_settings.llm.* rows. Wired to
-// *llm.MultiClient â€” used by the LLM settings UI's save flow so admin
+// *llm.MultiClient â€?used by the LLM settings UI's save flow so admin
 // edits propagate instantly instead of waiting up to 60s for the
 // router's TTL to roll over.
 type LLMRouterInvalidator interface {
@@ -69,6 +69,7 @@ type LLMRouterInvalidator interface {
 // biz/setting implementation performs one minimal upstream completion and
 // returns stable, secret-free failure codes.
 type LLMConfigProbe interface {
+	SaveDefault(context.Context, bizsetting.LLMDefaultSelection) (bizsetting.LLMDefaultSelection, error)
 	FetchModels(ctx context.Context, in bizsetting.LLMProbeInput) (bizsetting.LLMModelsResult, error)
 	Probe(ctx context.Context, in bizsetting.LLMProbeInput) (bizsetting.LLMProbeResult, error)
 	Save(ctx context.Context, in bizsetting.LLMProbeInput) (bizsetting.LLMProbeResult, error)
@@ -85,15 +86,15 @@ type Handler struct {
 	llmProbe  LLMConfigProbe
 }
 
-// NewHandler builds the handler. prom may be nil when OPSPILOT_PROM_ENABLED=false;
+// NewHandler builds the handler. prom may be nil when ONGRID_PROM_ENABLED=false;
 // the test route then 503s instead of crashing. loki/tempo/webSearch probes
-// are optional â€” when nil the corresponding /test endpoint 503s.
+// are optional â€?when nil the corresponding /test endpoint 503s.
 func NewHandler(grafana GrafanaService, prom PromConfigProbe, loki URLProbe, tempo URLProbe, webSearch WebSearchProbe) *Handler {
 	return &Handler{grafana: grafana, prom: prom, loki: loki, tempo: tempo, webSearch: webSearch}
 }
 
 // SetLLMRouter wires the LLM provider catalog invalidator post-construction.
-// Optional â€” without it the /v1/integrations/llm/invalidate endpoint 503s,
+// Optional â€?without it the /v1/integrations/llm/invalidate endpoint 503s,
 // admin saves still take effect within the router's 60s TTL.
 func (h *Handler) SetLLMRouter(r LLMRouterInvalidator) { h.llmRouter = r }
 
@@ -103,17 +104,17 @@ func (h *Handler) SetLLMProbe(p LLMConfigProbe) { h.llmProbe = p }
 
 // Register attaches routes:
 //
-//	POST /v1/integrations/grafana/test           (admin)  â€” verify connectivity
-//	POST /v1/integrations/grafana/sync           (admin)  â€” push folder + datasource + dashboards
-//	POST /v1/integrations/grafana/sync-loki      (admin)  â€” push only the Loki datasource
-//	POST /v1/integrations/prom/test              (admin)  â€” run "up" PromQL probe
-//	POST /v1/integrations/llm/test               (admin)  â€” validate an unsaved provider tuple
-//	POST /v1/integrations/llm/validate-and-save  (admin)  â€” validate every model and atomically save
-//	GET  /v1/observability/dashboards/{uid}      (any auth user) â€” proxy Grafana dashboard JSON
+//	POST /v1/integrations/grafana/test           (admin)  â€?verify connectivity
+//	POST /v1/integrations/grafana/sync           (admin)  â€?push folder + datasource + dashboards
+//	POST /v1/integrations/grafana/sync-loki      (admin)  â€?push only the Loki datasource
+//	POST /v1/integrations/prom/test              (admin)  â€?run "up" PromQL probe
+//	POST /v1/integrations/llm/test               (admin)  â€?validate an unsaved provider tuple
+//	POST /v1/integrations/llm/validate-and-save  (admin)  â€?validate every model and atomically save
+//	GET  /v1/observability/dashboards/{uid}      (any auth user) â€?proxy Grafana dashboard JSON
 //
 // The dashboards proxy lives under /v1/observability rather than
 // /v1/integrations because it's a read path used by the Monitor page on
-// every user load â€” semantically a query, not an admin action â€” and we
+// every user load â€?semantically a query, not an admin action â€?and we
 // want the route to read like a noun, not a verb. Auth is plain bearer
 // (the manager middleware already gates this group).
 func (h *Handler) Register(r chi.Router) {
@@ -124,10 +125,12 @@ func (h *Handler) Register(r chi.Router) {
 	r.Post("/v1/integrations/loki/test", h.testLoki)
 	r.Post("/v1/integrations/tempo/test", h.testTempo)
 	r.Post("/v1/integrations/websearch/test", h.testWebSearch)
+	r.Post("/v1/integrations/websearch/validate-and-save", h.saveWebSearch)
 	r.Post("/v1/integrations/llm/test", h.testLLMConfiguration)
 	r.Post("/v1/integrations/llm/models", h.fetchLLMModels)
 	r.Post("/v1/integrations/llm/validate-and-save", h.validateAndSaveLLMConfiguration)
 	r.Post("/v1/integrations/llm/invalidate", h.invalidateLLM)
+	r.Put("/v1/integrations/llm/default", h.saveLLMDefault)
 	r.Get("/v1/observability/dashboards/{uid}", h.fetchDashboard)
 }
 
@@ -314,7 +317,7 @@ func (h *Handler) invalidateLLM(w http.ResponseWriter, r *http.Request) {
 //
 //	{ "dashboard": { "uid", "title", "panels": [...] }, "meta": {...} }
 //
-// We don't reshape â€” Monitor.tsx walks panels[] and Grafana's full
+// We don't reshape â€?Monitor.tsx walks panels[] and Grafana's full
 // schema is richer than we want to model in Go.
 func (h *Handler) fetchDashboard(w http.ResponseWriter, r *http.Request) {
 	if !h.requireUser(w, r) {
@@ -405,7 +408,7 @@ func (h *Handler) testProm(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.prom == nil {
 		writeJSON(w, http.StatusServiceUnavailable, errorBody{
-			Error: "prom not enabled (set OPSPILOT_PROM_ENABLED=true)",
+			Error: "prom not enabled (set ONGRID_PROM_ENABLED=true)",
 			Code:  "prom-disabled",
 		})
 		return
@@ -579,4 +582,33 @@ func writeErr(w http.ResponseWriter, err error) {
 		status, slug = http.StatusBadGateway, "upstream"
 	}
 	writeJSON(w, status, errorBody{Error: err.Error(), Code: slug})
+}
+
+// @Summary Validate and atomically save search providers (admin only)
+// @Router /api/v1/integrations/websearch/validate-and-save [post]
+// @Accept json
+// @Produce json
+// @Param body body bizsetting.WebSearchProbeInput true "Complete search configuration"
+// @Success 200 {object} map[string]string
+func (h *Handler) saveWebSearch(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAdmin(w, r) {
+		return
+	}
+	saver, ok := h.webSearch.(interface {
+		ValidateAndSaveConfiguration(context.Context, bizsetting.WebSearchProbeInput) (string, string, error)
+	})
+	if !ok {
+		writeJSON(w, http.StatusServiceUnavailable, errorBody{Error: "search settings not wired", Code: "websearch-disabled"})
+		return
+	}
+	in, ok := decodeDraft[bizsetting.WebSearchProbeInput](w, r)
+	if !ok {
+		return
+	}
+	provider, sample, err := saver.ValidateAndSaveConfiguration(r.Context(), in)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved", "provider": provider, "sample": sample})
 }

@@ -5,9 +5,9 @@ test.use({ storageState: { cookies: [], origins: [] } });
 async function openTestPage(page: Page, width: number, zh = true) {
   await page.setViewportSize({ width, height: 820 });
   await page.addInitScript(zh => {
-    localStorage.setItem('opspilot-locale', zh ? 'zh-CN' : 'en-US');
-    localStorage.setItem('opspilot-theme-preference', zh ? 'light' : 'dark');
-    localStorage.setItem('opspilot.auth', JSON.stringify({ state: { token: 'e2e-token', role: 'admin', email: 'test@example.com' }, version: 0 }));
+    localStorage.setItem('ongrid-locale', zh ? 'zh-CN' : 'en-US');
+    localStorage.setItem('ongrid-theme-preference', zh ? 'light' : 'dark');
+    localStorage.setItem('ongrid.auth', JSON.stringify({ state: { token: 'e2e-token', role: 'admin', email: 'test@example.com' }, version: 0 }));
   }, zh);
   await page.route('**/api/v1/**', route => route.fulfill({ json: { items: [], total: 0 } }));
   const longModel = 'test-provider-long-model-name-'.repeat(3) + 'pro';
@@ -86,7 +86,7 @@ for (const width of [390, 768, 1280, 1920]) {
 test('dragging the launcher and desktop title frees the covered area and remembers the position', async ({ page }) => {
   await openTestPage(page, 1280);
   const launcher = page.getByRole('button', { name: 'AI 助理', exact: true });
-  const dialog = page.getByRole('dialog', { name: 'OpsPilot AI 助理' });
+  const dialog = page.getByRole('dialog', { name: 'Ongrid AI 助理' });
   const original = (await launcher.boundingBox())!;
   const x = original.x + original.width / 2;
   const y = original.y + original.height / 2;
@@ -107,7 +107,7 @@ test('dragging the launcher and desktop title frees the covered area and remembe
   expect(start.x).toBeCloseTo(placed.x);
   expect(start.y).toBeGreaterThan(placed.y + placed.height);
   await dialog.getByRole('textbox').fill('keep my draft');
-  const title = dialog.getByRole('heading', { name: 'OpsPilot AI 助理' });
+  const title = dialog.getByRole('heading', { name: 'Ongrid AI 助理' });
   const handle = (await title.boundingBox())!;
   await page.mouse.move(handle.x + 10, handle.y + 8);
   await page.mouse.down();
@@ -144,7 +144,7 @@ test.describe('touch placement', () => {
   test('drag and cancel are distinct from tapping to open the chat sheet', async ({ page, context }) => {
     await openTestPage(page, 390);
     const launcher = page.getByRole('button', { name: 'AI 助理', exact: true });
-    const dialog = page.getByRole('dialog', { name: 'OpsPilot AI 助理' });
+    const dialog = page.getByRole('dialog', { name: 'Ongrid AI 助理' });
     const session = await context.newCDPSession(page);
     const original = (await launcher.boundingBox())!;
     async function swipe(cancel: boolean) {
@@ -171,7 +171,7 @@ test('history separators do not outline the second conversation', async ({ page 
     { id: 'one', title: '设备检查', user_id: 9 }, { id: 'two', title: 'hello', user_id: 9 },
   ] } }));
   await page.getByRole('button', { name: 'AI 助理', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'OpsPilot AI 助理' });
+  const dialog = page.getByRole('dialog', { name: 'Ongrid AI 助理' });
   await dialog.getByRole('button', { name: '会话历史' }).click();
   const first = dialog.getByRole('button', { name: /设备检查/ });
   const hello = dialog.getByRole('button', { name: /hello/ });
@@ -189,10 +189,10 @@ test('history separators do not outline the second conversation', async ({ page 
 test('home hides the launcher and preserves the floating draft across navigation', async ({ page }) => {
   await openTestPage(page, 1280);
   const launcher = page.getByRole('button', { name: 'AI 助理', exact: true });
-  const panel = page.getByRole('dialog', { name: 'OpsPilot AI 助理' });
+  const panel = page.getByRole('dialog', { name: 'Ongrid AI 助理' });
   await launcher.click();
   await panel.getByRole('textbox', { name: '你的问题' }).fill('继续检查偏好设置');
-  await page.getByRole('link', { name: 'OpsPilot 首页' }).click();
+  await page.getByRole('link', { name: 'Ongrid 首页' }).click();
   const composer = page.getByRole('textbox', { name: '消息输入框' });
   await expect(composer).toBeVisible();
   await expect(launcher).toBeHidden();
@@ -215,7 +215,7 @@ test('resizes an open assistant with the viewport and keeps its composer reachab
   await openTestPage(page, 1728);
   await page.setViewportSize({ width: 1728, height: 960 });
   await page.getByRole('button', { name: 'AI 助理', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'OpsPilot AI 助理' });
+  const dialog = page.getByRole('dialog', { name: 'Ongrid AI 助理' });
   const input = dialog.getByRole('textbox', { name: '你的问题' });
   await input.fill('保留我的草稿');
   const large = (await dialog.boundingBox())!;

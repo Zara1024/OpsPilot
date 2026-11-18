@@ -30,9 +30,10 @@ type stubGrafana struct {
 }
 
 type stubLLMConfigProbe struct {
-	fetch func(context.Context, bizsetting.LLMProbeInput) (bizsetting.LLMModelsResult, error)
-	probe func(context.Context, bizsetting.LLMProbeInput) (bizsetting.LLMProbeResult, error)
-	save  func(context.Context, bizsetting.LLMProbeInput) (bizsetting.LLMProbeResult, error)
+	defaultSelection func(context.Context, bizsetting.LLMDefaultSelection) (bizsetting.LLMDefaultSelection, error)
+	fetch            func(context.Context, bizsetting.LLMProbeInput) (bizsetting.LLMModelsResult, error)
+	probe            func(context.Context, bizsetting.LLMProbeInput) (bizsetting.LLMProbeResult, error)
+	save             func(context.Context, bizsetting.LLMProbeInput) (bizsetting.LLMProbeResult, error)
 }
 
 type stubPromConfigProbe struct {
@@ -527,5 +528,76 @@ func TestLLMConfigurationValidateAndSaveUsesOneDraftAndInvalidatesRouter(t *test
 	}
 	if strings.Contains(rec.Body.String(), "secret-value") || !strings.Contains(rec.Body.String(), `"saved":true`) {
 		t.Fatalf("response = %s", rec.Body.String())
+	}
+}
+
+type searchConfigurationSaver struct{ calls int }
+
+func (s *searchConfigurationSaver) ProbeConfiguration(context.Context, bizsetting.WebSearchProbeInput) (string, string, error) {
+	return "searxng", "sample", nil
+}
+func (s *searchConfigurationSaver) ValidateAndSaveConfiguration(_ context.Context, in bizsetting.WebSearchProbeInput) (string, string, error) {
+	s.calls++
+	return in.Provider, "sample", nil
+}
+func TestSearchConfigurationSaveRequiresAdmin(t *testing.T) {
+	saver := &searchConfigurationSaver{}
+	h := NewHandler(nil, nil, nil, nil, saver)
+	for _, role := range []string{"viewer", "admin"} {
+		req := httptest.NewRequest(http.MethodPost, "/v1/integrations/websearch/validate-and-save", strings.NewReader(`{"provider":"searxng","fallback_provider":"brave"}`))
+		req = req.WithContext(tenantctx.With(t.Context(), tenantctx.Tenant{UserID: 7, Role: role}))
+		rec := httptest.NewRecorder()
+		newRouter(h).ServeHTTP(rec, req)
+		if role == "viewer" && (rec.Code != http.StatusForbidden || saver.calls != 0) {
+			t.Fatal("non-admin saved settings")
+		}
+		if role == "admin" && (rec.Code != http.StatusOK || saver.calls != 1) {
+			t.Fatalf("admin save failed: %d %s", rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func (s stubLLMConfigProbe) SaveDefault(ctx context.Context, in bizsetting.LLMDefaultSelection) (bizsetting.LLMDefaultSelection, error) {
+	if s.defaultSelection == nil {
+		return in, errors.New("unexpected default selection")
+	}
+	return s.defaultSelection(ctx, in)
+}
+
+func TestSaveLLMDefaultAuthorizationAndInvalidation(t *testing.T) {
+	for _, tc := range []struct {
+		role, body string
+		status     int
+	}{
+		{"admin", `{"provider":"openai","model":"gpt-6.1-terra","reasoning_effort":"high"}`, 200},
+		{"user", `{}`, 403}, {"viewer", `{}`, 403}, {"", `{}`, 401},
+		{"admin", `{"unexpected":true}`, 400}, {"admin", `{} {}`, 400},
+	} {
+		t.Run(tc.role+tc.body, func(t *testing.T) {
+			h := NewHandler(stubGrafana{}, nil, nil, nil, nil)
+			calls := 0
+			invalidator := &stubLLMRouterInvalidator{}
+			h.SetLLMRouter(invalidator)
+			h.SetLLMProbe(stubLLMConfigProbe{defaultSelection: func(_ context.Context, in bizsetting.LLMDefaultSelection) (bizsetting.LLMDefaultSelection, error) {
+				calls++
+				return in, nil
+			}})
+			req := httptest.NewRequest(http.MethodPut, "/v1/integrations/llm/default", strings.NewReader(tc.body))
+			if tc.role != "" {
+				req = req.WithContext(tenantctx.With(req.Context(), tenantctx.Tenant{UserID: 1, Role: tc.role}))
+			}
+			rec := httptest.NewRecorder()
+			newRouter(h).ServeHTTP(rec, req)
+			if rec.Code != tc.status {
+				t.Fatalf("status=%d: %s", rec.Code, rec.Body.String())
+			}
+			if tc.status == 200 {
+				if calls != 1 || invalidator.calls != 1 || !strings.Contains(rec.Body.String(), `"reasoning_effort":"high"`) {
+					t.Fatal("selection not saved or invalidated")
+				}
+			} else if calls != 0 || invalidator.calls != 0 {
+				t.Fatal("rejected request changed defaults")
+			}
+		})
 	}
 }

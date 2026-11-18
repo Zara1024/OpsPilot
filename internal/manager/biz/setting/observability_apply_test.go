@@ -26,7 +26,7 @@ func (r *recordingRunner) Run(_ context.Context, spec runner.Spec) (runner.Resul
 func TestObservabilityApplierUpdatesOnlyAllowedEnvAndRunsFixedCompose(t *testing.T) {
 	dir := t.TempDir()
 	envFile := filepath.Join(dir, ".env")
-	if err := os.WriteFile(envFile, []byte("KEEP=yes\nOPSPILOT_PROM_RETENTION_TIME=2160h\n"), 0o600); err != nil {
+	if err := os.WriteFile(envFile, []byte("KEEP=yes\nONGRID_PROM_RETENTION_TIME=2160h\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	commandRunner := &recordingRunner{}
@@ -44,7 +44,7 @@ func TestObservabilityApplierUpdatesOnlyAllowedEnvAndRunsFixedCompose(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "KEEP=yes\nOPSPILOT_PROM_RETENTION_SIZE=2GB\nOPSPILOT_PROM_RETENTION_TIME=120h\n"
+	want := "KEEP=yes\nONGRID_PROM_RETENTION_SIZE=2GB\nONGRID_PROM_RETENTION_TIME=120h\n"
 	if string(got) != want {
 		t.Fatalf("env = %q, want %q", got, want)
 	}

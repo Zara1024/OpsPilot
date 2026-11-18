@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/tools/basetool"
+	devicebiz "github.com/Zara1024/OpsPilot/internal/manager/biz/device"
 	edgebiz "github.com/Zara1024/OpsPilot/internal/manager/biz/edge"
 	edgemodel "github.com/Zara1024/OpsPilot/internal/manager/model/edge"
 )
@@ -14,9 +17,9 @@ import (
 const ToolNameGetTopology = "get_topology"
 
 // GetTopologyDescription pushes the model toward this tool when the
-// question is about the deployment as a whole â€” version, fleet size,
+// question is about the deployment as a whole â€?version, fleet size,
 // which observability backends are wired in.
-const GetTopologyDescription = "Return high-level deployment topology: manager version, edge fleet size + online count, configured Prom/Loki/Tempo URLs, channel count, enabled rule count. " +
+const GetTopologyDescription = "Return high-level deployment topology: manager version, separate Host counts and Edge installation counts, configured Prom/Loki/Tempo URLs, channel count, enabled rule count. " +
 	"Use this for questions like 'how big is the fleet' or 'is loki configured'."
 
 // GetTopologySchema is the JSON Schema of the tool's argument object.
@@ -29,7 +32,7 @@ var GetTopologySchema = json.RawMessage(`{
 }`)
 
 // TopologyInfo bundles the deployment-level facts that don't live in
-// any one biz package â€” version (build-time ldflag), configured backend
+// any one biz package â€?version (build-time ldflag), configured backend
 // URLs (cmd/main.go reads from cfg), and a channel-count callback so
 // the alert repo doesn't need to be threaded through the Registry.
 //
@@ -48,22 +51,83 @@ type TopologyInfo struct {
 	ChannelCounter func(ctx context.Context) (int, error)
 }
 
-const topologyCallTimeout = 10 * time.Second
+const topologyCallTimeout = 60 * time.Second
 
-func (r *Registry) executeGetTopology(ctx context.Context, _ json.RawMessage) (ExecuteResult, error) {
+// GetTopologyTool reports Host inventory and Edge installation counts separately.
+type GetTopologyTool struct {
+	devices  *devicebiz.Usecase
+	edges    *edgebiz.Usecase
+	alertUC  AlertUsecase
+	topology TopologyInfo
+	log      *slog.Logger
+}
+
+// NewGetTopologyTool builds the BaseTool variant. alertUC and edges may
+// be nil â€?the tool degrades to whatever it can populate. topology is a
+// value type so callers pass the resolved deployment-level facts at
+// construction time (mirrors Registry.SetTopologyInfo).
+func NewGetTopologyTool(edges *edgebiz.Usecase, alertUC AlertUsecase, topology TopologyInfo, log *slog.Logger) *GetTopologyTool {
+	if log == nil {
+		log = slog.Default()
+	}
+	return &GetTopologyTool{edges: edges, alertUC: alertUC, topology: topology, log: log}
+}
+
+func (t *GetTopologyTool) WithDevices(devices *devicebiz.Usecase) *GetTopologyTool {
+	t.devices = devices
+	return t
+}
+
+// getTopologyWhenToUse â€?reverse-guard against using this for per-host or
+// per-incident questions.
+const getTopologyWhenToUse = "When the user asks 'how big is the fleet', 'is loki configured', " +
+	"'what version of manager is this', or any cluster-wide deployment fact. " +
+	"NOT for a single host (use get_host_summary). NOT for a specific incident (use get_incident_detail). " +
+	"NOT for actual metric values (use query_promql)."
+
+// Info returns metadata. Class=read.
+func (t *GetTopologyTool) Info(_ context.Context) (*basetool.ToolInfo, error) {
+	return &basetool.ToolInfo{
+		Name:        ToolNameGetTopology,
+		Description: GetTopologyDescription,
+		WhenToUse:   getTopologyWhenToUse,
+		Parameters:  GetTopologySchema,
+		Class:       "read",
+	}, nil
+}
+
+// InvokableRun assembles the topology snapshot. Mirror of
+// Missing optional dependencies only omit their corresponding fields; they
+// drops the corresponding count from the output.
+func (t *GetTopologyTool) InvokableRun(ctx context.Context, _ string, _ ...basetool.InvokeOption) (string, error) {
 	callCtx, cancel := context.WithTimeout(ctx, topologyCallTimeout)
 	defer cancel()
 
 	out := map[string]any{
-		"manager_version":      r.topology.ManagerVersion,
-		"configured_prom_url":  r.topology.ConfiguredPromURL,
-		"configured_loki_url":  r.topology.ConfiguredLokiURL,
-		"configured_tempo_url": r.topology.ConfiguredTempoURL,
+		"manager_version":      t.topology.ManagerVersion,
+		"configured_prom_url":  t.topology.ConfiguredPromURL,
+		"configured_loki_url":  t.topology.ConfiguredLokiURL,
+		"configured_tempo_url": t.topology.ConfiguredTempoURL,
 	}
 
-	// Edge fleet size + online count.
-	if r.edges != nil {
-		all, err := r.edges.List(callCtx, edgebiz.ListFilter{Limit: 5000})
+	if t.devices != nil {
+		hosts, err := t.devices.List(callCtx, devicebiz.ListFilter{Limit: 5000})
+		if err != nil {
+			out["host_inventory_error"] = err.Error()
+		} else {
+			online := 0
+			for _, host := range hosts {
+				if host.Online {
+					online++
+				}
+			}
+			out["host_count"] = len(hosts)
+			out["online_host_count"] = online
+		}
+	}
+
+	if t.edges != nil {
+		all, err := t.edges.List(callCtx, edgebiz.ListFilter{Limit: 5000})
 		if err == nil {
 			online := 0
 			for _, e := range all {
@@ -72,13 +136,13 @@ func (r *Registry) executeGetTopology(ctx context.Context, _ json.RawMessage) (E
 				}
 			}
 			out["edge_count"] = len(all)
-			out["online_count"] = online
+			out["online_count"] = online // legacy: Edge installations, not Hosts
+			out["online_edge_count"] = online
 		}
 	}
 
-	// Enabled rule count.
-	if r.alertUC != nil {
-		rules, err := r.alertUC.ListRules(callCtx, "")
+	if t.alertUC != nil {
+		rules, err := t.alertUC.ListRules(callCtx, "")
 		if err == nil {
 			enabled := 0
 			for _, rule := range rules {
@@ -91,16 +155,15 @@ func (r *Registry) executeGetTopology(ctx context.Context, _ json.RawMessage) (E
 		}
 	}
 
-	// Channel count via callback.
-	if r.topology.ChannelCounter != nil {
-		if n, err := r.topology.ChannelCounter(callCtx); err == nil {
+	if t.topology.ChannelCounter != nil {
+		if n, err := t.topology.ChannelCounter(callCtx); err == nil {
 			out["channel_count"] = n
 		}
 	}
 
 	body, err := json.Marshal(out)
 	if err != nil {
-		return ExecuteResult{}, fmt.Errorf("get_topology: marshal: %w", err)
+		return "", fmt.Errorf("get_topology: marshal: %w", err)
 	}
-	return ExecuteResult{ResultJSON: body}, nil
+	return string(body), nil
 }

@@ -17,6 +17,12 @@ type fakeSummarizer struct {
 	calls   int
 }
 
+type summarizerFunc func(context.Context, llm.ChatReq) (*llm.ChatResp, error)
+
+func (f summarizerFunc) Chat(ctx context.Context, req llm.ChatReq) (*llm.ChatResp, error) {
+	return f(ctx, req)
+}
+
 func (f *fakeSummarizer) Chat(_ context.Context, req llm.ChatReq) (*llm.ChatResp, error) {
 	f.calls++
 	f.lastReq = req
@@ -44,7 +50,7 @@ func (f *fakeRelatedQuerier) RelatedToIncident(_ context.Context, target *alertm
 	return f.rows, f.err
 }
 
-// TestExtractStructured_RelatedAlerts â€” when a RelatedAlertQuerier is
+// TestExtractStructured_RelatedAlerts â€?when a RelatedAlertQuerier is
 // wired, extracted ReadyFields carry a populated related_alerts_json
 // (instead of the legacy "[]"). Filters out the target's own row +
 // any nil entries.
@@ -55,14 +61,14 @@ func TestExtractStructured_RelatedAlerts(t *testing.T) {
 		rows: []*alertmodel.Incident{
 			{ID: 1, Rule: "swap_high", RuleName: "Swap > 50%", Severity: "warning", Status: "open", FirstFiredAt: now, LastFiredAt: now, DeviceID: &dev},
 			nil, // skipped
-			{ID: 99, Rule: "self", RuleName: "self", Severity: "warning", Status: "open", FirstFiredAt: now, LastFiredAt: now, DeviceID: &dev}, // matches target ID â†’ skipped
+			{ID: 99, Rule: "self", RuleName: "self", Severity: "warning", Status: "open", FirstFiredAt: now, LastFiredAt: now, DeviceID: &dev}, // matches target ID â†?skipped
 			{ID: 2, Rule: "disk_high", RuleName: "Disk > 80%", Severity: "warning", Status: "open", FirstFiredAt: now, LastFiredAt: now, DeviceID: &dev},
 		},
 	}
 	uc := (&Usecase{
 		cfg: Config{},
 	}).WithRelatedQuerier(related)
-	fields := uc.extractStructured(context.Background(), alertmodel.Incident{ID: 99, DeviceID: &dev}, "narrative", 0, "")
+	fields := uc.extractStructured(context.Background(), alertmodel.Incident{ID: 99, DeviceID: &dev}, "narrative", 0, "", evidenceSet{})
 
 	if fields.RelatedAlertsJSON == "[]" {
 		t.Fatalf("related_alerts_json not populated: %q", fields.RelatedAlertsJSON)
@@ -91,7 +97,7 @@ func contains(s, sub string) bool {
 	return false
 }
 
-// TestExtractJSONBlob_VariousWrappers â€” the LLM sometimes prefixes
+// TestExtractJSONBlob_VariousWrappers â€?the LLM sometimes prefixes
 // the JSON with ```json fences, leading prose, or trailing commentary.
 // The blob extractor MUST find the first balanced top-level object.
 func TestExtractJSONBlob_VariousWrappers(t *testing.T) {
@@ -128,14 +134,13 @@ func TestExtractJSONBlob_VariousWrappers(t *testing.T) {
 	}
 }
 
-// TestExtractStructured_SummarizerNil â€” when no summarizer wired, the
-// extractor falls back to first-paragraph root_cause + verbatim
-// findings_md. Same shape as the PR-2 behaviour.
+// TestExtractStructured_SummarizerNil â€?when no summarizer wired, the
+// extractor preserves findings_md without manufacturing a root cause.
 func TestExtractStructured_SummarizerNil(t *testing.T) {
 	uc := &Usecase{cfg: Config{SummarizerTimeout: time.Second}}
 	final := "## Root\n\npg-replica-7 saturated"
-	fields := uc.extractStructured(context.Background(), alertmodel.Incident{ID: 1}, final, 3, "")
-	if fields.RootCause != "pg-replica-7 saturated" {
+	fields := uc.extractStructured(context.Background(), alertmodel.Incident{ID: 1}, final, 3, "", evidenceSet{})
+	if fields.RootCause != "" {
 		t.Errorf("root_cause = %q", fields.RootCause)
 	}
 	if fields.FindingsMD != final {
@@ -149,7 +154,7 @@ func TestExtractStructured_SummarizerNil(t *testing.T) {
 	}
 }
 
-// TestExtractStructured_ParsesValid â€” happy path. The summarizer
+// TestExtractStructured_ParsesValid â€?happy path. The summarizer
 // returns proper JSON; the extractor promotes every field into
 // ReadyFields and JSON-marshals nested objects for the columns that
 // store *_json strings.
@@ -175,7 +180,7 @@ func TestExtractStructured_ParsesValid(t *testing.T) {
 			SummarizerTimeout: time.Second,
 		},
 	}
-	fields := uc.extractStructured(context.Background(), alertmodel.Incident{ID: 1}, "narrative", 7, "")
+	fields := uc.extractStructured(context.Background(), alertmodel.Incident{ID: 1}, "narrative", 7, "", evidenceSet{})
 
 	if fields.RootCause != "PID 8821 saturated CPU on pg-replica-7" {
 		t.Errorf("root_cause = %q", fields.RootCause)
@@ -212,7 +217,7 @@ func TestExtractStructured_EmptyModelUsesRouterDefault(t *testing.T) {
 		cfg:        Config{SummarizerTimeout: time.Second},
 	}
 
-	fields := uc.extractStructured(context.Background(), alertmodel.Incident{ID: 1}, "narrative", 2, "")
+	fields := uc.extractStructured(context.Background(), alertmodel.Incident{ID: 1}, "narrative", 2, "", evidenceSet{})
 	if fields.RootCause != "router default" {
 		t.Fatalf("root_cause = %q, want router default", fields.RootCause)
 	}
@@ -224,9 +229,8 @@ func TestExtractStructured_EmptyModelUsesRouterDefault(t *testing.T) {
 	}
 }
 
-// TestExtractStructured_LLMError â€” when the summarizer call errors,
-// fall back silently to PR-2 behaviour. The report still ships, just
-// without the structured fields.
+// TestExtractStructured_LLMError â€?when the summarizer call errors,
+// preserve the narrative and mark the reference check incomplete.
 func TestExtractStructured_LLMError(t *testing.T) {
 	sum := &fakeSummarizer{err: errors.New("rate limited")}
 	uc := &Usecase{
@@ -234,8 +238,8 @@ func TestExtractStructured_LLMError(t *testing.T) {
 		cfg:        Config{SummarizerModel: "glm-4-air", SummarizerTimeout: time.Second},
 	}
 	final := "Root cause line\n\nbody"
-	fields := uc.extractStructured(context.Background(), alertmodel.Incident{ID: 1}, final, 0, "")
-	if fields.RootCause != "Root cause line" {
+	fields := uc.extractStructured(context.Background(), alertmodel.Incident{ID: 1}, final, 0, "", evidenceSet{})
+	if fields.RootCause != "" {
 		t.Errorf("root_cause fallback = %q", fields.RootCause)
 	}
 	if fields.FindingsMD != final {
@@ -243,15 +247,15 @@ func TestExtractStructured_LLMError(t *testing.T) {
 	}
 }
 
-// TestExtractStructured_BadJSON â€” model ignores the system prompt and
+// TestExtractStructured_BadJSON â€?model ignores the system prompt and
 // replies with prose. Fall back the same way.
 func TestExtractStructured_BadJSON(t *testing.T) {
 	sum := &fakeSummarizer{resp: &llm.ChatResp{
 		Assistant: llm.Message{Role: "assistant", Content: "I think the cause is..."},
 	}}
 	uc := &Usecase{summarizer: sum, cfg: Config{SummarizerModel: "glm-4-air", SummarizerTimeout: time.Second}}
-	fields := uc.extractStructured(context.Background(), alertmodel.Incident{ID: 1}, "narrative body", 0, "")
-	if fields.RootCause != "narrative body" {
+	fields := uc.extractStructured(context.Background(), alertmodel.Incident{ID: 1}, "narrative body", 0, "", evidenceSet{})
+	if fields.RootCause != "" {
 		t.Errorf("fallback root_cause = %q", fields.RootCause)
 	}
 	if fields.Confidence != nil {
@@ -259,7 +263,7 @@ func TestExtractStructured_BadJSON(t *testing.T) {
 	}
 }
 
-// TestExtractStructured_ConfidenceClamp â€” models occasionally return
+// TestExtractStructured_ConfidenceClamp â€?models occasionally return
 // 0..100 or 0..10. Promote into ReadyFields as 0..1.
 func TestExtractStructured_ConfidenceClamp(t *testing.T) {
 	cases := []struct {
@@ -269,7 +273,7 @@ func TestExtractStructured_ConfidenceClamp(t *testing.T) {
 		{85, 0.85}, // 0..100 form
 		{1.0, 1.0},
 		{-0.1, 0},
-		{1.5, 1.0}, // > 1 but â‰¤ 100 â†’ /100 â†’ 0.015 â€” let's check actual behaviour
+		{1.5, 1.0}, // > 1 but â‰?100 â†?/100 â†?0.015 â€?let's check actual behaviour
 	}
 	for _, tc := range cases {
 		raw := tc.raw
@@ -277,12 +281,12 @@ func TestExtractStructured_ConfidenceClamp(t *testing.T) {
 			Assistant: llm.Message{Role: "assistant",
 				Content: `{"root_cause":"x","confidence":` + fmtFloat(raw) + `}`}}}
 		uc := &Usecase{summarizer: sum, cfg: Config{SummarizerModel: "m", SummarizerTimeout: time.Second}}
-		fields := uc.extractStructured(context.Background(), alertmodel.Incident{ID: 1}, "narr", 0, "")
+		fields := uc.extractStructured(context.Background(), alertmodel.Incident{ID: 1}, "narr", 0, "", evidenceSet{})
 		if fields.Confidence == nil {
 			t.Errorf("raw=%v: confidence nil", raw)
 			continue
 		}
-		// For raw=1.5 the rule (>1 && <=100 â†’ /100) gives 0.015 â€” accept either branch.
+		// For raw=1.5 the rule (>1 && <=100 â†?/100) gives 0.015 â€?accept either branch.
 		got := *fields.Confidence
 		if (raw <= 1 && raw >= 0 && got != raw) ||
 			(raw > 1 && raw <= 100 && got != raw/100.0) ||

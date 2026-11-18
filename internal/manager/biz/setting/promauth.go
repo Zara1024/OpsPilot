@@ -23,7 +23,7 @@ import (
 // edit in the UI propagates within ~5s without restarting the manager.
 //
 // fallbackQueryURL / fallbackWriteURL are the env-derived bootstrap
-// values from cfg.Prom â€” used when the corresponding system_settings
+// values from cfg.Prom â€?used when the corresponding system_settings
 // row is missing or empty. This way a fresh install with nothing in the
 // DB still talks to the embedded Prometheus.
 type PromResolver struct {

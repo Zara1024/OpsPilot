@@ -18,7 +18,7 @@ import (
 )
 
 // newTestRepo opens an in-memory SQLite DB and applies this package's Migrate.
-// No users table is created â€” the old hand-written SQL migration declared a FK
+// No users table is created â€?the old hand-written SQL migration declared a FK
 // chat_sessions.user_id -> users.id, but the gorm-tagged model does not carry
 // that FK reference (arch-lint forbids manager -> iam, so we can't share the
 // model anyway). UserID is therefore treated as a loose audit column at the
@@ -283,7 +283,7 @@ func TestListByParent(t *testing.T) {
 		t.Errorf("unknown parent: want empty non-nil slice, got %v", none)
 	}
 
-	// Empty parentID short-circuits â€” never matches the standalone row
+	// Empty parentID short-circuits â€?never matches the standalone row
 	// (whose ParentSessionID is nil, not empty string).
 	empty, err := repo.ListByParent(ctx, "")
 	if err != nil {

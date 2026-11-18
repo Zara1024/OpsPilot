@@ -67,9 +67,9 @@ func TestAlertFieldLimits(t *testing.T) {
 				name, title, key, wantTitle string
 			}{
 				{"empty_title", "", "short", ""},
-				{"at_limits", strings.Repeat("ä¸­", 256), strings.Repeat("é”®", 191), strings.Repeat("ä¸­", 256)},
-				{"over_limits", strings.Repeat("è­¦", 257), strings.Repeat("k", 191) + "a", strings.Repeat("è­¦", 255) + "â€¦"},
-				{"distinct_suffix", strings.Repeat("ðŸš¨", 257), strings.Repeat("k", 191) + "b", strings.Repeat("ðŸš¨", 255) + "â€¦"},
+				{"at_limits", strings.Repeat("ä¸?, 256), strings.Repeat("é”?, 191), strings.Repeat("ä¸?, 256)},
+				{"over_limits", strings.Repeat("è­?, 257), strings.Repeat("k", 191) + "a", strings.Repeat("è­?, 255) + "â€?},
+				{"distinct_suffix", strings.Repeat("ðŸš¨", 257), strings.Repeat("k", 191) + "b", strings.Repeat("ðŸš¨", 255) + "â€?},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					ctx := t.Context()
@@ -99,12 +99,12 @@ func TestAlertFieldLimits(t *testing.T) {
 					require.NoError(t, err)
 					require.Len(t, events, 1)
 					require.Equal(t, tc.wantTitle, events[0].Title)
-					in.Title = strings.Repeat("æ–°", 257)
+					in.Title = strings.Repeat("æ–?, 257)
 					in.DedupeKey = tc.key
 					require.NoError(t, repo.UpdateIncident(ctx, in))
 					got, err := repo.GetIncidentByDedupeKey(ctx, tc.key)
 					require.NoError(t, err)
-					require.Equal(t, strings.Repeat("æ–°", 255)+"â€¦", got.Title)
+					require.Equal(t, strings.Repeat("æ–?, 255)+"â€?, got.Title)
 					require.Equal(t, fullSummary, got.Summary)
 				})
 			}
@@ -227,7 +227,7 @@ func TestLegacyLongDedupeKeyRemainsReachable(t *testing.T) {
 	repo := newFieldLimitsRepo(t, "sqlite")
 	ctx := t.Context()
 	key := "pipeline:gpu_xid:" + strings.Repeat("legacy-label", 30)
-	legacy := &model.Incident{Title: strings.Repeat("æ—§", 300), Rule: "gpu_xid", ScopeType: "global", Severity: "critical",
+	legacy := &model.Incident{Title: strings.Repeat("æ—?, 300), Rule: "gpu_xid", ScopeType: "global", Severity: "critical",
 		DedupeKey: key, Status: model.IncidentStatusOpen, EventCount: 1}
 	// Existing SQLite databases could store keys beyond MySQL's column limit.
 	require.NoError(t, repo.db.Create(legacy).Error)
@@ -242,6 +242,6 @@ func TestLegacyLongDedupeKeyRemainsReachable(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, events, 2)
 	for _, ev := range events {
-		require.Equal(t, strings.Repeat("æ—§", 255)+"â€¦", ev.Title)
+		require.Equal(t, strings.Repeat("æ—?, 255)+"â€?, ev.Title)
 	}
 }

@@ -209,8 +209,8 @@ func TestToolSearch_MaxResultsClamp(t *testing.T) {
 		{"default-cap", `{"query":"file"}`, 5},                     // default 5
 		{"explicit-2", `{"query":"file","max_results":2}`, 2},      // explicit
 		{"clamp-high", `{"query":"file","max_results":99}`, 20},    // clamped to 20
-		{"clamp-zero", `{"query":"file","max_results":0}`, 5},      // 0 â†’ default 5
-		{"clamp-negative", `{"query":"file","max_results":-3}`, 5}, // negative â†’ default 5
+		{"clamp-zero", `{"query":"file","max_results":0}`, 5},      // 0 â†?default 5
+		{"clamp-negative", `{"query":"file","max_results":-3}`, 5}, // negative â†?default 5
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -253,7 +253,7 @@ func TestToolSearch_InfoReadClass(t *testing.T) {
 	if info.Class != "read" {
 		t.Errorf("Class = %s, want read", info.Class)
 	}
-	// The schema must declare a `query` parameter (string) â€” we check
+	// The schema must declare a `query` parameter (string) â€?we check
 	// minimally so prompt-engineering tweaks to the description don't
 	// break the test.
 	var schema map[string]any
@@ -271,7 +271,7 @@ func TestToolSearch_InfoReadClass(t *testing.T) {
 // strictly than just "find").
 func TestToolSearch_KeywordMultiTokenAllMustMatch(t *testing.T) {
 	a := newStub("host_find_large_files", "find large files on a host")
-	b := newStub("find_outlier_edges", "find ranking outliers among edges")
+	b := newStub("find_outlier_hosts", "find ranking outliers among edges")
 	bag := &stubBagProvider{all: []basetool.BaseTool{a, b}}
 	ts := NewToolSearchTool(bag, nil)
 
@@ -287,7 +287,7 @@ func TestToolSearch_KeywordMultiTokenAllMustMatch(t *testing.T) {
 	if !names["host_find_large_files"] {
 		t.Errorf("expected host_find_large_files (matches both tokens)")
 	}
-	if names["find_outlier_edges"] {
-		t.Errorf("find_outlier_edges should not match (no 'files' token)")
+	if names["find_outlier_hosts"] {
+		t.Errorf("find_outlier_hosts should not match (no 'files' token)")
 	}
 }

@@ -27,51 +27,53 @@ func identityEdges() *edgebiz.Usecase {
 }
 
 func TestDeviceIdentity_RankAndOutliers(t *testing.T) {
-	for _, path := range []string{"base", "registry"} {
-		for _, toolName := range []string{ToolNameRankEdges, ToolNameFindOutlierEdges} {
+	for _, path := range []string{"base", "catalog"} {
+		for _, toolName := range []string{ToolNameRankHosts, ToolNameFindOutlierHosts} {
 			for _, labels := range []string{`"device_id":"42"`, `"edge_id":"42"`, `"device_id":"42","edge_id":"42"`} {
 				t.Run(path+"/"+toolName+"/"+labels, func(t *testing.T) {
 					pq := &fakePromQuerier{resp: &promquery.InstantResult{ResultType: "matrix",
 						Result: json.RawMessage(fmt.Sprintf(`[{"metric":{%s},"values":[[1,"3.5"]]}]`, labels))}}
 					edges := identityEdges()
+					devices := devicebiz.NewUsecase(identityDeviceRepo{}, nil, nil)
 					args, key := `{"by":"mem"}`, "results"
-					if toolName == ToolNameFindOutlierEdges {
+					if toolName == ToolNameFindOutlierHosts {
 						args, key = `{"metric":"mem","sigma":2}`, "outliers"
 					}
 					var out string
 					var err error
-					if path == "registry" {
-						reg := &Registry{edges: edges, promQuery: pq}
-						var res ExecuteResult
-						if toolName == ToolNameRankEdges {
-							res, err = reg.executeRankEdges(context.Background(), json.RawMessage(args))
-						} else {
-							res, err = reg.executeFindOutlierEdges(context.Background(), json.RawMessage(args))
-						}
-						out = string(res.ResultJSON)
-					} else if toolName == ToolNameRankEdges {
-						out, err = NewRankEdgesTool(pq, edges, nil).InvokableRun(context.Background(), args)
+					if path == "catalog" {
+						reg := NewRegistry(nil, edges, devices, pq, nil, nil, nil, nil)
+						out, err = baseToolByName(t, reg.BuildBaseTools(), toolName).InvokableRun(context.Background(), args)
+					} else if toolName == ToolNameRankHosts {
+						out, err = NewRankHostsTool(pq, devices, nil).InvokableRun(context.Background(), args)
 					} else {
-						out, err = NewFindOutlierEdgesTool(pq, edges, nil).InvokableRun(context.Background(), args)
+						out, err = NewFindOutlierHostsTool(pq, devices, nil).InvokableRun(context.Background(), args)
 					}
 					if err != nil {
 						t.Fatal(err)
 					}
+					t.Log(out)
 					var got map[string]json.RawMessage
 					if err := json.Unmarshal([]byte(out), &got); err != nil {
 						t.Fatal(err)
 					}
-					var rows []RankEdgeRow
-					if err := json.Unmarshal(got[key], &rows); err != nil || len(rows) != 1 {
-						t.Fatalf("rows=%s err=%v", got[key], err)
+					var rows []HostRankRow
+					if err := json.Unmarshal(got[key], &rows); err != nil {
+						t.Fatal(err)
 					}
-					wantDevice, wantEdge, wantName := uint64(0), uint64(42), "host-b"
-					if strings.Contains(labels, "device_id") {
-						wantDevice, wantEdge, wantName = 42, 7, "host-a"
+					if !strings.Contains(labels, "device_id") {
+						if len(rows) != 0 {
+							t.Fatalf("edge-only series must not be guessed into a host: %s", out)
+						}
+						return
 					}
-					if row := rows[0]; row.DeviceID != wantDevice || row.EdgeID != wantEdge || row.EdgeName != wantName {
-						t.Errorf("identity=%+v; want device=%d edge=%d name=%s", row, wantDevice, wantEdge, wantName)
+					if len(rows) != 1 || rows[0].DeviceID != 42 || rows[0].DeviceName != "host-a" {
+						t.Fatalf("wrong host identity: %s", out)
 					}
+					if strings.Contains(out, `"edge_id"`) {
+						t.Fatalf("runtime identity leaked into host ranking: %s", out)
+					}
+
 				})
 			}
 		}
@@ -82,7 +84,11 @@ type identityDeviceRepo struct{ devicebiz.Repo }
 
 func (identityDeviceRepo) Get(_ context.Context, id uint64) (*devicemodel.Device, error) {
 	if id == 42 || id == 99 {
-		return &devicemodel.Device{ID: id}, nil
+		name := "host-a"
+		if id == 99 {
+			name = "host-b"
+		}
+		return &devicemodel.Device{ID: id, Name: name}, nil
 	}
 	return nil, errs.ErrNotFound
 }
@@ -111,85 +117,78 @@ func (p *identityProm) Query(_ context.Context, expr string, _ time.Time) (*prom
 }
 
 func TestDeviceIdentity_CorrelateIncident(t *testing.T) {
-	for _, path := range []string{"base", "registry"} {
-		for _, scenario := range []struct {
-			name  string
-			links *identityLinks
-		}{
-			{"linked", &identityLinks{edgeID: 7}},
-			{"unlinked", &identityLinks{}},
-			{"lookup-error", &identityLinks{err: errors.New("database unavailable")}},
-			{"missing-edge", &identityLinks{edgeID: 1000}},
-			{"no-device-service", nil},
-		} {
-			t.Run(path+"/"+scenario.name, func(t *testing.T) {
-				deviceID, now := uint64(42), time.Now()
-				alerts := &fakeAlertUC{incidentByID: map[uint64]*alertmodel.Incident{1: {
-					ID: 1, DeviceID: &deviceID, Rule: "cpu_pct", FirstFiredAt: now,
-					LastFiredAt: now, LabelsJSON: "{}", AnnotationsJSON: "{}",
-				}}}
-				var devices *devicebiz.Usecase
-				if scenario.links != nil {
-					devices = devicebiz.NewUsecase(identityDeviceRepo{}, scenario.links, nil)
+	for _, scenario := range []struct {
+		name  string
+		links *identityLinks
+	}{
+		{"linked", &identityLinks{edgeID: 7}},
+		{"unlinked", &identityLinks{}},
+		{"lookup-error", &identityLinks{err: errors.New("database unavailable")}},
+		{"missing-edge", &identityLinks{edgeID: 1000}},
+		{"no-device-service", nil},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			deviceID, now := uint64(42), time.Now()
+			alerts := &fakeAlertUC{incidentByID: map[uint64]*alertmodel.Incident{1: {
+				ID: 1, DeviceID: &deviceID, Rule: "cpu_pct", FirstFiredAt: now,
+				LastFiredAt: now, LabelsJSON: "{}", AnnotationsJSON: "{}",
+			}}}
+			var devices *devicebiz.Usecase
+			if scenario.links != nil {
+				devices = devicebiz.NewUsecase(identityDeviceRepo{}, scenario.links, nil)
+			}
+			pq, edges := &identityProm{}, identityEdges()
+			var bundle *correlateIncidentBundle
+
+			out, err := NewCorrelateIncidentTool(alerts, pq, nil, nil, edges, devices, nil).
+				InvokableRun(context.Background(), `{"incident_ids":[1]}`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var response CorrelateIncidentBatchResponse
+			if err := json.Unmarshal([]byte(out), &response); err != nil || response.SuccessCount != 1 {
+				t.Fatalf("response=%s err=%v", out, err)
+			}
+			bundle = response.Results[0].Bundle
+			t.Logf("edge=%+v skipped=%v", bundle.Host, bundle.Skipped)
+			if scenario.name == "no-device-service" {
+				if bundle.Host != nil || bundle.Skipped["host"] == "" {
+					t.Fatalf("missing host service must be explained: %+v", bundle)
 				}
-				pq, edges := &identityProm{}, identityEdges()
-				var bundle *correlateIncidentBundle
-				if path == "base" {
-					out, err := NewCorrelateIncidentTool(alerts, pq, nil, nil, edges, devices, nil).
-						InvokableRun(context.Background(), `{"incident_ids":[1]}`)
-					if err != nil {
-						t.Fatal(err)
-					}
-					var response CorrelateIncidentBatchResponse
-					if err := json.Unmarshal([]byte(out), &response); err != nil || response.SuccessCount != 1 {
-						t.Fatalf("response=%s err=%v", out, err)
-					}
-					bundle = response.Results[0].Bundle
-				} else {
-					reg := &Registry{alertUC: alerts, promQuery: pq, edges: edges, devices: devices}
-					out, err := reg.executeCorrelateIncident(context.Background(), json.RawMessage(`{"incident_id":1}`))
-					if err != nil {
-						t.Fatal(err)
-					}
-					if err := json.Unmarshal(out.ResultJSON, &bundle); err != nil {
-						t.Fatal(err)
-					}
+				return
+			}
+			// A host snapshot and observations survive a missing, failed, or replaced Edge link.
+			if bundle.Host == nil || bundle.Host.ID != 42 || bundle.Host.Name != "host-a" {
+				t.Fatalf("wrong host snapshot: %+v", bundle.Host)
+			}
+
+			if alerts.lastIncidentFilter.DeviceID == nil || *alerts.lastIncidentFilter.DeviceID != 42 {
+				t.Errorf("recent incidents must filter device 42: %+v", alerts.lastIncidentFilter)
+			}
+			if len(pq.queries) != 3 {
+				t.Errorf("want cpu/mem/up probes, got %v", pq.queries)
+			}
+			for _, expr := range append(pq.queries, pq.gotExpr) {
+				if !strings.Contains(expr, `device_id="42"`) || strings.Contains(expr, "edge_id") {
+					t.Errorf("metrics must use device 42: %s", expr)
 				}
-				if scenario.name != "linked" {
-					if bundle.Edge != nil || bundle.Skipped["edge"] == "" {
-						t.Errorf("unresolved device must omit edge and explain why, got %+v", bundle)
-					}
-					return
-				}
-				if bundle.Edge == nil || bundle.Edge.ID != 7 || bundle.Edge.Name != "host-a" {
-					t.Errorf("wrong edge for device 42: %+v", bundle.Edge)
-				}
-				if alerts.lastIncidentFilter.DeviceID == nil || *alerts.lastIncidentFilter.DeviceID != 42 {
-					t.Errorf("recent incidents must filter device 42: %+v", alerts.lastIncidentFilter)
-				}
-				if len(pq.queries) != 3 {
-					t.Errorf("want cpu/mem/up probes, got %v", pq.queries)
-				}
-				for _, expr := range append(pq.queries, pq.gotExpr) {
-					if !strings.Contains(expr, `device_id="42"`) || strings.Contains(expr, "edge_id") {
-						t.Errorf("metrics must use device 42: %s", expr)
-					}
-				}
-			})
-		}
+			}
+		})
 	}
 }
 
 func TestDeviceIdentity_MetricExpressions(t *testing.T) {
 	deviceID := uint64(42)
 	for _, by := range []string{"cpu", "composite"} {
-		expr, _, _ := rankMetricExpr(by)
-		if !strings.Contains(expr, "device_id") || !strings.Contains(expr, "edge_id") {
-			t.Errorf("rank must preserve device and legacy edge identities: %s", expr)
+		expr, _, _ := hostRankMetricExpr(by)
+		t.Logf("rank_%s=%s", by, expr)
+		if !strings.Contains(expr, "device_id") || strings.Contains(expr, "edge_id") {
+			t.Errorf("rank must aggregate by host identity only: %s", expr)
 		}
 	}
 	for _, metric := range []string{"cpu_pct", "mem_pct", "net_rx_bps", "net_tx_bps"} {
 		expr, ok := promExprForIncident(&alertmodel.Incident{Rule: metric, DeviceID: &deviceID})
+		t.Logf("incident_%s=%s", metric, expr)
 		if !ok || !strings.Contains(expr, `device_id="42"`) || strings.Contains(expr, "edge_id") {
 			t.Errorf("incident must use device identity: %s", expr)
 		}

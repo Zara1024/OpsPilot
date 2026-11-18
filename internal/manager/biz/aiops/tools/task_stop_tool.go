@@ -69,7 +69,7 @@ type taskStopResult struct {
 	Status string `json:"status"`
 }
 
-// InvokableRun cancels the worker. Idempotent â€” stopping an already-
+// InvokableRun cancels the worker. Idempotent â€?stopping an already-
 // terminal worker is not an error.
 func (t *TaskStopTool) InvokableRun(ctx context.Context, argsJSON string, opts ...basetool.InvokeOption) (string, error) {
 	if t.spawner == nil {
@@ -88,7 +88,7 @@ func (t *TaskStopTool) InvokableRun(ctx context.Context, argsJSON string, opts .
 	}
 	w, ok := t.spawner.GetWorker(args.TaskID)
 	if !ok || w == nil {
-		// Worker is gone â€” treat as success with synthetic status.
+		// Worker is gone â€?treat as success with synthetic status.
 		body, _ := json.Marshal(taskStopResult{TaskID: args.TaskID, Status: "killed"})
 		return string(body), nil
 	}

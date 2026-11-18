@@ -166,7 +166,7 @@ func (a *AlertRuleManager) DraftAlertRuleConfig(ctx context.Context, caller aiop
 		Warnings:           warnings,
 		Scope:              alertRuleScopeSummary(compiled.Rule),
 		ConfirmationPrompt: alertRuleConfirmationPrompt(compiled.Rule),
-		Rollback:           "可在 Alerts 规则列表中禁用或继续编辑该规则。",
+		Rollback:           "可在 Alerts 规则列表中禁用或继续编辑该规则�?,
 		ApplyTool:          aiopstools.ToolNameApplyConfigChange,
 		DraftHash:          draftHash,
 	}, nil
@@ -177,23 +177,23 @@ func alertRuleScopeSummary(rule aiopstools.AlertRuleConfigInput) *aiopstools.Con
 	case "host":
 		return &aiopstools.ConfigScopeSummary{
 			Type:       "host",
-			Label:      "主机级",
-			Reason:     "命中后会关联到具体设备，适合主机资源、系统日志以及在设备上采集的数据库实例指标。",
-			ChangeHint: "如果要改成全局汇总，可以回复“改成全局”。",
+			Label:      "主机�?,
+			Reason:     "命中后会关联到具体设备，适合主机资源、系统日志以及在设备上采集的数据库实例指标�?,
+			ChangeHint: "如果要改成全局汇总，可以回复“改成全局”�?,
 		}
 	case "monitoring_pipeline":
 		return &aiopstools.ConfigScopeSummary{
 			Type:       "monitoring_pipeline",
 			Label:      "平台自身",
-			Reason:     "用于监控平台采集、存储或告警链路自身的健康状态。",
-			ChangeHint: "如果要改成业务告警范围，可以回复要修改的范围。",
+			Reason:     "用于监控平台采集、存储或告警链路自身的健康状态�?,
+			ChangeHint: "如果要改成业务告警范围，可以回复要修改的范围�?,
 		}
 	default:
 		return &aiopstools.ConfigScopeSummary{
 			Type:       "global",
 			Label:      "全局",
-			Reason:     "命中后不会绑定到单台设备，适合服务级、SLO、Trace 或明确按整体汇总的规则。",
-			ChangeHint: "如果要改成按主机触发，可以回复“改成主机”。",
+			Reason:     "命中后不会绑定到单台设备，适合服务级、SLO、Trace 或明确按整体汇总的规则�?,
+			ChangeHint: "如果要改成按主机触发，可以回复“改成主机”�?,
 		}
 	}
 }
@@ -201,9 +201,9 @@ func alertRuleScopeSummary(rule aiopstools.AlertRuleConfigInput) *aiopstools.Con
 func alertRuleConfirmationPrompt(rule aiopstools.AlertRuleConfigInput) string {
 	scope := alertRuleScopeSummary(rule)
 	if scope == nil || scope.Label == "" {
-		return "请确认是否应用这条告警规则草案。"
+		return "请确认是否应用这条告警规则草案�?
 	}
-	return "当前告警范围：" + scope.Label + "。" + scope.Reason + scope.ChangeHint + "确认无误后可点击确认应用或回复“ok”。"
+	return "当前告警范围�? + scope.Label + "�? + scope.Reason + scope.ChangeHint + "确认无误后可点击确认应用或回复“ok”�?
 }
 
 func compactAlertPreview(in *PreviewResult) *PreviewResult {
@@ -307,7 +307,7 @@ func (a *AlertRuleManager) ApplyAlertRuleConfig(ctx context.Context, caller aiop
 			Type: rule.Kind,
 		},
 		Message:  fmt.Sprintf("alert rule %q created", rule.Name),
-		Rollback: "可在 Alerts 规则列表中禁用或继续编辑该规则。",
+		Rollback: "可在 Alerts 规则列表中禁用或继续编辑该规则�?,
 	}, nil
 }
 

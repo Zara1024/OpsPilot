@@ -1,12 +1,13 @@
 // Package mcp is the biz tier for external MCP server registrations
 // (HLD-018). It owns CRUD validation, credential resolution (it pulls the
 // referenced vault credential's fields and expands them into the HTTP header
-// template), and the connection probe (initialize → tools/list) whose result
+// template), and the connection probe (initialize �?tools/list) whose result
 // is cached back onto the row.
 package mcp
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -49,10 +50,18 @@ type ToolChangeHook func(ctx context.Context, serverName string, server *model.S
 
 // Usecase is the MCP-server-registration facade.
 type Usecase struct {
-	repo          Repo
-	secrets       SecretResolver
-	log           *slog.Logger
-	onToolsChange ToolChangeHook
+	callSlots           chan struct{}
+	repo                Repo
+	secrets             SecretResolver
+	log                 *slog.Logger
+	onToolsChange       ToolChangeHook
+	registrationChanges chan struct{}
+	// commitGate serializes registration changes and discovery publication.
+	// Remote MCP requests never hold it; waiting respects request cancellation.
+	commitGate    chan struct{}
+	probeSequence uint64
+	latestProbe   map[uint64]uint64
+	manualProbes  map[uint64]int
 }
 
 // SetToolChangeHook wires the optional runtime catalog updater. It is set
@@ -74,8 +83,29 @@ func NewUsecase(repo Repo, secrets SecretResolver, log *slog.Logger) *Usecase {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Usecase{repo: repo, secrets: secrets, log: log}
+	return &Usecase{repo: repo, secrets: secrets, log: log, registrationChanges: make(chan struct{}, 1),
+		callSlots: make(chan struct{}, 2), commitGate: make(chan struct{}, 1), latestProbe: make(map[uint64]uint64), manualProbes: make(map[uint64]int)}
 }
+
+// RegistrationChanges 唤醒唯一的发�?supervisor。合并连续变更，由消费者重新读�?// 最新注册表；不�?HTTP 请求中等待远端连接，也不为每次保存启�?goroutine�?func (u *Usecase) RegistrationChanges() <-chan struct{} { return u.registrationChanges }
+
+func (u *Usecase) notifyRegistrationChanged() {
+	select {
+	case u.registrationChanges <- struct{}{}:
+	default:
+	}
+}
+
+func (u *Usecase) enterCommit(ctx context.Context) error {
+	select {
+	case u.commitGate <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (u *Usecase) leaveCommit() { <-u.commitGate }
 
 // Create validates and stores a new server registration.
 func (u *Usecase) Create(ctx context.Context, s *model.Server) (*model.Server, error) {
@@ -88,6 +118,7 @@ func (u *Usecase) Create(ctx context.Context, s *model.Server) (*model.Server, e
 	if err := u.repo.Create(ctx, s); err != nil {
 		return nil, err
 	}
+	u.notifyRegistrationChanged()
 	return s, nil
 }
 
@@ -99,6 +130,10 @@ func (u *Usecase) Update(ctx context.Context, id uint64, patch *model.Server) er
 	if err := normalizeAndValidate(patch); err != nil {
 		return err
 	}
+	if err := u.enterCommit(ctx); err != nil {
+		return err
+	}
+	defer u.leaveCommit()
 	previous, err := u.repo.Get(ctx, id)
 	if err != nil {
 		return err
@@ -106,6 +141,9 @@ func (u *Usecase) Update(ctx context.Context, id uint64, patch *model.Server) er
 	if err := u.repo.Update(ctx, id, patch); err != nil {
 		return err
 	}
+	defer u.notifyRegistrationChanged()
+	// Invalidate discoveries started before this change, including disable/re-enable.
+	delete(u.latestProbe, id)
 	updated, err := u.repo.Get(ctx, id)
 	if err != nil {
 		return err
@@ -134,6 +172,10 @@ func (u *Usecase) Update(ctx context.Context, id uint64, patch *model.Server) er
 
 // Delete removes a server registration.
 func (u *Usecase) Delete(ctx context.Context, id uint64) error {
+	if err := u.enterCommit(ctx); err != nil {
+		return err
+	}
+	defer u.leaveCommit()
 	server, err := u.repo.Get(ctx, id)
 	if err != nil {
 		return err
@@ -141,6 +183,8 @@ func (u *Usecase) Delete(ctx context.Context, id uint64) error {
 	if err := u.repo.Delete(ctx, id); err != nil {
 		return err
 	}
+	defer u.notifyRegistrationChanged()
+	delete(u.latestProbe, id)
 	u.notifyToolsChanged(ctx, server.Name, nil, nil)
 	return nil
 }
@@ -153,7 +197,7 @@ func (u *Usecase) Get(ctx context.Context, id uint64) (*model.Server, error) {
 // List returns all registered servers.
 func (u *Usecase) List(ctx context.Context) ([]*model.Server, error) { return u.repo.List(ctx) }
 
-// ListEnabled returns the enabled servers — boot connects to these to pull
+// ListEnabled returns the enabled servers �?boot connects to these to pull
 // tools and register them into the agent toolbag.
 func (u *Usecase) ListEnabled(ctx context.Context) ([]*model.Server, error) {
 	all, err := u.repo.List(ctx)
@@ -174,9 +218,35 @@ func (u *Usecase) ListEnabled(ctx context.Context) ([]*model.Server, error) {
 // the mcp_call approval executor (post-approval). Errors when the server is
 // unknown, unreachable, or the tool reports isError.
 func (u *Usecase) CallTool(ctx context.Context, serverName, toolName string, args map[string]any) (string, error) {
+	return u.CallToolRevision(ctx, serverName, toolName, args, "")
+}
+
+// CallToolRevision prevents a pending approval from following a replaced endpoint,
+// credential or tool schema. Empty revision is reserved for existing direct callers.
+func (u *Usecase) CallToolRevision(ctx context.Context, serverName, toolName string, args map[string]any, revision string) (string, error) {
+	if u.callSlots != nil {
+		select {
+		case u.callSlots <- struct{}{}:
+			defer func() { <-u.callSlots }()
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
 	s, err := u.repo.GetByName(ctx, serverName)
 	if err != nil {
 		return "", err
+	}
+	if !s.Enabled {
+		return "", fmt.Errorf("%w: MCP server is disabled", errs.ErrForbidden)
+	}
+	if revision != "" {
+		current, err := u.serverRevision(ctx, s)
+		if err != nil {
+			return "", err
+		}
+		if current != revision {
+			return "", fmt.Errorf("%w: MCP registration changed; request a new approval", errs.ErrConflict)
+		}
 	}
 	cli, err := u.BuildClient(ctx, s)
 	if err != nil {
@@ -193,6 +263,44 @@ func (u *Usecase) CallTool(ctx context.Context, serverName, toolName string, arg
 		return "", fmt.Errorf("mcp tool %s/%s reported error: %s", serverName, toolName, res.TextContent())
 	}
 	return res.TextContent(), nil
+}
+
+// Revision returns an opaque identity without exposing resolved credentials.
+func (u *Usecase) Revision(ctx context.Context, name string) (string, error) {
+	s, err := u.repo.GetByName(ctx, name)
+	if err != nil {
+		return "", err
+	}
+	if !s.Enabled {
+		return "", fmt.Errorf("%w: MCP server is disabled", errs.ErrForbidden)
+	}
+	return u.serverRevision(ctx, s)
+}
+
+func (u *Usecase) serverRevision(ctx context.Context, s *model.Server) (string, error) {
+	var fields map[string]string
+	if s.Credential != "" {
+		if u.secrets == nil {
+			return "", fmt.Errorf("MCP credential resolver unavailable")
+		}
+		var err error
+		fields, err = u.secrets.ResolveFields(ctx, s.Credential)
+		if err != nil {
+			return "", fmt.Errorf("resolve MCP revision credential: %w", err)
+		}
+	}
+	// Exclude health/status timestamps: a healthy refresh must not invalidate
+	// an approval whose configuration and schema remain identical.
+	data, err := json.Marshal(struct {
+		ID                                                    uint64
+		Name, Transport, Endpoint, Credential, Headers, Tools string
+		Enabled, Trusted                                      bool
+		Fields                                                map[string]string
+	}{s.ID, s.Name, s.Transport, s.Endpoint, s.Credential, s.HeaderTemplateJSON, s.ToolsCacheJSON, s.Enabled, s.Trusted, fields})
+	if err != nil {
+		return "", fmt.Errorf("encode MCP revision: %w", err)
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(data)), nil
 }
 
 // BuildClient constructs an MCP client for s, resolving the referenced
@@ -230,48 +338,103 @@ func (u *Usecase) BuildClient(ctx context.Context, s *model.Server) (*mcpclient.
 	return mcpclient.NewHTTP(s.Endpoint, headers, 0), nil
 }
 
-// TestConnection probes the server (initialize → tools/list) and caches the
+// TestConnection probes the server (initialize �?tools/list) and caches the
 // outcome. On success it stores the tools snapshot + status "ok"; on failure
 // it records status "error" with the error message and returns the error.
 func (u *Usecase) TestConnection(ctx context.Context, id uint64) ([]mcpclient.Tool, error) {
+	return u.refreshConnection(ctx, id, true)
+}
+
+// RefreshConnection is the background path; unchanged schemas keep their live
+// tool handles so polling does not interrupt an otherwise valid running turn.
+func (u *Usecase) RefreshConnection(ctx context.Context, id uint64) ([]mcpclient.Tool, error) {
+	return u.refreshConnection(ctx, id, false)
+}
+func (u *Usecase) refreshConnection(ctx context.Context, id uint64, forcePublish bool) ([]mcpclient.Tool, error) {
+	if err := u.enterCommit(ctx); err != nil {
+		return nil, err
+	}
+	// 后台刷新不能废弃用户正在执行的连接验证。手动验证负责发布结果，
+	// 后台稍后仍会轮询；重复手动请求继续沿用最新请求优先的语义�?	if !forcePublish && u.manualProbes[id] > 0 {
+		u.leaveCommit()
+		return nil, nil
+	}
+	if forcePublish {
+		u.manualProbes[id]++
+		defer func() {
+			// 这是内存锁的资源清理，不执行 IO；请求取消后也必须归还计数�?			u.commitGate <- struct{}{}
+			defer u.leaveCommit()
+			u.manualProbes[id]--
+			if u.manualProbes[id] == 0 {
+				delete(u.manualProbes, id)
+			}
+		}()
+	}
 	s, err := u.repo.Get(ctx, id)
 	if err != nil {
+		u.leaveCommit()
 		return nil, err
 	}
-	cli, err := u.BuildClient(ctx, s)
+	startedRevision, err := u.serverRevision(ctx, s)
 	if err != nil {
-		if setErr := u.repo.SetStatus(ctx, id, "error", err.Error()); setErr != nil {
-			u.log.Warn("set mcp error status", slog.Uint64("server_id", id), slog.Any("err", setErr))
-		}
+		u.leaveCommit()
 		return nil, err
 	}
-	if err := cli.Initialize(ctx); err != nil {
-		if setErr := u.repo.SetStatus(ctx, id, "error", err.Error()); setErr != nil {
-			u.log.Warn("set mcp error status", slog.Uint64("server_id", id), slog.Any("err", setErr))
-		}
+	u.probeSequence++
+	ticket := u.probeSequence
+	u.latestProbe[id] = ticket
+	u.leaveCommit()
+
+	// Network discovery is intentionally outside the publication gate. An admin
+	// can disable/delete a server immediately even when its endpoint is hung.
+	tools, probeErr := u.discover(ctx, s)
+	if err := u.enterCommit(ctx); err != nil {
 		return nil, err
 	}
-	tools, err := cli.ListTools(ctx)
+	defer u.leaveCommit()
+	if u.latestProbe[id] != ticket {
+		return nil, fmt.Errorf("%w: MCP discovery superseded by a configuration change or newer refresh", errs.ErrConflict)
+	}
+	delete(u.latestProbe, id)
+	currentRevision, err := u.serverRevision(ctx, s)
 	if err != nil {
-		if setErr := u.repo.SetStatus(ctx, id, "error", err.Error()); setErr != nil {
-			u.log.Warn("set mcp error status", slog.Uint64("server_id", id), slog.Any("err", setErr))
-		}
 		return nil, err
 	}
-	if b, mErr := json.Marshal(tools); mErr == nil {
-		if setErr := u.repo.SetToolsCache(ctx, id, string(b)); setErr != nil {
-			u.log.Warn("cache mcp tools", slog.Uint64("server_id", id), slog.Any("err", setErr))
+	if currentRevision != startedRevision {
+		return nil, fmt.Errorf("%w: MCP credentials changed during discovery", errs.ErrConflict)
+	}
+	if probeErr != nil {
+		if err := u.repo.SetStatus(ctx, id, "error", probeErr.Error()); err != nil {
+			return nil, fmt.Errorf("record MCP discovery failure: %w", err)
 		}
-	} else {
-		u.log.Warn("marshal mcp tools", slog.Uint64("server_id", id), slog.Any("err", mErr))
+		// Temporary unavailability does not revoke the last verified catalog.
+		return nil, probeErr
 	}
-	if setErr := u.repo.SetStatus(ctx, id, "ok", ""); setErr != nil {
-		u.log.Warn("set mcp ok status", slog.Uint64("server_id", id), slog.Any("err", setErr))
+	b, err := json.Marshal(tools)
+	if err != nil {
+		return nil, fmt.Errorf("marshal MCP tools: %w", err)
 	}
-	if s.Enabled {
+	if err := u.repo.SetToolsCache(ctx, id, string(b)); err != nil {
+		return nil, fmt.Errorf("cache MCP tools: %w", err)
+	}
+	if err := u.repo.SetStatus(ctx, id, "ok", ""); err != nil {
+		return nil, fmt.Errorf("record MCP discovery: %w", err)
+	}
+	if s.Enabled && (forcePublish || s.ToolsCacheJSON != string(b)) {
 		u.notifyToolsChanged(ctx, s.Name, s, tools)
 	}
 	return tools, nil
+}
+
+func (u *Usecase) discover(ctx context.Context, s *model.Server) ([]mcpclient.Tool, error) {
+	cli, err := u.BuildClient(ctx, s)
+	if err != nil {
+		return nil, err
+	}
+	if err := cli.Initialize(ctx); err != nil {
+		return nil, err
+	}
+	return cli.ListTools(ctx)
 }
 
 func cachedTools(raw string) ([]mcpclient.Tool, error) {

@@ -20,7 +20,7 @@ type AttachmentRepo interface {
 
 // TokenSums is the aggregated token / request count returned by
 // SessionRepo.SumTokensSince. NULL token columns count as zero. Requests is
-// the count of role='assistant' messages in the window â€” it approximates the
+// the count of role='assistant' messages in the window â€?it approximates the
 // number of LLM round-trips.
 type TokenSums struct {
 	PromptTokens     int64
@@ -44,8 +44,8 @@ type SessionRepo interface {
 	ListSessions(ctx context.Context, userID uint64, limit, offset int, relatedIncidentID *uint64) ([]*model.Session, error)
 	// ListByParent returns every session whose parent_session_id == parentID,
 	// ordered by created_at ASC. Used by the SPA worker-tree view (a future
-	// PR) and by audit queries that walk a coordinator â†’ worker fan-out.
-	// Returns an empty slice when parentID has no children â€” never nil.
+	// PR) and by audit queries that walk a coordinator â†?worker fan-out.
+	// Returns an empty slice when parentID has no children â€?never nil.
 	ListByParent(ctx context.Context, parentID string) ([]*model.Session, error)
 	CloseSession(ctx context.Context, id string) error
 	// RenameSession updates the session title; bumps updated_at.
@@ -53,7 +53,7 @@ type SessionRepo interface {
 	RenameSession(ctx context.Context, id string, title string) error
 	// UpdateSessionModel persists the provider/model pair selected for a
 	// conversation. Empty values clear the pin and restore global fallback.
-	UpdateSessionModel(ctx context.Context, id string, provider string, model string) error
+	UpdateSessionModel(ctx context.Context, id string, provider string, model string, reasoningEffort string) error
 	// DeleteSession hard-deletes the session and every dependent row
 	// (messages + tool calls). Used by the UI delete action.
 	DeleteSession(ctx context.Context, id string) error
@@ -79,7 +79,7 @@ type SessionRepo interface {
 	// SumTokensSince aggregates prompt_tokens / completion_tokens / request
 	// count across all assistant messages with created_at >= since. NULL
 	// token columns are treated as zero. The result is global (no user
-	// scoping) â€” caller-side filtering is the right place to add scopes.
+	// scoping) â€?caller-side filtering is the right place to add scopes.
 	SumTokensSince(ctx context.Context, since time.Time) (TokenSums, error)
 }
 

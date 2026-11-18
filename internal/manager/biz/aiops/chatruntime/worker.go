@@ -53,6 +53,7 @@ import (
 	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/graph"
 	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/graph/callbacks"
 	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/tools/basetool"
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/toolresult"
 	aiopsmodel "github.com/Zara1024/OpsPilot/internal/manager/model/aiops"
 	"github.com/Zara1024/OpsPilot/internal/pkg/llm"
 )
@@ -646,6 +647,9 @@ func (rt *Runtime) runWorker(ctx context.Context, agentDef *Agent, sessID, userT
 		handlers = callbacks.NewDefaultHandlers(deps)
 	}
 	cfg.ToolPersistence = callbacks.EnableSynchronousToolPersistence(handlers)
+	if rt.cfg.Results != nil && session != nil {
+		workerTools = rt.cfg.Results.BindTools(toolresult.Scope{SessionID: sessID, UserID: session.UserID}, workerTools)
+	}
 	g, err := graph.BuildReActGraph(rt.cfg.ChatModel, workerTools, cfg)
 	if err != nil {
 		return "", fmt.Errorf("chatruntime: build worker graph: %w", err)

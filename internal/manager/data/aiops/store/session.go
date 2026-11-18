@@ -28,9 +28,9 @@ type SessionRepo struct {
 
 // NewSessionRepo constructs the repo around an opened *gorm.DB.
 func NewSessionRepo(db *gorm.DB) *SessionRepo {
-	root := strings.TrimSpace(os.Getenv("OPSPILOT_CHAT_ATTACHMENT_DIR"))
+	root := strings.TrimSpace(os.Getenv("ONGRID_CHAT_ATTACHMENT_DIR"))
 	if root == "" {
-		root = "/var/lib/opspilot/chat-attachments"
+		root = "/var/lib/ongrid/chat-attachments"
 	}
 	return &SessionRepo{db: db, attachmentRoot: filepath.Clean(root)}
 }
@@ -41,7 +41,7 @@ func NewSessionRepoWithAttachmentRoot(db *gorm.DB, root string) *SessionRepo {
 	return &SessionRepo{db: db, attachmentRoot: filepath.Clean(root)}
 }
 
-// NewBizRepo is the wire-ready constructor. cmd/opspilot binds this at
+// NewBizRepo is the wire-ready constructor. cmd/ongrid binds this at
 // assembly time to obtain a biz.SessionRepo without exposing the concrete
 // type to the composition root.
 func NewBizRepo(db *gorm.DB) biz.SessionRepo { return NewSessionRepo(db) }
@@ -89,7 +89,7 @@ func (r *SessionRepo) ListByParent(ctx context.Context, parentID string) ([]*mod
 
 // ListSessions returns sessions for userID ordered by id DESC. When
 // relatedIncidentID is non-nil only sessions linked to that incident
-// are returned — used by the IncidentDetail agent-timeline panel.
+// are returned �?used by the IncidentDetail agent-timeline panel.
 func (r *SessionRepo) ListSessions(ctx context.Context, userID uint64, limit, offset int, relatedIncidentID *uint64) ([]*model.Session, error) {
 	// The primary chat surface shows only user-audience transcripts.
 	// Kind describes workflow semantics; audience is the visibility boundary.
@@ -147,9 +147,9 @@ func (r *SessionRepo) RenameSession(ctx context.Context, id string, title string
 // UpdateSessionModel stores the conversation's model route as one atomic
 // update so readers never observe a provider from one selection and a model
 // from another.
-func (r *SessionRepo) UpdateSessionModel(ctx context.Context, id string, provider string, selectedModel string) error {
+func (r *SessionRepo) UpdateSessionModel(ctx context.Context, id string, provider string, selectedModel string, reasoningEffort string) error {
 	now := time.Now().UTC()
-	updates := map[string]any{"updated_at": now}
+	updates := map[string]any{"updated_at": now, "reasoning_effort": reasoningEffort}
 	if provider == "" && selectedModel == "" {
 		updates["provider"] = nil
 		updates["model"] = nil
@@ -173,8 +173,8 @@ func (r *SessionRepo) UpdateSessionModel(ctx context.Context, id string, provide
 // preserve audit history.
 //
 // Implementation: a single transaction so a partial delete can't leave
-// orphaned messages. We rely on chat_tool_calls(message_id) → chat_messages
-// and chat_messages(session_id) → chat_sessions ordering; no FKs are
+// orphaned messages. We rely on chat_tool_calls(message_id) �?chat_messages
+// and chat_messages(session_id) �?chat_sessions ordering; no FKs are
 // declared in our schema, so cascade is manual.
 func (r *SessionRepo) DeleteSession(ctx context.Context, id string) error {
 	sessionDir := filepath.Join(r.attachmentRoot, id)
@@ -260,7 +260,7 @@ func (r *SessionRepo) AppendMessage(ctx context.Context, m *model.Message) error
 // recent N messages, still ordered ascending for history replay.
 //
 // Hydrates message.ToolCalls from chat_tool_calls in a single batched
-// query keyed on assistant message IDs — without this, replay drops
+// query keyed on assistant message IDs �?without this, replay drops
 // any assistant turn whose Content is NULL (tool-call-only turns) and
 // the following role=tool messages become orphans, which strict LLM
 // providers reject with HTTP 400 "tool must follow tool_calls".
@@ -285,6 +285,9 @@ func (r *SessionRepo) ListMessages(ctx context.Context, sessionID string, limit 
 	if err := r.hydrateToolCalls(ctx, out); err != nil {
 		return nil, err
 	}
+	if err := r.hydrateToolResults(ctx, out); err != nil {
+		return nil, err
+	}
 	if err := r.hydrateAttachments(ctx, out); err != nil {
 		return nil, err
 	}
@@ -294,7 +297,7 @@ func (r *SessionRepo) ListMessages(ctx context.Context, sessionID string, limit 
 // hydrateToolCalls batches one SELECT against chat_tool_calls keyed on
 // the assistant message ids in msgs, and attaches the rows to each
 // message in-place. Order within a single assistant turn is preserved
-// by sorting on (created_at, id) — the agent persists tool_calls one
+// by sorting on (created_at, id) �?the agent persists tool_calls one
 // at a time so created_at is monotonic, and id is the stable tiebreak.
 func (r *SessionRepo) hydrateToolCalls(ctx context.Context, msgs []*model.Message) error {
 	assistantIDs := make([]string, 0, len(msgs))
@@ -404,4 +407,51 @@ func (r *SessionRepo) FinalizePendingToolCalls(ctx context.Context, sessionID st
 		return 0, res.Error
 	}
 	return res.RowsAffected, nil
+}
+
+// 工具结果与执行表按会话和调用 ID 关联；LLM 可能跨轮复用 ID，须取结果之前最近的一次执行�?func (r *SessionRepo) hydrateToolResults(ctx context.Context, msgs []*model.Message) error {
+	ids := []string{}
+	sessions := []string{}
+	for _, m := range msgs {
+		if m.Role == model.RoleTool && m.ToolCallID != nil {
+			ids = append(ids, *m.ToolCallID)
+			sessions = append(sessions, m.SessionID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	type executionRow struct {
+		model.ToolCall
+		SessionID string
+	}
+	var rows []executionRow
+	err := r.db.WithContext(ctx).Table("chat_tool_calls AS tc").Select("tc.*, m.session_id AS session_id").Joins("JOIN chat_messages AS m ON m.id = tc.message_id").Where("m.session_id IN ? AND (tc.llm_call_id IN ? OR tc.id IN ?)", sessions, ids, ids).Order("tc.created_at ASC, tc.id ASC").Scan(&rows).Error
+	if err != nil {
+		return err
+	}
+	for _, m := range msgs {
+		if m.Role != model.RoleTool || m.ToolCallID == nil {
+			continue
+		}
+		for i := range rows {
+			r := &rows[i]
+			if r.SessionID != m.SessionID || r.CreatedAt.After(m.CreatedAt) {
+				continue
+			}
+			if r.ID != *m.ToolCallID && (r.LLMCallID == nil || *r.LLMCallID != *m.ToolCallID) {
+				continue
+			}
+			if m.ToolName != nil && r.ToolName != *m.ToolName {
+				continue
+			}
+			copy := r.ToolCall
+			m.ToolExecution = &copy
+		}
+	}
+	return nil
+}
+
+func (r *SessionRepo) SetToolCallResultID(ctx context.Context, id, resultID string) error {
+	return r.db.WithContext(ctx).Model(&model.ToolCall{}).Where("id = ?", id).Update("result_id", resultID).Error
 }

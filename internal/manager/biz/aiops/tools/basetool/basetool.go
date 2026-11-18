@@ -1,25 +1,5 @@
-// Package basetool defines opspilot's eino-aligned tool surface.
-//
-// (Tool 层) lays out the migration target: each tool becomes
-// an object implementing tool.BaseTool — `Info(ctx) -> ToolInfo` plus
-// `InvokableRun(ctx, argsJSON) -> string` — and the standard decorator
-// chain (tenant_bind / timeout / audit / ratelimit / metric,
-// ASCII diagram and 主参考图 Tool 执行后端区块) wraps each tool
-// uniformly. This package owns the interface + value types so the
-// decorator package and individual tool impls can depend on it without
-// reaching into the closure-style Tool/Registry from registry.go.
-//
-// Why a local interface that mirrors cloudwego/eino:
-//
-//   - PR-1 of owns the cloudwego/eino dep. PR-3 (this PR) MAY
-//     merge first, so we cannot import eino yet.
-//   - Field/method names match eino's tool.BaseTool + InvokableTool so
-//     the later "swap to eino" PR is a one-line type alias change in
-//     this file. Any callsite that consumes basetool.BaseTool keeps
-//     compiling.
-//
-// The closure-style Tool from registry.go stays — both paths coexist
-// for this PR (改进点 #5: 可单测，单文件可测).
+// Package basetool defines the shared tool interface and value types used by
+// AIOps tools, runtime adapters and decorators.
 package basetool
 
 import (
@@ -27,10 +7,10 @@ import (
 	"encoding/json"
 )
 
-// BaseTool is opspilot's eino-aligned tool surface. The signature mirrors
+// BaseTool is ongrid's eino-aligned tool surface. The signature mirrors
 // cloudwego/eino's `tool.BaseTool` + `tool.InvokableTool` (combined here
 // for ergonomic reasons; eino splits them so a tool can advertise its
-// schema without being executable, but every opspilot tool is invokable so
+// schema without being executable, but every ongrid tool is invokable so
 // we collapse). When PR-N of swaps in cloudwego/eino, this
 // interface becomes a thin alias; callsites do not change.
 //
@@ -61,7 +41,7 @@ type BaseTool interface {
 // and — Description is the LLM-visible blurb summarising what the
 // tool does; WhenToUse is the routing hint summarising when to pick it
 // over its siblings. Decorators that mutate args (e.g. tenant_bind)
-// inspect Parameters to decide whether to inject.
+// inspect the execution schema to decide whether to inject.
 type ToolInfo struct {
 	// Name is the stable wire name the LLM sees. Must match the tool
 	// name in tool_call.function.name. Snake_case, no spaces.
@@ -78,16 +58,18 @@ type ToolInfo struct {
 	// rewriting the description.
 	WhenToUse string
 
-	// Parameters is the JSON Schema of the argument object. Decorators
-	// (tenant_bind) may parse this to decide whether to inject fields
-	// like tenant_id; tool implementations parse it implicitly via
-	// json.Unmarshal into a typed args struct.
+	// Parameters 是提供给模型的参数 Schema。未裁剪时也作为执行契约；
+	// 裁剪后，参数校验及 tenant_bind 等执行包装器使用 ExecutionParameters。
 	Parameters json.RawMessage
+
+	// ExecutionParameters 保存完整执行契约；仅当展示 Schema 被裁剪时设置。
+	// 包装器必须保留此字段，模型只接收 Parameters。
+	ExecutionParameters json.RawMessage
 
 	// Class records the tool's effect on the world. Used by the agent
 	// loop / future SOP gating to decide whether double-sign is required.
 	//   - "read" — pure read; default for query_* tools
-	//   - "write" — mutates opspilot state (e.g. silence an alert)
+	//   - "write" — mutates ongrid state (e.g. silence an alert)
 	//   - "destructive" — mutates external state (e.g. restart a service)
 	Class string
 
@@ -206,8 +188,9 @@ func WithConfirmedDeviceIDs(ids []uint64) InvokeOption {
 }
 
 // WithHostWritePermission carries the resolved admin write gate to host-side
-// tools. When enabled, host_bash uses the edge's unrestricted execution path;
-// mutating commands still require the separate approval flow.
+// tools. When enabled, host_bash may turn a mutating command into an approval
+// proposal; it never changes how a command is dispatched. Commands that do not
+// reach the approval flow still go through the edge's read-only cmdpolicy path.
 func WithHostWritePermission(allowed bool) InvokeOption {
 	return func(c *invokeConfig) { c.HostWriteAllowed = allowed }
 }

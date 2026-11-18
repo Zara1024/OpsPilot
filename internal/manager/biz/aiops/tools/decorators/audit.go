@@ -11,9 +11,9 @@ import (
 // through. The production binding (later PR) implements this against
 // the chat_tool_calls repo; tests inject a fake. The seam is here
 // (instead of importing biz/aiops.SessionRepo) so decorators stay free
-// of biz repo coupling — 不变量 (模块边界).
+// of biz repo coupling �?不变�?(模块边界).
 //
-// Callback 链 spec for OnToolStart / OnToolEnd — this
+// Callback �?spec for OnToolStart / OnToolEnd �?this
 // decorator is the synchronous, in-process equivalent for the parallel
 // BaseTool path. When the agent loop migrates to eino + ToolsNode the
 // implementation may switch to eino callbacks; the AuditSink contract
@@ -29,13 +29,13 @@ type AuditSink interface {
 
 	// OnToolEnd records the end of a tool invocation. id is the value
 	// returned from OnToolStart. Errors here are logged but do NOT
-	// override the tool's own outcome — audit failures must not cause
-	// tool failures (可观测性: audit best-effort).
+	// override the tool's own outcome �?audit failures must not cause
+	// tool failures (可观测�? audit best-effort).
 	OnToolEnd(ctx context.Context, id string, ev ToolEndEvent) error
 }
 
 // ToolStartEvent is what the audit sink sees at the start of a call.
-// — captures the inputs needed to write the pending
+// �?captures the inputs needed to write the pending
 // chat_tool_calls row.
 type ToolStartEvent struct {
 	ToolName  string
@@ -47,7 +47,7 @@ type ToolStartEvent struct {
 }
 
 // ToolEndEvent is what the audit sink sees at the end of a call.
-// — captures the result/error needed to update the
+// �?captures the result/error needed to update the
 // chat_tool_calls row to status=success/error/timeout.
 type ToolEndEvent struct {
 	ResultJSON string
@@ -57,9 +57,7 @@ type ToolEndEvent struct {
 }
 
 // AuditTool wraps inner so OnToolStart fires before InvokableRun and
-// OnToolEnd fires after (regardless of inner error). —
-// AuditTool 装饰器层。
-type AuditTool struct {
+// OnToolEnd fires after (regardless of inner error). �?// AuditTool 装饰器层�?type AuditTool struct {
 	inner basetool.BaseTool
 	sink  AuditSink
 }
@@ -75,7 +73,7 @@ func WithAudit(inner basetool.BaseTool, sink AuditSink) basetool.BaseTool {
 	return &AuditTool{inner: inner, sink: sink}
 }
 
-// Info passes through — auditing is invocation-only, the schema is
+// Info passes through �?auditing is invocation-only, the schema is
 // public.
 func (a *AuditTool) Info(ctx context.Context) (*basetool.ToolInfo, error) {
 	return a.inner.Info(ctx)
@@ -85,12 +83,11 @@ func (a *AuditTool) Info(ctx context.Context) (*basetool.ToolInfo, error) {
 // OnToolEnd. OnToolStart errors abort the call (returned as-is so
 // quota / preflight failures surface unmangled). OnToolEnd errors are
 // silently swallowed to honour the "audit must not fail the tool"
-// invariant — they reach observability via the sink's own logging.
+// invariant �?they reach observability via the sink's own logging.
 func (a *AuditTool) InvokableRun(ctx context.Context, argsJSON string, opts ...basetool.InvokeOption) (string, error) {
 	resolved := basetool.ResolveOptions(opts)
 
-	// Resolve tool name once (Info must be cheap; the closure-style
-	// tools in registry.go return constant ToolInfo without I/O).
+	// Resolve the tool name once; Info must not perform I/O.
 	name := ""
 	if info, err := a.inner.Info(ctx); err == nil && info != nil {
 		name = info.Name

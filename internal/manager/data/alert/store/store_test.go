@@ -418,7 +418,7 @@ func TestPurgeLegacyLogChannels(t *testing.T) {
 	}
 	legacy := &model.Channel{
 		Name:        "legacy-log",
-		ChannelType: "log", // legacy type â€” no longer in the constants
+		ChannelType: "log", // legacy type â€?no longer in the constants
 		Enabled:     true,
 		ConfigJSON:  `{}`,
 	}

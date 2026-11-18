@@ -6,9 +6,9 @@ for (const width of [390, 768, 1280, 1920]) for (const locale of ['zh-CN', 'en-U
   test(`page header keeps text readable at ${width}px ${locale} ${theme}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });
     await page.addInitScript(({ locale, theme }) => {
-      localStorage.setItem('opspilot-locale', locale);
-      localStorage.setItem('opspilot-theme-preference', theme);
-      localStorage.setItem('opspilot.auth', JSON.stringify({ state: { token: 'e2e-token', refreshToken: null, role: 'admin', email: 'e2e@example.com' }, version: 0 }));
+      localStorage.setItem('ongrid-locale', locale);
+      localStorage.setItem('ongrid-theme-preference', theme);
+      localStorage.setItem('ongrid.auth', JSON.stringify({ state: { token: 'e2e-token', refreshToken: null, role: 'admin', email: 'e2e@example.com' }, version: 0 }));
     }, { locale, theme });
     await page.route('**/api/v1/**', route => route.fulfill({ json: { items: [], total: 0 } }));
     for (const url of ['/mcp', '/workflows']) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -96,10 +97,47 @@ func TestTimeout_PassesThroughOnFastTool(t *testing.T) {
 	}
 }
 
-func TestTimeout_NoDeadlineWhenZero(t *testing.T) {
-	inner := &fakeTool{name: "x"}
-	if got := WithTimeout(inner, 0); got != basetool.BaseTool(inner) {
-		t.Errorf("zero timeout should return inner unchanged, got %T", got)
+func TestTimeout_UnsetAddsNoDeadline(t *testing.T) {
+	for _, d := range []time.Duration{0, -time.Second} {
+		inner := &fakeTool{name: "x"}
+		if got := WithTimeout(inner, d); got != inner {
+			t.Fatalf("timeout %s unexpectedly wrapped tool", d)
+		}
+	}
+}
+
+// A real execution beyond the previous 15s cutoff guards the default chain,
+// including callers that do not explicitly populate Deps.Timeout.
+func TestWrap_LongToolWithoutImplicitDeadline(t *testing.T) {
+	t.Parallel()
+	inner := &fakeTool{name: "long_scan", delay: 16 * time.Second, respectCtx: true, result: "scan complete"}
+	wrapped := Wrap(inner, Deps{Registerer: prometheus.NewRegistry()})
+	out, err := wrapped.InvokableRun(context.Background(), "{}")
+	if err != nil || out != "scan complete" {
+		t.Fatalf("long scan = %q, %v", out, err)
+	}
+}
+
+func TestWrap_UnsetTimeoutPreservesCallerCancellation(t *testing.T) {
+	for _, deadline := range []bool{false, true} {
+		t.Run(fmt.Sprint("deadline=", deadline), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			want := context.Canceled
+			if deadline {
+				cancel()
+				ctx, cancel = context.WithTimeout(context.Background(), 5*time.Millisecond)
+				want = context.DeadlineExceeded
+			} else {
+				cancel()
+			}
+			defer cancel()
+			inner := &fakeTool{name: "cancel_scan", delay: time.Hour, respectCtx: true}
+			wrapped := Wrap(inner, Deps{Registerer: prometheus.NewRegistry()})
+			_, err := wrapped.InvokableRun(ctx, "{}")
+			if !errors.Is(err, want) || errors.Is(err, ErrToolTimeout) {
+				t.Fatalf("caller cancellation = %v, want %v", err, want)
+			}
+		})
 	}
 }
 
@@ -284,17 +322,17 @@ func TestMetric_Increments(t *testing.T) {
 	}
 
 	// Use Gather() to inspect the registered counters.
-	got := mustCounter(t, reg, "opspilot_tool_invocations_total", "metric_tool", "success")
+	got := mustCounter(t, reg, "ongrid_tool_invocations_total", "metric_tool", "success")
 	if got != 1 {
 		t.Errorf("success counter = %f, want 1", got)
 	}
-	gotE := mustCounter(t, reg, "opspilot_tool_invocations_total", "metric_tool", "error")
+	gotE := mustCounter(t, reg, "ongrid_tool_invocations_total", "metric_tool", "error")
 	if gotE != 1 {
 		t.Errorf("error counter = %f, want 1", gotE)
 	}
 }
 
-// mustCounter reads counter opspilot_tool_invocations_total{name=..,result=..}
+// mustCounter reads counter ongrid_tool_invocations_total{name=..,result=..}
 // from reg. Fails the test if not found.
 func mustCounter(t *testing.T, reg *prometheus.Registry, metricName, name, result string) float64 {
 	t.Helper()
@@ -410,8 +448,7 @@ func TestTenantBind_SkipsWhenSchemaLacksTenantID(t *testing.T) {
 }
 
 // TestChain_RunsAllInOrder asserts the composed Wrap() applies all five
-// decorators in the documented order: tenant_bind â†’ timeout â†’ audit â†’
-// ratelimit â†’ metric. We verify by observing each layer's side
+// decorators in the documented order: tenant_bind â†?timeout â†?audit â†?// ratelimit â†?metric. We verify by observing each layer's side
 // effect after one successful call.
 func TestChain_RunsAllInOrder(t *testing.T) {
 	inner := &fakeTool{
@@ -448,10 +485,10 @@ func TestChain_RunsAllInOrder(t *testing.T) {
 		t.Errorf("audit hooks fired %d/%d, want 1/1", len(sink.starts), len(sink.ends))
 	}
 	// metric: invocations counter ticked.
-	if got := mustCounter(t, reg, "opspilot_tool_invocations_total", "chain_tool", "success"); got != 1 {
+	if got := mustCounter(t, reg, "ongrid_tool_invocations_total", "chain_tool", "success"); got != 1 {
 		t.Errorf("metric counter = %f, want 1", got)
 	}
-	// ratelimit: confirm by exhausting the limiter â€” set up a tight
+	// ratelimit: confirm by exhausting the limiter â€?set up a tight
 	// limiter and verify Wrap() includes it.
 	tightLim := NewTokenBucketLimiter(1)
 	tightWrapped := Wrap(&fakeTool{name: "tight_tool", result: "x"}, Deps{
@@ -468,7 +505,7 @@ func TestChain_RunsAllInOrder(t *testing.T) {
 
 func TestChain_TimeoutStillAudited(t *testing.T) {
 	// Audit start should fire before the timeout wrapper kicks in,
-	// proving the chain order â€” timeout outside audit means a
+	// proving the chain order â€?timeout outside audit means a
 	// chat_tool_calls row exists even on timeout.
 	inner := &fakeTool{
 		name:       "slow_tool",
@@ -514,5 +551,23 @@ func TestChain_NilDepsAreSafe(t *testing.T) {
 func TestChain_NilInnerReturnsNil(t *testing.T) {
 	if got := Wrap(nil, Deps{}); got != nil {
 		t.Errorf("Wrap(nil) = %T, want nil", got)
+	}
+}
+
+func TestWrapRejectsInvalidArgumentsBeforeApproval(t *testing.T) {
+	inner := &fakeTool{name: "write_contract", class: "write", params: json.RawMessage(`{"type":"object","properties":{"device_id":{"type":"integer","minimum":1}},"required":["device_id"]}`)}
+	proposer := &fakeHumanApprovalProposer{execute: true}
+	tool := Wrap(inner, Deps{HumanApproval: proposer, Registerer: prometheus.NewRegistry()})
+	if _, err := tool.InvokableRun(context.Background(), `{"edge_id":1}`); err == nil {
+		t.Fatal("invalid target accepted")
+	}
+	if proposer.calls != 0 || inner.calls != 0 {
+		t.Fatalf("invalid call created approval or executed: proposer=%d inner=%d", proposer.calls, inner.calls)
+	}
+	if _, err := tool.InvokableRun(context.Background(), `{"device_id":1}`); err != nil {
+		t.Fatal(err)
+	}
+	if proposer.calls != 1 || inner.calls != 1 {
+		t.Fatalf("valid call bypassed approval: proposer=%d inner=%d", proposer.calls, inner.calls)
 	}
 }

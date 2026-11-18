@@ -2,6 +2,7 @@ package setting
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -18,7 +19,7 @@ const (
 	maxAgentLLMTimeout     = 15 * time.Minute
 )
 
-// agent.go â€” typed accessor for CategoryAgent behaviour toggles. Mirrors the
+// agent.go â€?typed accessor for CategoryAgent behaviour toggles. Mirrors the
 // telemetry/websearch readers: a thin wrapper over the generic key/value
 // Service that bakes in the default so callers don't repeat the policy.
 
@@ -26,7 +27,7 @@ const (
 // Default is DISABLED (fail-safe): an absent row or a read error resolves to
 // false, so out-of-the-box the agent is read-only and an admin must explicitly
 // opt into writes. This matters because the gate now also unlocks host_bash's
-// unrestricted (cmdpolicy-bypass) mode â€” a permissive default would ship a full
+// unrestricted (cmdpolicy-bypass) mode â€?a permissive default would ship a full
 // root command channel by default. Only the literal "true" enables.
 func (s *Service) AgentWriteEnabled(ctx context.Context) bool {
 	v, found, err := s.Get(ctx, model.CategoryAgent, model.KeyAgentWriteEnabled)
@@ -34,6 +35,14 @@ func (s *Service) AgentWriteEnabled(ctx context.Context) bool {
 		return false
 	}
 	return v == "true"
+}
+
+// AgentCommandPolicyApprovalEnabled opts policy-denied host commands into the
+// existing human approval flow. Missing settings and read errors fail closed.
+func (s *Service) AgentCommandPolicyApprovalEnabled(ctx context.Context) bool {
+	// Bypass the process cache so disabling applies to new calls on every manager.
+	row, err := s.repo.Get(ctx, model.CategoryAgent, model.KeyAgentCommandPolicyApprovalEnabled)
+	return err == nil && row != nil && row.Value == "true"
 }
 
 // AgentLLMTimeout returns the live assistant LLM timeout. Missing, malformed,
@@ -68,10 +77,40 @@ func (s *Service) AgentOutputLocale(ctx context.Context) (string, bool, error) {
 	return v, true, nil
 }
 
+// AgentRuntimeVersion reads new-session policy without a cache: selection is
+// infrequent and must observe the latest persisted administrator choice.
+// Empty means follow the release default. Errors must not silently reroute work.
+func (s *Service) AgentRuntimeVersion(ctx context.Context) (string, error) {
+	row, err := s.repo.Get(ctx, model.CategoryAgent, model.KeyAgentRuntimeVersion)
+	if errors.Is(err, errs.ErrNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read agent runtime version: %w", err)
+	}
+	if err := validateAgentSetting(model.KeyAgentRuntimeVersion, row.Value); err != nil {
+		return "", err
+	}
+	if row.Value == "release" {
+		return "", nil
+	}
+	return row.Value, nil
+}
+
 // validateAgentSetting validates typed settings before persistence. Other
 // agent keys remain backwards-compatible with the generic setting store.
 func validateAgentSetting(key, value string) error {
 	switch key {
+	case model.KeyAgentCommandPolicyApprovalEnabled:
+		if value != "true" && value != "false" {
+			return fmt.Errorf("%w: command_policy_approval_enabled must be true or false", errs.ErrInvalid)
+		}
+		return nil
+	case model.KeyAgentRuntimeVersion:
+		if value != "release" && value != "v3" && value != "v2" {
+			return fmt.Errorf("%w: runtime_version must be release, v3 or v2; v1 is no longer supported", errs.ErrInvalid)
+		}
+		return nil
 	case model.KeyAgentOutputLocale:
 		locale := strings.ToLower(strings.TrimSpace(value))
 		if locale != "" && locale != "zh" && locale != "en" {

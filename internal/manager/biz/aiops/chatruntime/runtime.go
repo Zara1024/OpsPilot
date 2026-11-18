@@ -56,6 +56,7 @@ import (
 	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/graph/callbacks"
 	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/toolreplay"
 	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/tools/basetool"
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/toolresult"
 	aiopsmodel "github.com/Zara1024/OpsPilot/internal/manager/model/aiops"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 	"github.com/Zara1024/OpsPilot/internal/pkg/llm"
@@ -193,6 +194,9 @@ type Config struct {
 	// Sessions is the persistence binding (chat_sessions /
 	// chat_messages / chat_tool_calls). Required.
 	Sessions biz.SessionRepo
+
+	// Results is the tool result store and analysis usecase. Optional.
+	Results *toolresult.Usecase
 
 	// ChatModel is the eino model.ToolCallingChatModel. Required.
 	// Production wiring passes RoutingChatModel from PR-1; tests
@@ -742,6 +746,9 @@ func (rt *Runtime) Handle(ctx context.Context, req *Request) (*Reply, error) {
 	handlers := callbacks.NewDefaultHandlers(deps)
 	toolPersistence := callbacks.EnableSynchronousToolPersistence(handlers)
 	graphCfg.ToolPersistence = toolPersistence
+	if rt.cfg.Results != nil {
+		sessionToolBag = rt.cfg.Results.BindTools(toolresult.Scope{SessionID: sess.ID, UserID: sess.UserID}, sessionToolBag)
+	}
 	g, err := graph.BuildReActGraph(rt.cfg.ChatModel, sessionToolBag, graphCfg)
 	if err != nil {
 		return nil, fmt.Errorf("chatruntime: build graph: %w", err)

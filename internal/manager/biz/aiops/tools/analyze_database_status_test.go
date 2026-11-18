@@ -85,19 +85,13 @@ func promVector(items ...promTestValue) *promquery.InstantResult {
 func TestAnalyzeDatabaseStatus_RegisteredWhenPromEdgesAndPluginConfigsPresent(t *testing.T) {
 	deviceID := uint64(42)
 	uc := edgebiz.NewUsecase(newFakeEdgeRepo(&edgemodel.Edge{ID: 1, Name: "node-a", DeviceID: &deviceID}), nil, nil, slog.Default())
-	reg := NewRegistry(&fakeCaller{}, uc, nil, &fakeDatabaseProm{}, nil, nil, nil, slog.Default())
+	reg := NewRegistry(&fakeCaller{}, uc, testHostInventory(t, uc), &fakeDatabaseProm{}, nil, nil, nil, slog.Default())
 
-	if containsName(schemaNames(reg.Schemas()), ToolNameAnalyzeDatabaseStatus) {
-		t.Fatalf("%s should not register before plugin config lister is wired", ToolNameAnalyzeDatabaseStatus)
-	}
 	if containsToolName(t, reg.BuildBaseTools().AllTools(), ToolNameAnalyzeDatabaseStatus) {
 		t.Fatalf("%s should not be in BaseTool bag before plugin config lister is wired", ToolNameAnalyzeDatabaseStatus)
 	}
 
 	reg.SetPluginConfigLister(fakePluginConfigLister{rows: map[uint64][]edgebiz.PluginRow{}})
-	if !containsName(schemaNames(reg.Schemas()), ToolNameAnalyzeDatabaseStatus) {
-		t.Fatalf("%s not registered: %v", ToolNameAnalyzeDatabaseStatus, schemaNames(reg.Schemas()))
-	}
 	if !containsToolName(t, reg.BuildBaseTools().AllTools(), ToolNameAnalyzeDatabaseStatus) {
 		t.Fatalf("%s missing from BaseTool bag", ToolNameAnalyzeDatabaseStatus)
 	}
@@ -105,10 +99,10 @@ func TestAnalyzeDatabaseStatus_RegisteredWhenPromEdgesAndPluginConfigsPresent(t 
 
 func TestAnalyzeDatabaseStatus_NotRegisteredWhenPromNil(t *testing.T) {
 	uc := edgebiz.NewUsecase(newFakeEdgeRepo(), nil, nil, slog.Default())
-	reg := NewRegistry(&fakeCaller{}, uc, nil, nil, nil, nil, nil, slog.Default())
+	reg := NewRegistry(&fakeCaller{}, uc, testHostInventory(t, uc), nil, nil, nil, nil, slog.Default())
 	reg.SetPluginConfigLister(fakePluginConfigLister{rows: map[uint64][]edgebiz.PluginRow{}})
 
-	if containsName(schemaNames(reg.Schemas()), ToolNameAnalyzeDatabaseStatus) {
+	if containsName(toolInfoNames(t, reg.BuildBaseTools().AllTools()), ToolNameAnalyzeDatabaseStatus) {
 		t.Fatalf("%s should not register without Prom", ToolNameAnalyzeDatabaseStatus)
 	}
 }
@@ -162,7 +156,7 @@ func TestListDatabaseSources_FromPluginConfigs(t *testing.T) {
 	deviceID := uint64(42)
 	edge := &edgemodel.Edge{ID: 1, Name: "db-node", DeviceID: &deviceID}
 	uc := edgebiz.NewUsecase(newFakeEdgeRepo(edge), nil, nil, slog.Default())
-	reg := NewRegistry(&fakeCaller{}, uc, nil, nil, nil, nil, nil, slog.Default())
+	reg := NewRegistry(&fakeCaller{}, uc, testHostInventory(t, uc), nil, nil, nil, nil, slog.Default())
 	reg.SetPluginConfigLister(fakePluginConfigLister{rows: map[uint64][]edgebiz.PluginRow{
 		1: {
 			{
@@ -201,19 +195,16 @@ func TestListDatabaseSources_FromPluginConfigs(t *testing.T) {
 		},
 	}})
 
-	if !containsName(schemaNames(reg.Schemas()), ToolNameListDatabaseSources) {
-		t.Fatalf("%s not registered: %v", ToolNameListDatabaseSources, schemaNames(reg.Schemas()))
-	}
 	if !containsToolName(t, reg.BuildBaseTools().AllTools(), ToolNameListDatabaseSources) {
 		t.Fatalf("%s missing from BaseTool bag", ToolNameListDatabaseSources)
 	}
 
-	out, err := reg.Invoke(context.Background(), ToolNameListDatabaseSources, json.RawMessage(`{}`))
+	out, err := baseToolByName(t, reg.BuildBaseTools(), ToolNameListDatabaseSources).InvokableRun(context.Background(), `{}`)
 	if err != nil {
-		t.Fatalf("Invoke: %v", err)
+		t.Fatalf("InvokableRun: %v", err)
 	}
 	var resp DatabaseSourcesResponse
-	if err := json.Unmarshal(out.ResultJSON, &resp); err != nil {
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if resp.Count != 2 || resp.ByDBType["mysql"] != 1 || resp.ByDBType["redis"] != 1 {
@@ -238,7 +229,7 @@ func TestAnalyzeDatabaseStatus_MySQLConnectionPressure(t *testing.T) {
 		},
 	})
 
-	selector := `device_id="42",opspilot_source="db:mysql-managed"`
+	selector := `device_id="42",ongrid_source="db:mysql-managed"`
 	prom := &fakeDatabaseProm{results: map[string]*promquery.InstantResult{
 		`sum(count by (__name__) ({` + selector + `}))`: promVector(promTestValue{value: "1045"}),
 		`count by (__name__) ({` + selector + `})`: promVector(
@@ -262,7 +253,7 @@ func TestAnalyzeDatabaseStatus_MySQLConnectionPressure(t *testing.T) {
 		`sum(increase(mysql_global_status_aborted_connects{` + selector + `}[15m]))`:                                                                                                                      promVector(promTestValue{value: "0"}),
 		`100 * (1 - sum(rate(mysql_global_status_innodb_buffer_pool_reads{` + selector + `}[5m])) / clamp_min(sum(rate(mysql_global_status_innodb_buffer_pool_read_requests{` + selector + `}[5m])), 1))`: promVector(promTestValue{value: "96"}),
 	}}
-	reg := NewRegistry(&fakeCaller{}, uc, nil, prom, nil, nil, nil, slog.Default())
+	reg := NewRegistry(&fakeCaller{}, uc, testHostInventory(t, uc), prom, nil, nil, nil, slog.Default())
 	reg.SetPluginConfigLister(fakePluginConfigLister{rows: map[uint64][]edgebiz.PluginRow{
 		1: {
 			{
@@ -282,16 +273,16 @@ func TestAnalyzeDatabaseStatus_MySQLConnectionPressure(t *testing.T) {
 		},
 	}})
 
-	out, err := reg.Invoke(context.Background(), ToolNameAnalyzeDatabaseStatus, json.RawMessage(`{}`))
+	out, err := baseToolByName(t, reg.BuildBaseTools(), ToolNameAnalyzeDatabaseStatus).InvokableRun(context.Background(), `{}`)
 	if err != nil {
-		t.Fatalf("Invoke: %v", err)
+		t.Fatalf("InvokableRun: %v", err)
 	}
 	var resp DatabaseStatusResponse
-	if err := json.Unmarshal(out.ResultJSON, &resp); err != nil {
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if resp.Status != "critical" {
-		t.Fatalf("status = %q, want critical; resp=%s", resp.Status, string(out.ResultJSON))
+		t.Fatalf("status = %q, want critical; resp=%s", resp.Status, string([]byte(out)))
 	}
 	if len(resp.Sources) != 1 {
 		t.Fatalf("sources=%d, want 1", len(resp.Sources))
@@ -315,8 +306,8 @@ func TestAnalyzeDatabaseStatus_MySQLConnectionPressure(t *testing.T) {
 	if got := capabilityStatus(src.Capabilities, "schema_table_inventory"); got != "unavailable" {
 		t.Fatalf("schema_table_inventory capability=%q want unavailable: %+v", got, src.Capabilities)
 	}
-	if !prom.saw(`device_id="42",opspilot_source="db:mysql-managed"`) {
-		t.Fatalf("expected PromQL selector to include device_id and opspilot_source")
+	if !prom.saw(`device_id="42",ongrid_source="db:mysql-managed"`) {
+		t.Fatalf("expected PromQL selector to include device_id and ongrid_source")
 	}
 	found := false
 	for _, finding := range src.Findings {
@@ -342,7 +333,7 @@ func TestAnalyzeDatabaseStatus_NonFiniteThresholdValueDoesNotBecomeCritical(t *t
 	}, row, numericCheck{
 		MetricKey: "connection_usage_pct",
 		Code:      "mysql_connection_pressure",
-		Title:     "MySQL 连接使用率偏高",
+		Title:     "MySQL 连接使用率偏�?,
 		Expr:      expr,
 		Required:  []string{"mysql_global_status_threads_connected", "mysql_global_variables_max_connections"},
 		CritAbove: floatPtr(90),
@@ -366,7 +357,7 @@ func TestAnalyzeDatabaseStatus_NonFiniteThresholdValueDoesNotBecomeCritical(t *t
 func TestAnalyzeDatabaseStatus_PostgreSQLObjectInventory(t *testing.T) {
 	deviceID := uint64(42)
 	uc := edgebiz.NewUsecase(newFakeEdgeRepo(&edgemodel.Edge{ID: 1, Name: "pg-node", DeviceID: &deviceID}), nil, nil, slog.Default())
-	selector := `device_id="42",opspilot_source="db:pg-managed"`
+	selector := `device_id="42",ongrid_source="db:pg-managed"`
 	prom := &fakeDatabaseProm{results: map[string]*promquery.InstantResult{
 		`sum(count by (__name__) ({` + selector + `}))`: promVector(promTestValue{value: "554"}),
 		`count by (__name__) ({` + selector + `})`: promVector(
@@ -379,7 +370,7 @@ func TestAnalyzeDatabaseStatus_PostgreSQLObjectInventory(t *testing.T) {
 		`count(count by (datname) (pg_database_size_bytes{` + selector + `}))`:                     promVector(promTestValue{value: "2"}),
 		`count(count by (schemaname, relname) (pg_stat_user_tables_n_live_tup{` + selector + `}))`: promVector(promTestValue{value: "17"}),
 	}}
-	reg := NewRegistry(&fakeCaller{}, uc, nil, prom, nil, nil, nil, slog.Default())
+	reg := NewRegistry(&fakeCaller{}, uc, testHostInventory(t, uc), prom, nil, nil, nil, slog.Default())
 	reg.SetPluginConfigLister(fakePluginConfigLister{rows: map[uint64][]edgebiz.PluginRow{
 		1: {
 			{
@@ -394,19 +385,19 @@ func TestAnalyzeDatabaseStatus_PostgreSQLObjectInventory(t *testing.T) {
 		},
 	}})
 
-	out, err := reg.Invoke(context.Background(), ToolNameAnalyzeDatabaseStatus, json.RawMessage(`{"db_types":["postgresql"]}`))
+	out, err := baseToolByName(t, reg.BuildBaseTools(), ToolNameAnalyzeDatabaseStatus).InvokableRun(context.Background(), `{"db_types":["postgresql"]}`)
 	if err != nil {
-		t.Fatalf("Invoke: %v", err)
+		t.Fatalf("InvokableRun: %v", err)
 	}
 	var resp DatabaseStatusResponse
-	if err := json.Unmarshal(out.ResultJSON, &resp); err != nil {
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if resp.Count != 1 || resp.ByDBType["postgresql"] != 1 || resp.ByPlugin["databasemetrics"] != 1 {
 		t.Fatalf("wrong source summary: %+v", resp)
 	}
 	if len(resp.Sources) != 1 {
-		t.Fatalf("sources=%d want 1: %s", len(resp.Sources), string(out.ResultJSON))
+		t.Fatalf("sources=%d want 1: %s", len(resp.Sources), string([]byte(out)))
 	}
 	src := resp.Sources[0]
 	if src.Metrics["database_count"] != 2 || src.Metrics["table_count"] != 17 {
@@ -428,7 +419,7 @@ func TestAnalyzeDatabaseStatus_PostgreSQLObjectInventory(t *testing.T) {
 func TestAnalyzeDatabaseStatus_MongoDBLimitedMetricsCapability(t *testing.T) {
 	deviceID := uint64(42)
 	uc := edgebiz.NewUsecase(newFakeEdgeRepo(&edgemodel.Edge{ID: 1, Name: "node", DeviceID: &deviceID}), nil, nil, slog.Default())
-	selector := `device_id="42",opspilot_source="db:mongodb-managed"`
+	selector := `device_id="42",ongrid_source="db:mongodb-managed"`
 	prom := &fakeDatabaseProm{results: map[string]*promquery.InstantResult{
 		`sum(count by (__name__) ({` + selector + `}))`: promVector(promTestValue{value: "42"}),
 		`count by (__name__) ({` + selector + `})`: promVector(
@@ -436,7 +427,7 @@ func TestAnalyzeDatabaseStatus_MongoDBLimitedMetricsCapability(t *testing.T) {
 		),
 		`min(mongodb_up{` + selector + `})`: promVector(promTestValue{value: "1"}),
 	}}
-	reg := NewRegistry(&fakeCaller{}, uc, nil, prom, nil, nil, nil, slog.Default())
+	reg := NewRegistry(&fakeCaller{}, uc, testHostInventory(t, uc), prom, nil, nil, nil, slog.Default())
 	reg.SetPluginConfigLister(fakePluginConfigLister{rows: map[uint64][]edgebiz.PluginRow{
 		1: {
 			{
@@ -451,19 +442,19 @@ func TestAnalyzeDatabaseStatus_MongoDBLimitedMetricsCapability(t *testing.T) {
 		},
 	}})
 
-	out, err := reg.Invoke(context.Background(), ToolNameAnalyzeDatabaseStatus, json.RawMessage(`{"db_types":["mongodb"]}`))
+	out, err := baseToolByName(t, reg.BuildBaseTools(), ToolNameAnalyzeDatabaseStatus).InvokableRun(context.Background(), `{"db_types":["mongodb"]}`)
 	if err != nil {
-		t.Fatalf("Invoke: %v", err)
+		t.Fatalf("InvokableRun: %v", err)
 	}
 	var resp DatabaseStatusResponse
-	if err := json.Unmarshal(out.ResultJSON, &resp); err != nil {
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if resp.Status != "ok" {
-		t.Fatalf("status=%q want ok: %s", resp.Status, string(out.ResultJSON))
+		t.Fatalf("status=%q want ok: %s", resp.Status, string([]byte(out)))
 	}
 	if len(resp.Sources) != 1 {
-		t.Fatalf("sources=%d want 1: %s", len(resp.Sources), string(out.ResultJSON))
+		t.Fatalf("sources=%d want 1: %s", len(resp.Sources), string([]byte(out)))
 	}
 	src := resp.Sources[0]
 	if got := capabilityStatus(src.Capabilities, "liveness"); got != "available" {
@@ -500,7 +491,7 @@ func TestAnalyzeDatabaseStatus_MongoDBLimitedMetricsCapability(t *testing.T) {
 func TestAnalyzeDatabaseStatus_MongoDBServerStatusMetrics(t *testing.T) {
 	deviceID := uint64(42)
 	uc := edgebiz.NewUsecase(newFakeEdgeRepo(&edgemodel.Edge{ID: 1, Name: "node", DeviceID: &deviceID}), nil, nil, slog.Default())
-	selector := `device_id="42",opspilot_source="db:mongodb-managed"`
+	selector := `device_id="42",ongrid_source="db:mongodb-managed"`
 	prom := &fakeDatabaseProm{results: map[string]*promquery.InstantResult{
 		`sum(count by (__name__) ({` + selector + `}))`: promVector(promTestValue{value: "2337"}),
 		`count by (__name__) ({` + selector + `})`: promVector(
@@ -563,7 +554,7 @@ func TestAnalyzeDatabaseStatus_MongoDBServerStatusMetrics(t *testing.T) {
 		`sum(increase(mongodb_profile_slow_query_count{` + selector + `}[15m]))`:                                                                                                promVector(promTestValue{value: "0"}),
 		`max(mongodb_pbm_cluster_backup_configured{` + selector + `})`:                                                                                                          promVector(promTestValue{value: "1"}),
 	}}
-	reg := NewRegistry(&fakeCaller{}, uc, nil, prom, nil, nil, nil, slog.Default())
+	reg := NewRegistry(&fakeCaller{}, uc, testHostInventory(t, uc), prom, nil, nil, nil, slog.Default())
 	reg.SetPluginConfigLister(fakePluginConfigLister{rows: map[uint64][]edgebiz.PluginRow{
 		1: {
 			{
@@ -578,19 +569,19 @@ func TestAnalyzeDatabaseStatus_MongoDBServerStatusMetrics(t *testing.T) {
 		},
 	}})
 
-	out, err := reg.Invoke(context.Background(), ToolNameAnalyzeDatabaseStatus, json.RawMessage(`{"db_types":["mongodb"]}`))
+	out, err := baseToolByName(t, reg.BuildBaseTools(), ToolNameAnalyzeDatabaseStatus).InvokableRun(context.Background(), `{"db_types":["mongodb"]}`)
 	if err != nil {
-		t.Fatalf("Invoke: %v", err)
+		t.Fatalf("InvokableRun: %v", err)
 	}
 	var resp DatabaseStatusResponse
-	if err := json.Unmarshal(out.ResultJSON, &resp); err != nil {
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if resp.Status != "ok" {
-		t.Fatalf("status=%q want ok: %s", resp.Status, string(out.ResultJSON))
+		t.Fatalf("status=%q want ok: %s", resp.Status, string([]byte(out)))
 	}
 	if len(resp.Sources) != 1 {
-		t.Fatalf("sources=%d want 1: %s", len(resp.Sources), string(out.ResultJSON))
+		t.Fatalf("sources=%d want 1: %s", len(resp.Sources), string([]byte(out)))
 	}
 	src := resp.Sources[0]
 	if src.MetricCount == 0 || !containsString(src.MetricNames, "mongodb_ss_connections") {
@@ -632,7 +623,7 @@ func TestAnalyzeDatabaseStatus_CustomMetricsDatabaseTarget(t *testing.T) {
 	deviceID := uint64(7)
 	edge := &edgemodel.Edge{ID: 2, Name: "redis-node", DeviceID: &deviceID}
 	uc := edgebiz.NewUsecase(newFakeEdgeRepo(edge), nil, nil, slog.Default())
-	selector := `device_id="7",opspilot_source="custom:redis-exporter"`
+	selector := `device_id="7",ongrid_source="custom:redis-exporter"`
 	prom := &fakeDatabaseProm{results: map[string]*promquery.InstantResult{
 		`sum(count by (__name__) ({` + selector + `}))`: promVector(promTestValue{value: "10"}),
 		`count by (__name__) ({` + selector + `})`: promVector(
@@ -644,7 +635,7 @@ func TestAnalyzeDatabaseStatus_CustomMetricsDatabaseTarget(t *testing.T) {
 		`max(redis_memory_used_bytes{` + selector + `})`: promVector(promTestValue{value: "81"}),
 		`max(redis_memory_max_bytes{` + selector + `})`:  promVector(promTestValue{value: "100"}),
 	}}
-	reg := NewRegistry(&fakeCaller{}, uc, nil, prom, nil, nil, nil, slog.Default())
+	reg := NewRegistry(&fakeCaller{}, uc, testHostInventory(t, uc), prom, nil, nil, nil, slog.Default())
 	reg.SetPluginConfigLister(fakePluginConfigLister{rows: map[uint64][]edgebiz.PluginRow{
 		2: {
 			{
@@ -666,22 +657,22 @@ func TestAnalyzeDatabaseStatus_CustomMetricsDatabaseTarget(t *testing.T) {
 		},
 	}})
 
-	out, err := reg.Invoke(context.Background(), ToolNameAnalyzeDatabaseStatus, json.RawMessage(`{"db_types":["redis"]}`))
+	out, err := baseToolByName(t, reg.BuildBaseTools(), ToolNameAnalyzeDatabaseStatus).InvokableRun(context.Background(), `{"db_types":["redis"]}`)
 	if err != nil {
-		t.Fatalf("Invoke: %v", err)
+		t.Fatalf("InvokableRun: %v", err)
 	}
 	var resp DatabaseStatusResponse
-	if err := json.Unmarshal(out.ResultJSON, &resp); err != nil {
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if len(resp.Sources) != 1 {
-		t.Fatalf("sources=%d, want 1: %s", len(resp.Sources), string(out.ResultJSON))
+		t.Fatalf("sources=%d, want 1: %s", len(resp.Sources), string([]byte(out)))
 	}
 	if resp.Sources[0].Plugin != "custommetrics" || resp.Sources[0].DBType != "redis" {
 		t.Fatalf("wrong source: %+v", resp.Sources[0])
 	}
 	if resp.Status != "warning" {
-		t.Fatalf("status=%q want warning: %s", resp.Status, string(out.ResultJSON))
+		t.Fatalf("status=%q want warning: %s", resp.Status, string([]byte(out)))
 	}
 }
 
@@ -829,14 +820,14 @@ func containsString(items []string, want string) bool {
 func TestAnalyzeDatabaseStatus_PromErrorStaysStructured(t *testing.T) {
 	deviceID := uint64(42)
 	uc := edgebiz.NewUsecase(newFakeEdgeRepo(&edgemodel.Edge{ID: 1, Name: "node", DeviceID: &deviceID}), nil, nil, slog.Default())
-	selector := `device_id="42",opspilot_source="db:mysql-managed"`
+	selector := `device_id="42",ongrid_source="db:mysql-managed"`
 	prom := &fakeDatabaseProm{
 		results: map[string]*promquery.InstantResult{},
 		errs: map[string]error{
 			`sum(count by (__name__) ({` + selector + `}))`: errors.New("prom 500"),
 		},
 	}
-	reg := NewRegistry(&fakeCaller{}, uc, nil, prom, nil, nil, nil, slog.Default())
+	reg := NewRegistry(&fakeCaller{}, uc, testHostInventory(t, uc), prom, nil, nil, nil, slog.Default())
 	reg.SetPluginConfigLister(fakePluginConfigLister{rows: map[uint64][]edgebiz.PluginRow{
 		1: {
 			{
@@ -851,19 +842,19 @@ func TestAnalyzeDatabaseStatus_PromErrorStaysStructured(t *testing.T) {
 		},
 	}})
 
-	out, err := reg.Invoke(context.Background(), ToolNameAnalyzeDatabaseStatus, json.RawMessage(`{}`))
+	out, err := baseToolByName(t, reg.BuildBaseTools(), ToolNameAnalyzeDatabaseStatus).InvokableRun(context.Background(), `{}`)
 	if err != nil {
 		t.Fatalf("Invoke should return structured result, got error: %v", err)
 	}
 	var resp DatabaseStatusResponse
-	if err := json.Unmarshal(out.ResultJSON, &resp); err != nil {
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if resp.Status != "unknown" {
-		t.Fatalf("status=%q want unknown: %s", resp.Status, string(out.ResultJSON))
+		t.Fatalf("status=%q want unknown: %s", resp.Status, string([]byte(out)))
 	}
 	if len(resp.Sources) != 1 || len(resp.Sources[0].Findings) == 0 {
-		t.Fatalf("missing structured finding: %s", string(out.ResultJSON))
+		t.Fatalf("missing structured finding: %s", string([]byte(out)))
 	}
 	for _, finding := range resp.Sources[0].Findings {
 		if finding.Code == "no_recent_samples" {

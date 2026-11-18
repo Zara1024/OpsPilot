@@ -30,9 +30,9 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	biz "github.com/Zara1024/OpsPilot/internal/manager/biz/aiops"
-	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/agent"
-	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/chatruntime"
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/chatprotocol"
 	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/mentions"
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/runtime/v3/chatruntime"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/aiops"
 	svc "github.com/Zara1024/OpsPilot/internal/manager/service/aiops"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
@@ -49,11 +49,11 @@ type AIOpsService interface {
 	CloseSession(ctx context.Context, caller svc.Caller, sessionID string) error
 	DeleteSession(ctx context.Context, caller svc.Caller, sessionID string) error
 	RenameSession(ctx context.Context, caller svc.Caller, sessionID string, title string) error
-	UpdateSessionModel(ctx context.Context, caller svc.Caller, sessionID string, provider string, model string) error
-	PostMessage(ctx context.Context, caller svc.Caller, sessionID string, content string) (*agent.Reply, error)
-	PostMessageWithOpts(ctx context.Context, caller svc.Caller, sessionID string, content string, opts agent.RunOptions) (*agent.Reply, error)
-	PostMessageStream(ctx context.Context, caller svc.Caller, sessionID string, content string, emit agent.Emit) (*agent.Reply, error)
-	PostMessageStreamWithOpts(ctx context.Context, caller svc.Caller, sessionID string, content string, emit agent.Emit, opts agent.RunOptions) (*agent.Reply, error)
+	UpdateSessionModel(ctx context.Context, caller svc.Caller, sessionID string, provider string, model string, reasoningEffort string) error
+	PostMessage(ctx context.Context, caller svc.Caller, sessionID string, content string) (*chatprotocol.Reply, error)
+	PostMessageWithOpts(ctx context.Context, caller svc.Caller, sessionID string, content string, opts chatprotocol.RunOptions) (*chatprotocol.Reply, error)
+	PostMessageStream(ctx context.Context, caller svc.Caller, sessionID string, content string, emit chatprotocol.Emit) (*chatprotocol.Reply, error)
+	PostMessageStreamWithOpts(ctx context.Context, caller svc.Caller, sessionID string, content string, emit chatprotocol.Emit, opts chatprotocol.RunOptions) (*chatprotocol.Reply, error)
 	StopSession(ctx context.Context, caller svc.Caller, sessionID string) (bool, error)
 	UsageToday(ctx context.Context) (*biz.DailyUsage, error)
 	ListMutatingProposals(ctx context.Context, caller svc.Caller, f biz.MutatingProposalFilter) ([]*model.MutatingProposal, int64, error)
@@ -64,8 +64,7 @@ type attachmentService interface {
 	GetAttachment(ctx context.Context, caller svc.Caller, sessionID, attachmentID string) (*model.Attachment, error)
 }
 
-// MentionSearcher is the narrow biz contract for @-mention search. Optional â€”
-// when nil the /v1/aiops/mentions/search route is registered but always
+// MentionSearcher is the narrow biz contract for @-mention search. Optional â€?// when nil the /v1/aiops/mentions/search route is registered but always
 // returns an empty list (the SPA still gets a 200, the popover just sits
 // idle).
 type MentionSearcher interface {
@@ -74,14 +73,14 @@ type MentionSearcher interface {
 
 // ModelCatalog is the narrow read surface used by /v1/aiops/models. Returns
 // the configured-provider catalog plus the default (provider, model) pair.
-// Optional â€” when nil the endpoint still installs but returns an empty
+// Optional â€?when nil the endpoint still installs but returns an empty
 // catalog so the SPA hides the model selector.
 type ModelCatalog interface {
 	Providers() []llm.ProviderInfo
 	Default() (string, string)
 }
 
-// AgentLister is the narrow read surface used by /v1/agents â€” exposes
+// AgentLister is the narrow read surface used by /v1/agents â€?exposes
 // the agent personas the chatruntime AgentRegistry has loaded so the
 // SPA can render the Agents inventory page + the Side Panel agent
 // switcher. Optional: when nil the endpoint installs but returns an
@@ -132,8 +131,7 @@ func (h *Handler) SetMentionSearcher(m MentionSearcher) { h.mentions = m }
 func (h *Handler) SetModelCatalog(c ModelCatalog) { h.catalog = c }
 
 // SetLLMClient wires the LLM client used by /v1/aiops/query-translate
-// (the natural-language â†’ LogQL/TraceQL/PromQL helper). Optional â€”
-// when nil the endpoint returns 503 and the SPA hides the âœ¨ button.
+// (the natural-language â†?LogQL/TraceQL/PromQL helper). Optional â€?// when nil the endpoint returns 503 and the SPA hides the âœ?button.
 func (h *Handler) SetLLMClient(c llm.Client) { h.llmClient = c }
 
 // SetAgentLister wires the chatruntime AgentRegistry post-construction
@@ -154,6 +152,9 @@ func (h *Handler) SetOperationActions(operations OperationReader, execute Operat
 func (h *Handler) Register(r chi.Router) {
 	r.Post("/v1/chat/sessions", h.createSession)
 	r.Get("/v1/chat/sessions", h.listSessions)
+	r.Get("/v1/chat/sessions/{id}/tool-results/{resultID}", h.toolResult)
+	r.Get("/v1/chat/sessions/{id}/tool-results/{resultID}/{resultAction}", h.toolResult)
+	r.Post("/v1/chat/sessions/{id}/tool-results/{resultID}/{resultAction}", h.toolResult)
 	r.Post("/v1/chat/sessions/{id}/messages", h.postMessage)
 	r.Post("/v1/chat/sessions/{id}/attachments", h.uploadAttachment)
 	r.Get("/v1/chat/sessions/{id}/attachments/{attachmentID}", h.getAttachment)
@@ -174,9 +175,9 @@ func (h *Handler) Register(r chi.Router) {
 	r.Delete("/v1/agents/custom/{name}", h.deleteUserAgent)
 	r.Get("/v1/operations/{id}", h.getOperation)
 	r.Post("/v1/operations/{id}/actions/{action}", h.executeOperationAction)
-	// Generic delete: works on any non-builtin / non-default agent.
+	// Generic delete: works on any non-builtin / non-default chatprotocol.
 	// Disk-source agents (loaded from agents/*.md) get session-scoped
-	// removal â€” the in-memory registry drops them, but the .md file
+	// removal â€?the in-memory registry drops them, but the .md file
 	// stays and they re-appear on restart. User-source agents go
 	// through the userAgents service (DB row removal).
 	r.Delete("/v1/agents/{name}", h.deleteAgent)
@@ -311,24 +312,27 @@ func operationArtifactDTOs(items []*model.OperationArtifact) []operationArtifact
 }
 
 type createSessionReq struct {
-	PageContext *model.PageContext     `json:"page_context,omitempty"`
-	APMSource   *model.APMSourceTarget `json:"apm_source,omitempty"`
-	Title       string                 `json:"title"`
-	Scope       []string               `json:"scope,omitempty"`
-	Provider    string                 `json:"provider,omitempty"`
-	Model       string                 `json:"model,omitempty"`
+	ReasoningEffort *string                `json:"reasoning_effort,omitempty"`
+	PageContext     *model.PageContext     `json:"page_context,omitempty"`
+	APMSource       *model.APMSourceTarget `json:"apm_source,omitempty"`
+	Title           string                 `json:"title"`
+	Scope           []string               `json:"scope,omitempty"`
+	Provider        string                 `json:"provider,omitempty"`
+	Model           string                 `json:"model,omitempty"`
 	// RelatedIncidentID links the session back to an alert incident.
 	// Set by the IncidentDetail "æ·±å…¥è¯Šæ–­" button so the per-incident
 	// agent-timeline panel can list this session under the incident.
 	RelatedIncidentID *uint64 `json:"related_incident_id,omitempty"`
 	// AgentID pins the session to a chatruntime persona. The Side Panel
-	// agent picker + Agents page "ä½¿ç”¨æ­¤åŠ©ç†" button send this. Empty =
+	// agent picker + Agents page "ä½¿ç”¨æ­¤åŠ©ç? button send this. Empty =
 	// global coordinator default.
 	AgentID string `json:"agent_id,omitempty"`
 }
 
 type sessionDTO struct {
+	ReasoningEffort   string                `json:"reasoning_effort,omitempty"`
 	PageContext       *model.PageContext    `json:"page_context,omitempty"`
+	RuntimeVersion    string                `json:"runtime_version,omitempty"`
 	APMSource         *model.APMSourceScope `json:"apm_source,omitempty"`
 	ID                string                `json:"id"`
 	UserID            uint64                `json:"user_id"`
@@ -349,6 +353,7 @@ type listSessionsResp struct {
 }
 
 type postMessageReq struct {
+	ReasoningEffort  *string        `json:"reasoning_effort,omitempty"`
 	Content          string         `json:"content"`
 	AttachmentIDs    []string       `json:"attachment_ids,omitempty"`
 	Provider         string         `json:"provider,omitempty"`
@@ -401,15 +406,15 @@ type mentionInput struct {
 	Label string `json:"label"`
 }
 
-func (m mentionInput) toAgent() agent.Mention {
-	return agent.Mention{Type: m.Type, ID: m.ID, Label: m.Label}
+func (m mentionInput) toAgent() chatprotocol.Mention {
+	return chatprotocol.Mention{Type: m.Type, ID: m.ID, Label: m.Label}
 }
 
-func toAgentMentions(in []mentionInput) []agent.Mention {
+func toAgentMentions(in []mentionInput) []chatprotocol.Mention {
 	if len(in) == 0 {
 		return nil
 	}
-	out := make([]agent.Mention, 0, len(in))
+	out := make([]chatprotocol.Mention, 0, len(in))
 	for _, m := range in {
 		out = append(out, m.toAgent())
 	}
@@ -444,14 +449,27 @@ type postMessageResp struct {
 	Iterations       int                 `json:"iterations"`
 }
 
+type toolExecutionDTO struct {
+	ResultID     string  `json:"result_id,omitempty"`
+	Name         string  `json:"name"`
+	Status       string  `json:"status"`
+	Error        string  `json:"error,omitempty"`
+	DurationMs   int64   `json:"duration_ms"`
+	ArgumentsRaw string  `json:"arguments_raw"`
+	ResultRaw    string  `json:"result_raw,omitempty"`
+	DeviceID     *uint64 `json:"device_id,omitempty"`
+}
+
 type messageDTO struct {
+	ResultID    string             `json:"result_id,omitempty"`
+	ToolCall    *toolExecutionDTO  `json:"tool_call,omitempty"`
 	ID          string             `json:"id"`
 	Role        string             `json:"role"`
 	Content     string             `json:"content,omitempty"`
 	Attachments []model.Attachment `json:"attachments,omitempty"`
 	ToolCallID  string             `json:"tool_call_id,omitempty"`
 	ToolName    string             `json:"tool_name,omitempty"`
-	// Model carries the LLM model id that produced the message â€” only
+	// Model carries the LLM model id that produced the message â€?only
 	// populated for role=assistant rows where the routing layer recorded
 	// it. Older rows return "" so the SPA can fall back to "default".
 	Model     string    `json:"model,omitempty"`
@@ -520,6 +538,7 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		AgentID:           req.AgentID,
 		Provider:          req.Provider,
 		Model:             req.Model,
+		ReasoningEffort:   req.ReasoningEffort,
 	})
 	if err != nil {
 		writeErr(w, err)
@@ -741,9 +760,10 @@ func (h *Handler) postMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	opts := agent.RunOptions{
+	opts := chatprotocol.RunOptions{
 		Provider:         req.Provider,
 		Model:            req.Model,
+		ReasoningEffort:  req.ReasoningEffort,
 		Mentions:         toAgentMentions(req.Mentions),
 		WebSearchEnabled: req.WebSearchEnabled,
 		Locale:           req.Locale,
@@ -764,11 +784,11 @@ func (h *Handler) postMessage(w http.ResponseWriter, r *http.Request) {
 //
 // Frame types:
 //
-//	assistant   â€” one assistant turn was persisted
-//	tool_start  â€” a tool_call row was persisted in pending state
-//	tool_end    â€” the tool finished (status: success|error|timeout)
-//	done        â€” final Reply (terminal success)
-//	error       â€” terminal failure (run aborted)
+//	assistant   â€?one assistant turn was persisted
+//	tool_start  â€?a tool_call row was persisted in pending state
+//	tool_end    â€?the tool finished (status: success|error|timeout)
+//	done        â€?final Reply (terminal success)
+//	error       â€?terminal failure (run aborted)
 //
 // On error after streaming has started we still emit an `error` frame
 // rather than changing the status code, since the response headers have
@@ -795,9 +815,10 @@ func (h *Handler) postMessageStream(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	opts := agent.RunOptions{
+	opts := chatprotocol.RunOptions{
 		Provider:         req.Provider,
 		Model:            req.Model,
+		ReasoningEffort:  req.ReasoningEffort,
 		Mentions:         toAgentMentions(req.Mentions),
 		WebSearchEnabled: req.WebSearchEnabled,
 		Locale:           req.Locale,
@@ -806,7 +827,7 @@ func (h *Handler) postMessageStream(w http.ResponseWriter, r *http.Request) {
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		// No streaming support â€” fall back to blocking JSON. This keeps
+		// No streaming support â€?fall back to blocking JSON. This keeps
 		// dev environments behind buffering proxies usable.
 		reply, err := h.svc.PostMessageWithOpts(r.Context(), caller, id, req.Content, opts)
 		if err != nil {
@@ -825,7 +846,7 @@ func (h *Handler) postMessageStream(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(": ok\n\n"))
 	flusher.Flush()
 
-	emit := func(e agent.Event) {
+	emit := func(e chatprotocol.Event) {
 		writeSSE(w, flusher, eventName(e.Type), eventPayload(id, e))
 	}
 
@@ -847,28 +868,28 @@ func (h *Handler) postMessageStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func eventName(t agent.EventType) string {
+func eventName(t chatprotocol.EventType) string {
 	switch t {
-	case agent.EventAssistant:
+	case chatprotocol.EventAssistant:
 		return "assistant"
-	case agent.EventToolStart:
+	case chatprotocol.EventToolStart:
 		return "tool_start"
-	case agent.EventToolEnd:
+	case chatprotocol.EventToolEnd:
 		return "tool_end"
-	case agent.EventDone:
+	case chatprotocol.EventDone:
 		return "done"
-	case agent.EventTaskNotification:
+	case chatprotocol.EventTaskNotification:
 		return "task_notification"
-	case agent.EventApprovalPending:
+	case chatprotocol.EventApprovalPending:
 		return "approval_pending"
 	default:
 		return string(t)
 	}
 }
 
-func eventPayload(sessionID string, e agent.Event) any {
+func eventPayload(sessionID string, e chatprotocol.Event) any {
 	switch e.Type {
-	case agent.EventAssistant:
+	case chatprotocol.EventAssistant:
 		if e.Assistant == nil {
 			return map[string]any{"session_id": sessionID}
 		}
@@ -880,7 +901,7 @@ func eventPayload(sessionID string, e agent.Event) any {
 			"created_at":         e.Assistant.CreatedAt,
 			"pending_tool_calls": e.Assistant.PendingToolCalls,
 		}
-	case agent.EventToolStart, agent.EventToolEnd:
+	case chatprotocol.EventToolStart, chatprotocol.EventToolEnd:
 		if e.Tool == nil {
 			return map[string]any{"session_id": sessionID}
 		}
@@ -921,12 +942,12 @@ func eventPayload(sessionID string, e agent.Event) any {
 			}
 		}
 		return out
-	case agent.EventDone:
+	case chatprotocol.EventDone:
 		if e.Done == nil {
 			return map[string]any{"session_id": sessionID}
 		}
 		return toPostMessageResp(sessionID, e.Done)
-	case agent.EventTaskNotification:
+	case chatprotocol.EventTaskNotification:
 		if e.Notification == nil {
 			return map[string]any{"session_id": sessionID}
 		}
@@ -946,7 +967,7 @@ func eventPayload(sessionID string, e agent.Event) any {
 			out["usage"] = e.Notification.Usage
 		}
 		return out
-	case agent.EventApprovalPending:
+	case chatprotocol.EventApprovalPending:
 		if e.Approval == nil {
 			return map[string]any{"session_id": sessionID}
 		}
@@ -969,7 +990,7 @@ func eventPayload(sessionID string, e agent.Event) any {
 
 // writeSSE serialises one event frame. Errors are intentionally swallowed:
 // if the client closed the connection there is nothing useful to do
-// mid-stream, and the next Flush will surface the failure to the agent.
+// mid-stream, and the next Flush will surface the failure to the chatprotocol.
 func writeSSE(w http.ResponseWriter, f http.Flusher, name string, payload any) {
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -1012,7 +1033,7 @@ func (h *Handler) listMessages(w http.ResponseWriter, r *http.Request) {
 // close path is still available via the service layer for callers that
 // want to preserve audit history, but the UI DELETE is the destructive
 // kind users expect.
-// stopSession backs POST /v1/chat/sessions/{id}/stop â€” interrupts the
+// stopSession backs POST /v1/chat/sessions/{id}/stop â€?interrupts the
 // session's in-flight turn (the SPA calls this on Esc). Idempotent: returns
 // {"stopped": false} when no turn was running.
 func (h *Handler) stopSession(w http.ResponseWriter, r *http.Request) {
@@ -1053,9 +1074,10 @@ func (h *Handler) closeSession(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateSessionReq struct {
-	Title    *string `json:"title,omitempty"`
-	Provider *string `json:"provider,omitempty"`
-	Model    *string `json:"model,omitempty"`
+	ReasoningEffort *string `json:"reasoning_effort,omitempty"`
+	Title           *string `json:"title,omitempty"`
+	Provider        *string `json:"provider,omitempty"`
+	Model           *string `json:"model,omitempty"`
 }
 
 // @Summary Update chat session title or model route
@@ -1080,7 +1102,7 @@ func (h *Handler) updateSession(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, errors.Join(errs.ErrInvalid, err))
 		return
 	}
-	if req.Title == nil && req.Provider == nil && req.Model == nil {
+	if req.Title == nil && req.Provider == nil && req.Model == nil && req.ReasoningEffort == nil {
 		writeErr(w, fmt.Errorf("%w: no session fields supplied", errs.ErrInvalid))
 		return
 	}
@@ -1090,12 +1112,16 @@ func (h *Handler) updateSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if req.Provider != nil || req.Model != nil {
+	if req.Provider != nil || req.Model != nil || req.ReasoningEffort != nil {
 		if req.Provider == nil || req.Model == nil {
 			writeErr(w, fmt.Errorf("%w: provider and model must be supplied together", errs.ErrInvalid))
 			return
 		}
-		if err := h.svc.UpdateSessionModel(r.Context(), caller, id, *req.Provider, *req.Model); err != nil {
+		effort := ""
+		if req.ReasoningEffort != nil {
+			effort = *req.ReasoningEffort
+		}
+		if err := h.svc.UpdateSessionModel(r.Context(), caller, id, *req.Provider, *req.Model, effort); err != nil {
 			writeErr(w, err)
 			return
 		}
@@ -1171,7 +1197,7 @@ func (h *Handler) listMutatingProposals(w http.ResponseWriter, r *http.Request) 
 }
 
 // searchMentions backs GET /v1/aiops/mentions/search?q=&type=&limit=
-// â€” used by the SPA chat input's @-popover. Auth-gated by the caller-
+// â€?used by the SPA chat input's @-popover. Auth-gated by the caller-
 // in-context check so anonymous probes get 401, matching the rest of
 // the aiops surface.
 func (h *Handler) searchMentions(w http.ResponseWriter, r *http.Request) {
@@ -1209,7 +1235,7 @@ func (h *Handler) searchMentions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
-// listModels backs GET /v1/aiops/models â€” returns the configured-
+// listModels backs GET /v1/aiops/models â€?returns the configured-
 // provider catalog and the default (provider, model) pair so the SPA
 // can render the per-message model selector. An empty catalog hides
 // the selector entirely (no LLM configured / single-provider mode).
@@ -1219,14 +1245,17 @@ func (h *Handler) listModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type providerDTO struct {
-		ID     string   `json:"id"`
-		Label  string   `json:"label"`
-		Models []string `json:"models"`
-		Model  string   `json:"model,omitempty"`
+		ReasoningCapabilities map[string]llm.ReasoningCapability `json:"reasoning_capabilities,omitempty"`
+		ReasoningEfforts      map[string][]string                `json:"reasoning_efforts,omitempty"`
+		ID                    string                             `json:"id"`
+		Label                 string                             `json:"label"`
+		Models                []string                           `json:"models"`
+		Model                 string                             `json:"model,omitempty"`
 	}
 	type defaultDTO struct {
-		Provider string `json:"provider"`
-		Model    string `json:"model"`
+		ReasoningEffort string `json:"reasoning_effort"`
+		Provider        string `json:"provider"`
+		Model           string `json:"model"`
 	}
 	type respDTO struct {
 		Providers []providerDTO `json:"providers"`
@@ -1234,16 +1263,44 @@ func (h *Handler) listModels(w http.ResponseWriter, r *http.Request) {
 	}
 	out := respDTO{Providers: []providerDTO{}}
 	if h.catalog != nil {
-		for _, p := range h.catalog.Providers() {
+		var providers []llm.ProviderInfo
+		if catalog, ok := h.catalog.(interface {
+			ProvidersContext(context.Context) []llm.ProviderInfo
+		}); ok {
+			providers = catalog.ProvidersContext(r.Context())
+		} else {
+			providers = h.catalog.Providers()
+		}
+		for _, p := range providers {
+			efforts := make(map[string][]string)
+			capabilities := make(map[string]llm.ReasoningCapability)
+			for _, model := range append(append([]string(nil), p.Models...), p.Model) {
+				if model == "" {
+					continue
+				}
+				capability := p.Reasoning(model)
+				capabilities[model] = capability
+				if levels := capability.Levels; len(levels) > 0 {
+					efforts[model] = levels
+				}
+			}
 			out.Providers = append(out.Providers, providerDTO{
-				ID:     p.ID,
-				Label:  p.Label,
-				Models: p.Models,
-				Model:  p.Model,
+				ReasoningCapabilities: capabilities,
+				ReasoningEfforts:      efforts,
+				ID:                    p.ID,
+				Label:                 p.Label,
+				Models:                p.Models,
+				Model:                 p.Model,
 			})
 		}
 		defID, defModel := h.catalog.Default()
 		out.Default = defaultDTO{Provider: defID, Model: defModel}
+		for _, provider := range providers {
+			if provider.ID == defID {
+				out.Default.ReasoningEffort = provider.DefaultEffort(defModel)
+				break
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -1252,6 +1309,7 @@ func (h *Handler) listModels(w http.ResponseWriter, r *http.Request) {
 
 func toSessionDTO(s *model.Session) sessionDTO {
 	out := sessionDTO{
+		RuntimeVersion:    s.RuntimeVersion,
 		ID:                s.ID,
 		UserID:            s.UserID,
 		Title:             s.Title,
@@ -1261,6 +1319,7 @@ func toSessionDTO(s *model.Session) sessionDTO {
 		AgentID:           s.AgentID,
 		Provider:          s.Provider,
 		Model:             s.Model,
+		ReasoningEffort:   s.ReasoningEffort,
 		CreatedAt:         s.CreatedAt,
 		UpdatedAt:         s.UpdatedAt,
 		ClosedAt:          s.ClosedAt,
@@ -1284,6 +1343,9 @@ func toMessageDTO(m *model.Message) messageDTO {
 	if m.Content != nil {
 		out.Content = *m.Content
 	}
+	if m.ResultID != nil {
+		out.ResultID = *m.ResultID
+	}
 	if m.ToolCallID != nil {
 		out.ToolCallID = *m.ToolCallID
 	}
@@ -1293,10 +1355,27 @@ func toMessageDTO(m *model.Message) messageDTO {
 	if m.Model != nil {
 		out.Model = *m.Model
 	}
+	if tc := m.ToolExecution; tc != nil {
+		x := &toolExecutionDTO{Name: tc.ToolName, Status: tc.Status, ArgumentsRaw: tc.ArgumentsJSON, DeviceID: tc.DeviceID}
+		if tc.ResultID != nil {
+			x.ResultID = *tc.ResultID
+		}
+		if tc.Error != nil {
+			x.Error = *tc.Error
+		}
+		if tc.ResultJSON != nil {
+			x.ResultRaw = *tc.ResultJSON
+		}
+		if tc.EndedAt != nil {
+			x.DurationMs = tc.EndedAt.Sub(tc.StartedAt).Milliseconds()
+		}
+		out.ToolCall = x
+	}
+
 	return out
 }
 
-func toPostMessageResp(sessionID string, reply *agent.Reply) postMessageResp {
+func toPostMessageResp(sessionID string, reply *chatprotocol.Reply) postMessageResp {
 	if reply == nil {
 		return postMessageResp{SessionID: sessionID}
 	}
@@ -1437,7 +1516,7 @@ func errCode(err error) string {
 
 // agentDTO is the Side-Panel-friendly view of a chatruntime persona.
 // Trimmed down from chatruntime.Agent (which carries fields the SPA
-// doesn't need to render â€” Background / OmitClaudeMd / Metadata yaml).
+// doesn't need to render â€?Background / OmitClaudeMd / Metadata yaml).
 type agentDTO struct {
 	Name             string   `json:"name"`
 	Description      string   `json:"description"`
@@ -1621,7 +1700,7 @@ func (h *Handler) deleteUserAgent(w http.ResponseWriter, r *http.Request) {
 // deleteAgent is the generic delete: works on any non-builtin agent
 // regardless of Source. For source=user we also clear the DB row;
 // for source=disk we just remove from the live registry (the .md
-// file remains and reloads on restart â€” this is intentional, the
+// file remains and reloads on restart â€?this is intentional, the
 // SPA delete is session-scoped). Source=builtin and the special
 // "default" persona reject with ErrInvalid.
 func (h *Handler) deleteAgent(w http.ResponseWriter, r *http.Request) {
@@ -1667,7 +1746,7 @@ func (h *Handler) deleteAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Disk-source (or empty): drop from live registry only. Session-
-	// scoped â€” comes back on restart.
+	// scoped â€?comes back on restart.
 	h.agents.Remove(name)
 	w.WriteHeader(http.StatusNoContent)
 }

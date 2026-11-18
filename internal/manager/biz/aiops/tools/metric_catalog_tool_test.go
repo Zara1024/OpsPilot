@@ -46,10 +46,10 @@ func TestListMetricCatalogTool_FiltersAndReturnsSamples(t *testing.T) {
 		resp: &promquery.InstantResult{
 			ResultType: "vector",
 			Result: json.RawMessage(`[
-				{"metric":{"__name__":"custom_queue_depth","device_id":"5","opspilot_source":"custom:queue","job":"queue-exporter"},"value":[1,"2"]},
-				{"metric":{"__name__":"custom_queue_depth","device_id":"5","opspilot_source":"custom:queue","job":"queue-exporter","instance":"127.0.0.1:9100"},"value":[1,"3"]},
+				{"metric":{"__name__":"custom_queue_depth","device_id":"5","ongrid_source":"custom:queue","job":"queue-exporter"},"value":[1,"2"]},
+				{"metric":{"__name__":"custom_queue_depth","device_id":"5","ongrid_source":"custom:queue","job":"queue-exporter","instance":"127.0.0.1:9100"},"value":[1,"3"]},
 				{"metric":{"__name__":"http_requests_total","device_id":"5","job":"api"},"value":[1,"7"]},
-				{"metric":{"__name__":"custom_queue_depth","device_id":"6","opspilot_source":"custom:queue"},"value":[1,"11"]}
+				{"metric":{"__name__":"custom_queue_depth","device_id":"6","ongrid_source":"custom:queue"},"value":[1,"11"]}
 			]`),
 		},
 	}
@@ -80,8 +80,8 @@ func TestListMetricCatalogTool_FiltersAndReturnsSamples(t *testing.T) {
 	if got.SeriesCount != 5 {
 		t.Fatalf("series_count = %d, want 5", got.SeriesCount)
 	}
-	if len(got.SampleLabels) == 0 || got.SampleLabels[0]["opspilot_source"] != "custom:queue" {
-		t.Fatalf("sample labels missing opspilot_source: %#v", got.SampleLabels)
+	if len(got.SampleLabels) == 0 || got.SampleLabels[0]["ongrid_source"] != "custom:queue" {
+		t.Fatalf("sample labels missing ongrid_source: %#v", got.SampleLabels)
 	}
 }
 
@@ -91,15 +91,15 @@ func TestListMetricCatalogTool_RanksDatabaseMetricsFromNaturalLanguage(t *testin
 			ResultType: "vector",
 			Result: json.RawMessage(`[
 				{"metric":{"__name__":"node_cpu_seconds_total","device_id":"5"},"value":[1,"3"]},
-				{"metric":{"__name__":"mysql_global_status_threads_connected","device_id":"5","opspilot_source":"db:mysql-1"},"value":[1,"1"]},
-				{"metric":{"__name__":"mysql_global_variables_max_connections","device_id":"5","opspilot_source":"db:mysql-1"},"value":[1,"1"]},
-				{"metric":{"__name__":"redis_connected_clients","device_id":"5","opspilot_source":"db:redis-1"},"value":[1,"1"]}
+				{"metric":{"__name__":"mysql_global_status_threads_connected","device_id":"5","ongrid_source":"db:mysql-1"},"value":[1,"1"]},
+				{"metric":{"__name__":"mysql_global_variables_max_connections","device_id":"5","ongrid_source":"db:mysql-1"},"value":[1,"1"]},
+				{"metric":{"__name__":"redis_connected_clients","device_id":"5","ongrid_source":"db:redis-1"},"value":[1,"1"]}
 			]`),
 		},
 	}
 	tool := NewListMetricCatalogTool(pq, slog.Default())
 
-	out, err := tool.InvokableRun(context.Background(), `{"query":"MySQL 连接使用率超过 80%","max_metrics":2}`)
+	out, err := tool.InvokableRun(context.Background(), `{"query":"MySQL 连接使用率超�?80%","max_metrics":2}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -149,14 +149,14 @@ func TestListMetricCatalogTool_InstructsWhenBurnRateMetricsLackStatusLabel(t *te
 		resp: &promquery.InstantResult{
 			ResultType: "vector",
 			Result: json.RawMessage(`[
-				{"metric":{"__name__":"traces_spanmetrics_calls_total","service":"opspilot-manager"},"value":[1,"33"]},
-				{"metric":{"__name__":"traces_spanmetrics_latency_count","service":"opspilot-manager"},"value":[1,"33"]}
+				{"metric":{"__name__":"traces_spanmetrics_calls_total","service":"ongrid-manager"},"value":[1,"33"]},
+				{"metric":{"__name__":"traces_spanmetrics_latency_count","service":"ongrid-manager"},"value":[1,"33"]}
 			]`),
 		},
 	}
 	tool := NewListMetricCatalogTool(pq, slog.Default())
 
-	out, err := tool.InvokableRun(context.Background(), `{"query":"API 5xx burn rate for opspilot-manager","prefixes":["http_","custom_","traces_spanmetrics_"],"max_metrics":10}`)
+	out, err := tool.InvokableRun(context.Background(), `{"query":"API 5xx burn rate for ongrid-manager","prefixes":["http_","custom_","traces_spanmetrics_"],"max_metrics":10}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestListMetricCatalogTool_ReturnsFilesystemMountpointSamples(t *testing.T) 
 	}
 	tool := NewListMetricCatalogTool(pq, slog.Default())
 
-	out, err := tool.InvokableRun(context.Background(), `{"query":"磁盘根分区可用空间","prefixes":["node_"],"max_metrics":10}`)
+	out, err := tool.InvokableRun(context.Background(), `{"query":"磁盘根分区可用空�?,"prefixes":["node_"],"max_metrics":10}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestListMetricCatalogTool_NormalizesMetricRegexForPrometheusFullMatch(t *te
 	}
 	tool := NewListMetricCatalogTool(pq, slog.Default())
 
-	out, err := tool.InvokableRun(context.Background(), `{"query":"根分区可用空间","prefixes":["node_"],"metric_regex":"node_filesystem_avail|node_filesystem_size","max_metrics":10}`)
+	out, err := tool.InvokableRun(context.Background(), `{"query":"根分区可用空�?,"prefixes":["node_"],"metric_regex":"node_filesystem_avail|node_filesystem_size","max_metrics":10}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -259,17 +259,17 @@ func TestListMetricCatalogTool_ReturnsDatabaseDimensionSamples(t *testing.T) {
 		resp: &promquery.InstantResult{
 			ResultType: "vector",
 			Result: json.RawMessage(`[
-				{"metric":{"__name__":"mongodb_ss_connections","device_id":"2","opspilot_source":"db:mongo-test","conn_type":"active"},"value":[1,"1"]},
-				{"metric":{"__name__":"mongodb_ss_connections","device_id":"2","opspilot_source":"db:mongo-test","conn_type":"available"},"value":[1,"1"]},
-				{"metric":{"__name__":"mongodb_ss_connections","device_id":"2","opspilot_source":"db:mongo-test","conn_type":"awaitingTopologyChanges"},"value":[1,"1"]},
-				{"metric":{"__name__":"mongodb_ss_connections","device_id":"2","opspilot_source":"db:mongo-test","conn_type":"current"},"value":[1,"1"]},
-				{"metric":{"__name__":"mongodb_ss_globalLock_currentQueue","device_id":"2","opspilot_source":"db:mongo-test","count_type":"total"},"value":[1,"1"]}
+				{"metric":{"__name__":"mongodb_ss_connections","device_id":"2","ongrid_source":"db:mongo-test","conn_type":"active"},"value":[1,"1"]},
+				{"metric":{"__name__":"mongodb_ss_connections","device_id":"2","ongrid_source":"db:mongo-test","conn_type":"available"},"value":[1,"1"]},
+				{"metric":{"__name__":"mongodb_ss_connections","device_id":"2","ongrid_source":"db:mongo-test","conn_type":"awaitingTopologyChanges"},"value":[1,"1"]},
+				{"metric":{"__name__":"mongodb_ss_connections","device_id":"2","ongrid_source":"db:mongo-test","conn_type":"current"},"value":[1,"1"]},
+				{"metric":{"__name__":"mongodb_ss_globalLock_currentQueue","device_id":"2","ongrid_source":"db:mongo-test","count_type":"total"},"value":[1,"1"]}
 			]`),
 		},
 	}
 	tool := NewListMetricCatalogTool(pq, slog.Default())
 
-	out, err := tool.InvokableRun(context.Background(), `{"query":"MongoDB 当前连接 可用连接 全局锁队列","prefixes":["mongodb_"],"max_metrics":10}`)
+	out, err := tool.InvokableRun(context.Background(), `{"query":"MongoDB 当前连接 可用连接 全局锁队�?,"prefixes":["mongodb_"],"max_metrics":10}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -310,15 +310,15 @@ func TestListMetricCatalogTool_RanksPostgresNumBackendsForConnections(t *testing
 		resp: &promquery.InstantResult{
 			ResultType: "vector",
 			Result: json.RawMessage(`[
-				{"metric":{"__name__":"pg_settings_log_connections","device_id":"2","opspilot_source":"db:pg-test"},"value":[1,"1"]},
-				{"metric":{"__name__":"pg_stat_database_numbackends","device_id":"2","opspilot_source":"db:pg-test","datname":"postgres"},"value":[1,"1"]},
-				{"metric":{"__name__":"pg_settings_max_connections","device_id":"2","opspilot_source":"db:pg-test"},"value":[1,"1"]}
+				{"metric":{"__name__":"pg_settings_log_connections","device_id":"2","ongrid_source":"db:pg-test"},"value":[1,"1"]},
+				{"metric":{"__name__":"pg_stat_database_numbackends","device_id":"2","ongrid_source":"db:pg-test","datname":"postgres"},"value":[1,"1"]},
+				{"metric":{"__name__":"pg_settings_max_connections","device_id":"2","ongrid_source":"db:pg-test"},"value":[1,"1"]}
 			]`),
 		},
 	}
 	tool := NewListMetricCatalogTool(pq, slog.Default())
 
-	out, err := tool.InvokableRun(context.Background(), `{"query":"PostgreSQL 活动连接数 max_connections","prefixes":["pg_"],"max_metrics":2}`)
+	out, err := tool.InvokableRun(context.Background(), `{"query":"PostgreSQL 活动连接�?max_connections","prefixes":["pg_"],"max_metrics":2}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -341,17 +341,17 @@ func TestListMetricCatalogTool_RanksPostgresCacheHitPairTogether(t *testing.T) {
 		resp: &promquery.InstantResult{
 			ResultType: "vector",
 			Result: json.RawMessage(`[
-				{"metric":{"__name__":"pg_settings_effective_cache_size_bytes","device_id":"2","opspilot_source":"db:pg-test"},"value":[1,"1"]},
-				{"metric":{"__name__":"pg_settings_debug_discard_caches","device_id":"2","opspilot_source":"db:pg-test"},"value":[1,"1"]},
-				{"metric":{"__name__":"pg_stat_database_blks_hit","device_id":"2","opspilot_source":"db:pg-test","datname":"postgres"},"value":[1,"1"]},
-				{"metric":{"__name__":"pg_stat_database_blks_read","device_id":"2","opspilot_source":"db:pg-test","datname":"postgres"},"value":[1,"1"]},
-				{"metric":{"__name__":"pg_statio_user_tables_heap_blocks_hit","device_id":"2","opspilot_source":"db:pg-test"},"value":[1,"1"]}
+				{"metric":{"__name__":"pg_settings_effective_cache_size_bytes","device_id":"2","ongrid_source":"db:pg-test"},"value":[1,"1"]},
+				{"metric":{"__name__":"pg_settings_debug_discard_caches","device_id":"2","ongrid_source":"db:pg-test"},"value":[1,"1"]},
+				{"metric":{"__name__":"pg_stat_database_blks_hit","device_id":"2","ongrid_source":"db:pg-test","datname":"postgres"},"value":[1,"1"]},
+				{"metric":{"__name__":"pg_stat_database_blks_read","device_id":"2","ongrid_source":"db:pg-test","datname":"postgres"},"value":[1,"1"]},
+				{"metric":{"__name__":"pg_statio_user_tables_heap_blocks_hit","device_id":"2","ongrid_source":"db:pg-test"},"value":[1,"1"]}
 			]`),
 		},
 	}
 	tool := NewListMetricCatalogTool(pq, slog.Default())
 
-	out, err := tool.InvokableRun(context.Background(), `{"query":"PostgreSQL 缓存命中率 cache hit ratio","prefixes":["pg_"],"max_metrics":2}`)
+	out, err := tool.InvokableRun(context.Background(), `{"query":"PostgreSQL 缓存命中�?cache hit ratio","prefixes":["pg_"],"max_metrics":2}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -370,7 +370,7 @@ func TestListMetricCatalogTool_RanksPostgresCacheHitPairTogether(t *testing.T) {
 }
 
 func TestMetricCatalogQueryAliasesIncludeMongoConnectionParts(t *testing.T) {
-	aliases := metricCatalogQueryAliases("MongoDB 连接使用率超过 80%")
+	aliases := metricCatalogQueryAliases("MongoDB 连接使用率超�?80%")
 	for _, want := range []string{"mongodb_", "current", "available", "conn_type"} {
 		if !containsName(aliases, want) {
 			t.Fatalf("aliases = %#v, want %q", aliases, want)
@@ -392,9 +392,6 @@ func TestListMetricCatalogTool_RejectsEmptyMatchingRegex(t *testing.T) {
 func TestRegistryRegistersMetricCatalogWithProm(t *testing.T) {
 	uc := edgebiz.NewUsecase(newFakeEdgeRepo(), nil, nil, slog.Default())
 	reg := NewRegistry(&fakeCaller{}, uc, nil, &fakePromQuerier{}, nil, nil, nil, slog.Default())
-	if !containsName(schemaNames(reg.Schemas()), ToolNameListMetricCatalog) {
-		t.Fatalf("closure registry missing %q: %v", ToolNameListMetricCatalog, schemaNames(reg.Schemas()))
-	}
 	if !containsName(toolInfoNames(t, reg.BuildBaseTools().AllTools()), ToolNameListMetricCatalog) {
 		t.Fatalf("BaseTool registry missing %q", ToolNameListMetricCatalog)
 	}

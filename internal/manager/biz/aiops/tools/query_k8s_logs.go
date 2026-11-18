@@ -33,7 +33,7 @@ var QueryK8sLogsSchema = json.RawMessage(`{
     "cluster_id": {
       "type": "integer",
       "minimum": 1,
-      "description": "Kubernetes cluster id in opspilot."
+      "description": "Kubernetes cluster id in ongrid."
     },
     "namespace": {
       "type": "string",
@@ -81,7 +81,7 @@ const queryK8sLogsWhenToUse = "Use when the user asks for recent Pod logs, Crash
 	"This is a bounded live Kubernetes pods/log fallback; prefer query_logql for production log search and query_k8s_snapshot for counts/lists. " +
 	"Never use this for kubectl exec, Secret reads, arbitrary files, or high-volume log export."
 
-const queryK8sLogsCallTimeout = 20 * time.Second
+const queryK8sLogsCallTimeout = 60 * time.Second
 
 type QueryK8sLogsTool struct {
 	caller Caller
@@ -234,6 +234,9 @@ func normalizeQueryK8sLogsArgs(in QueryK8sLogsArgs) (tunnel.KubernetesPodLogsReq
 	if pod == "" {
 		return tunnel.KubernetesPodLogsRequest{}, fmt.Errorf("%s: pod is required", ToolNameQueryK8sLogs)
 	}
+	if in.LimitBytes > 0 && in.LimitBytes < 1024 {
+		return tunnel.KubernetesPodLogsRequest{}, fmt.Errorf("%s: limit_bytes must be at least 1024", ToolNameQueryK8sLogs)
+	}
 	req := tunnel.KubernetesPodLogsRequest{
 		ClusterID:    in.ClusterID,
 		Namespace:    namespace,
@@ -269,13 +272,4 @@ func boundedInt64(v, fallback, max int64) int64 {
 		return max
 	}
 	return v
-}
-
-func (r *Registry) executeQueryK8sLogs(ctx context.Context, args json.RawMessage) (ExecuteResult, error) {
-	tool := NewQueryK8sLogsTool(r.caller, r.k8sSnapshot, r.log)
-	out, err := tool.InvokableRun(ctx, string(args))
-	if err != nil {
-		return ExecuteResult{}, err
-	}
-	return ExecuteResult{ResultJSON: json.RawMessage(out)}, nil
 }

@@ -1,10 +1,10 @@
-// inventory_bridge.go is the inverse of skill_bridge.go.
+// inventory_bridge.go is the inverse of skill.go.
 //
-// skill_bridge:    skill registry  â†’ aiops Tool registry  (so the LLM
+// skill_bridge:    skill registry  â†?aiops Tool registry  (so the LLM
 //
 //	sees skills as function-calling tools)
 //
-// inventory_bridge: aiops BaseTool bag â†’ skill registry  (so the /skills
+// inventory_bridge: aiops BaseTool bag â†?skill registry  (so the /skills
 //
 //	page sees every cloud-side tool as
 //	an inventoried capability, with audit
@@ -13,11 +13,11 @@
 // Background. Before this bridge, the manager-side LLM toolset had two
 // parallel populations:
 //
-//  1. ScopeHost skills (host_probe_http, host_tail_file, ...) â€” declarative
+//  1. ScopeHost skills (host_probe_http, host_tail_file, ...) â€?declarative
 //     metadata, auto-routed via tunnel, surfaced on /skills.
-//  2. Hand-written BaseTools (correlate_incident, get_edge_summary,
+//  2. Hand-written BaseTools (correlate_incident, get_host_summary,
 //     batch fan-out tools, bash, host_restart_service, host_files batch,
-//     AgentTool/SendMessage/TaskStop) â€” JSON-schema'd, manager-side
+//     AgentTool/SendMessage/TaskStop) â€?JSON-schema'd, manager-side
 //     execution, NOT surfaced on /skills.
 //
 // Operators couldn't tell what cloud-side capabilities the AI agent had
@@ -27,7 +27,7 @@
 // verbatim (no ParamSchema down-conversion required for shapes the
 // declarative form can't express, like device_ids[] or nested objects).
 //
-// Bridge direction. We walk the BaseTool bag â€” that's the production
+// Bridge direction. We walk the BaseTool bag â€?that's the production
 // surface fed to the LLM (cmd/main.go::BuildBaseTools). Tools whose
 // name already exists as a skill (i.e. they were brought in via
 // skill_bridge from the skill side) are skipped to avoid double-counting.
@@ -88,7 +88,7 @@ func (b *baseToolSkillExecutor) Execute(ctx context.Context, params json.RawMess
 // RegisterBaseToolsAsSkills walks every BaseTool in the bag and creates
 // a matching skill.Executor in the global skill registry. Tools whose
 // name already exists as a skill (because skill_bridge brought them
-// in from the skill side) are skipped â€” registering them again would
+// in from the skill side) are skipped â€?registering them again would
 // be a duplicate-key panic and conceptually they ARE the same
 // capability viewed from two angles.
 //
@@ -97,7 +97,7 @@ func (b *baseToolSkillExecutor) Execute(ctx context.Context, params json.RawMess
 //
 // Re-callable: idempotent at the skill side (skip when key already
 // exists). Tools with bad metadata (empty Info / non-snake key) are
-// skipped with a warning rather than crashing â€” robustness > strict
+// skipped with a warning rather than crashing â€?robustness > strict
 // invariants for an inventory feature.
 func (r *Registry) RegisterBaseToolsAsSkills(bag *ToolBag, log *slog.Logger) {
 	if bag == nil {
@@ -158,7 +158,7 @@ func (r *Registry) RegisterBaseToolsAsSkills(bag *ToolBag, log *slog.Logger) {
 }
 
 // classifyToolClass maps the BaseTool's Class hint (typically "read"
-// or "write" â€” see basetool.ToolInfo) to the skill class taxonomy.
+// or "write" â€?see basetool.ToolInfo) to the skill class taxonomy.
 // Tools that mutate state (host_restart_service, execute_k8s_action) become Mutating; AgentTool
 // / SendMessage / TaskStop are read-shaped (no edge mutation) and stay
 // Safe. Conservative default: Safe.
@@ -186,9 +186,9 @@ func classifyToolCategory(name string) string {
 		return "system"
 	case "host_find_large_files", "host_du_summary", "host_stat_file":
 		return "filesystem"
-	case "get_edge_summary", "get_topology", "query_devices",
+	case "get_host_summary", "get_topology", "query_devices",
 		"query_alert_rules", "query_incidents", "get_incident_detail",
-		"rank_edges", "find_outlier_edges", "correlate_incident":
+		"rank_hosts", "find_outlier_hosts", "correlate_incident":
 		return "diagnostic"
 	case "query_promql", "list_metric_catalog", "query_logql", "query_traceql",
 		"query_k8s_snapshot", "describe_k8s_resource", "query_k8s_logs":

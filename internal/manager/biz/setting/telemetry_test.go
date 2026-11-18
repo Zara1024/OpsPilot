@@ -58,7 +58,7 @@ func TestLokiResolverAuth(t *testing.T) {
 	}
 }
 
-// TestLokiResolverEmptyServiceReturnsEmpty â€” a resolver wrapping a
+// TestLokiResolverEmptyServiceReturnsEmpty â€?a resolver wrapping a
 // zero service returns the empty fallback. Tightens the contract:
 // callers shouldn't have to handle nil-service cases at every site.
 func TestLokiResolverEmptyServiceReturnsEmpty(t *testing.T) {
@@ -73,7 +73,7 @@ func TestLokiResolverEmptyServiceReturnsEmpty(t *testing.T) {
 }
 
 // TestTempoResolverFallsBackToEnv mirrors the Loki fallback test for
-// the trace signal â€” same wiring shape, different category/key.
+// the trace signal â€?same wiring shape, different category/key.
 func TestTempoResolverFallsBackToEnv(t *testing.T) {
 	svc := New(newFakeRepo(), nil)
 	r := NewTempoResolver(svc, "http://tempo:4318/v1/traces")

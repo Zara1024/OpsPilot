@@ -52,7 +52,7 @@ var ListMetricCatalogSchema = json.RawMessage(`{
     "labels": {
       "type": "object",
       "additionalProperties": true,
-      "description": "Optional exact label matchers to combine with selector, e.g. {'device_id': 5, 'opspilot_source': 'custom:api'}."
+      "description": "Optional exact label matchers to combine with selector, e.g. {'device_id': 5, 'ongrid_source': 'custom:api'}."
     },
     "max_metrics": {
       "type": "integer",
@@ -125,15 +125,6 @@ func (t *ListMetricCatalogTool) InvokableRun(ctx context.Context, argsJSON strin
 		return "", err
 	}
 	return string(out), nil
-}
-
-func (r *Registry) executeListMetricCatalog(ctx context.Context, args json.RawMessage) (ExecuteResult, error) {
-	runner := metricCatalogRunner{promQuery: r.promQuery, log: r.log}
-	out, err := runner.run(ctx, args)
-	if err != nil {
-		return ExecuteResult{}, err
-	}
-	return ExecuteResult{ResultJSON: out}, nil
 }
 
 type metricCatalogRunner struct {
@@ -290,7 +281,7 @@ func metricCatalogGroupLabels() []string {
 		"__name__",
 		"device_id",
 		"edge_id",
-		"opspilot_source",
+		"ongrid_source",
 		"job",
 		"instance",
 		"service",
@@ -335,7 +326,7 @@ func metricCatalogNeedsHTTPStatusLabel(query string) bool {
 	if q == "" {
 		return false
 	}
-	for _, phrase := range []string{"error rate", "burn rate", "错误率", "错误预算"} {
+	for _, phrase := range []string{"error rate", "burn rate", "错误�?, "错误预算"} {
 		if strings.Contains(q, phrase) {
 			return true
 		}
@@ -617,19 +608,19 @@ func metricCatalogQueryAliases(q string) []string {
 		add("mongodb", "mongodb_", "mongo")
 	}
 	if strings.Contains(lower, "down") || strings.Contains(lower, "unavailable") ||
-		strings.Contains(lower, "exporter") || strings.Contains(lower, "不可用") ||
+		strings.Contains(lower, "exporter") || strings.Contains(lower, "不可�?) ||
 		strings.Contains(lower, "离线") || strings.Contains(lower, "存活") {
 		add("up")
 	}
 	if strings.Contains(lower, "connection") || strings.Contains(lower, "client") ||
-		strings.Contains(lower, "连接") || strings.Contains(lower, "客户端") {
+		strings.Contains(lower, "连接") || strings.Contains(lower, "客户�?) {
 		add("connection", "connections", "connected", "clients", "threads_connected", "max_connections", "maxclients", "numbackends", "backends", "current", "available", "conn_type")
 	}
 	if strings.Contains(lower, "active") || strings.Contains(lower, "activity") || strings.Contains(lower, "活动") {
 		add("active", "activity", "numbackends", "backends")
 	}
 	if strings.Contains(lower, "usage") || strings.Contains(lower, "pressure") ||
-		strings.Contains(lower, "使用率") || strings.Contains(lower, "占用") || strings.Contains(lower, "压力") {
+		strings.Contains(lower, "使用�?) || strings.Contains(lower, "占用") || strings.Contains(lower, "压力") {
 		add("usage", "used", "max", "limit", "total", "free")
 	}
 	if strings.Contains(lower, "latency") || strings.Contains(lower, "延迟") || strings.Contains(lower, "耗时") {
@@ -644,13 +635,13 @@ func metricCatalogQueryAliases(q string) []string {
 	if strings.Contains(lower, "queue") || strings.Contains(lower, "队列") || strings.Contains(lower, "积压") {
 		add("queue", "depth", "pending", "backlog")
 	}
-	if strings.Contains(lower, "slow") || strings.Contains(lower, "慢查询") {
+	if strings.Contains(lower, "slow") || strings.Contains(lower, "慢查�?) {
 		add("slow", "slow_queries", "slowlog")
 	}
-	if strings.Contains(lower, "lock") || strings.Contains(lower, "deadlock") || strings.Contains(lower, "锁") {
+	if strings.Contains(lower, "lock") || strings.Contains(lower, "deadlock") || strings.Contains(lower, "�?) {
 		add("lock", "locks", "deadlock", "deadlocks", "wait")
 	}
-	if strings.Contains(lower, "hit") || strings.Contains(lower, "cache") || strings.Contains(lower, "命中率") || strings.Contains(lower, "缓存") {
+	if strings.Contains(lower, "hit") || strings.Contains(lower, "cache") || strings.Contains(lower, "命中�?) || strings.Contains(lower, "缓存") {
 		add("hit", "hits", "miss", "misses", "cache")
 		if isPostgresQuery {
 			add("pg_stat_database_blks_hit", "pg_stat_database_blks_read", "blks_hit", "blks_read")

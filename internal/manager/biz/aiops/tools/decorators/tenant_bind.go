@@ -12,14 +12,12 @@ import (
 
 // TenantBoundTool wraps inner so the tenant identity from ctx (via
 // internal/pkg/tenantctx) is injected into the args JSON when the tool's
-// declared schema asks for `tenant_id`. ASCII â€”
-// TenantBoundTool (ä»Ž ctx æ³¨å…¥ tenant_id è¿› args).
+// declared schema asks for `tenant_id`. ASCII â€?// TenantBoundTool (ä»?ctx æ³¨å…¥ tenant_id è¿?args).
 //
 // Why we mutate args rather than only setting an InvokeOption: tools
 // authored as plain JSON-Schema-driven structs already declare a
-// tenant_id property (â€” tools should self-describe);
-// rewriting args keeps the tool impl identical to the closure form and
-// makes the LLM's tool_call.arguments self-contained for replay/audit.
+// tenant_id property (â€?tools should self-describe);
+// rewriting args makes tool_call.arguments self-contained for replay/audit.
 //
 // The tenantctx.Tenant.UserID is also threaded onto the InvokeOption
 // via WithUserID + WithTenant so the audit + ratelimit decorators can
@@ -30,7 +28,7 @@ type TenantBoundTool struct {
 
 // WithTenantBind returns inner wrapped so InvokableRun:
 //
-//  1. Reads tenantctx.Tenant from ctx (no-op if absent â€” matches public
+//  1. Reads tenantctx.Tenant from ctx (no-op if absent â€?matches public
 //     endpoints / unit tests with bare ctx).
 //  2. Appends WithUserID(tenant.UserID) + WithTenant(strconv UserID) to
 //     opts so downstream decorators see the resolved identity.
@@ -42,7 +40,7 @@ func WithTenantBind(inner basetool.BaseTool) basetool.BaseTool {
 	return &TenantBoundTool{inner: inner}
 }
 
-// Info passes through â€” tenant binding is invocation-only.
+// Info passes through â€?tenant binding is invocation-only.
 func (t *TenantBoundTool) Info(ctx context.Context) (*basetool.ToolInfo, error) {
 	return t.inner.Info(ctx)
 }
@@ -51,7 +49,7 @@ func (t *TenantBoundTool) Info(ctx context.Context) (*basetool.ToolInfo, error) 
 func (t *TenantBoundTool) InvokableRun(ctx context.Context, argsJSON string, opts ...basetool.InvokeOption) (string, error) {
 	tenant, ok := tenantctx.From(ctx)
 	if !ok {
-		// No tenant on ctx â€” pass through unchanged. This is the
+		// No tenant on ctx â€?pass through unchanged. This is the
 		// canonical "public endpoint / test" path; rejecting here
 		// would force every test to set up tenantctx.With().
 		return t.inner.InvokableRun(ctx, argsJSON, opts...)
@@ -67,12 +65,16 @@ func (t *TenantBoundTool) InvokableRun(ctx context.Context, argsJSON string, opt
 
 	// Decide whether the tool wants tenant_id in its args. Cheap path:
 	// inspect the schema. If the schema doesn't declare it, skip
-	// injection â€” keeps this decorator safe to apply to every tool.
+	// injection â€?keeps this decorator safe to apply to every tool.
 	info, err := t.inner.Info(ctx)
-	if err != nil || info == nil || len(info.Parameters) == 0 {
+	if err != nil || info == nil {
 		return t.inner.InvokableRun(ctx, argsJSON, opts...)
 	}
-	if !schemaHasTenantID(info.Parameters) {
+	parameters := info.Parameters
+	if len(info.ExecutionParameters) > 0 {
+		parameters = info.ExecutionParameters
+	}
+	if !schemaHasTenantID(parameters) {
 		return t.inner.InvokableRun(ctx, argsJSON, opts...)
 	}
 
@@ -86,7 +88,7 @@ func (t *TenantBoundTool) InvokableRun(ctx context.Context, argsJSON string, opt
 
 // schemaHasTenantID returns true when the JSON Schema declares a
 // `tenant_id` property at the top level. We deliberately keep this
-// shallow â€” nested schemas aren't a use case in PR-3 (one tool only).
+// shallow â€?nested schemas aren't a use case in PR-3 (one tool only).
 func schemaHasTenantID(schema json.RawMessage) bool {
 	var s struct {
 		Properties map[string]json.RawMessage `json:"properties"`

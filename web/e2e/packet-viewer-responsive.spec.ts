@@ -43,8 +43,8 @@ const capture = {
 test('short viewport can scroll from packet rows to the hex viewer', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 640 });
   await page.addInitScript(() => {
-    localStorage.setItem('opspilot-theme-preference', 'dark');
-    localStorage.setItem('opspilot.auth', JSON.stringify({
+    localStorage.setItem('ongrid-theme-preference', 'dark');
+    localStorage.setItem('ongrid.auth', JSON.stringify({
       state: { token: 'e2e-token', refreshToken: null, email: 'e2e@example.com', role: 'admin' },
       version: 0,
     }));

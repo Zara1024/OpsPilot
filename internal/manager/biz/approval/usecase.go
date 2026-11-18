@@ -2,7 +2,7 @@
 // (HLD-017). Producers (agent cloud-shell, restart_service, flow approval
 // nodes) call Propose to queue a dangerous action; a human Approves/Rejects
 // in the inbox UI; on Approve the registered executor for that Kind runs the
-// action and the result is recorded. Strictly additive â€” nothing executes
+// action and the result is recorded. Strictly additive â€?nothing executes
 // here unless a producer explicitly proposed it.
 package approval
 
@@ -11,8 +11,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/toolresult"
+	resultmodel "github.com/Zara1024/OpsPilot/internal/manager/model/toolresult"
+	"github.com/Zara1024/OpsPilot/internal/pkg/toolcapture"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/approval"
@@ -32,15 +36,20 @@ type Repo interface {
 
 // Executor runs an approved action's payload and returns a result blob.
 // Registered per Kind by the producer (e.g. cloud-shell registers
-// "shell_command"). Absent executor â†’ Approve just marks the row approved
-// (no execution), which is safe.
+// "shell_command"). Missing executors fail the action explicitly; historical
+// approval records never imply that an unavailable action was executed.
 type Executor func(ctx context.Context, payloadJSON string) (resultJSON string, err error)
+
+type executorKey struct{ kind, runtimeVersion string }
 
 // Usecase is the inbox facade.
 type Usecase struct {
-	repo      Repo
-	log       *slog.Logger
-	executors map[string]Executor
+	results    *toolresult.Usecase
+	authorizer Authorizer
+	executorMu sync.RWMutex
+	repo       Repo
+	log        *slog.Logger
+	executors  map[executorKey]Executor
 }
 
 // NewUsecase wires the repo.
@@ -48,31 +57,45 @@ func NewUsecase(repo Repo, log *slog.Logger) *Usecase {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Usecase{repo: repo, log: log, executors: map[string]Executor{}}
+	return &Usecase{repo: repo, log: log, executors: map[executorKey]Executor{}}
 }
 
 // RegisterExecutor wires the execute-on-approve handler for a Kind. Called
 // at boot by the producer subsystem (e.g. cloud-shell). Idempotent.
 func (u *Usecase) RegisterExecutor(kind string, fn Executor) {
-	u.executors[kind] = fn
+	u.RegisterRuntimeExecutor(kind, "", fn)
+}
+
+// RegisterRuntimeExecutor registers an exact (kind, runtime) execution route.
+// Versioned proposals never fall back to an unversioned or newer executor.
+func (u *Usecase) RegisterRuntimeExecutor(kind, runtimeVersion string, fn Executor) {
+	u.executorMu.Lock()
+	defer u.executorMu.Unlock()
+	u.executors[executorKey{kind: kind, runtimeVersion: runtimeVersion}] = fn
 }
 
 // ProposeInput is what a producer queues.
 type ProposeInput struct {
-	Kind       string
-	Title      string
-	Summary    string
-	Payload    any    // marshaled to PayloadJSON
-	Source     string // SourceAgent / SourceFlow
-	SessionID  string
-	ProposedBy uint64
+	ExecutionOwner      string
+	ExecutionLeaseUntil *time.Time
+	RuntimeVersion      string
+	Kind                string
+	Title               string
+	Summary             string
+	Payload             any    // marshaled to PayloadJSON
+	Source              string // SourceAgent / SourceFlow
+	SessionID           string
+	ProposedBy          uint64
 }
 
-// Propose records a pending action. Producer-facing (not admin-gated â€” the
+// Propose records a pending action. Producer-facing (not admin-gated â€?the
 // producer already ran under the caller's auth).
 func (u *Usecase) Propose(ctx context.Context, in ProposeInput) (*model.Approval, error) {
 	if strings.TrimSpace(in.Kind) == "" || strings.TrimSpace(in.Title) == "" {
 		return nil, fmt.Errorf("%w: kind + title required", errs.ErrInvalid)
+	}
+	if len(in.RuntimeVersion) > 16 {
+		return nil, fmt.Errorf("%w: runtime version too long", errs.ErrInvalid)
 	}
 	payload, err := json.Marshal(in.Payload)
 	if err != nil {
@@ -82,8 +105,9 @@ func (u *Usecase) Propose(ctx context.Context, in ProposeInput) (*model.Approval
 	if src == "" {
 		src = model.SourceAgent
 	}
-	a := &model.Approval{
-		Kind: in.Kind, Title: in.Title, Summary: in.Summary,
+	a := &model.Approval{ExecutionOwner: in.ExecutionOwner, ExecutionLeaseUntil: in.ExecutionLeaseUntil,
+		RuntimeVersion: in.RuntimeVersion,
+		Kind:           in.Kind, Title: in.Title, Summary: in.Summary,
 		PayloadJSON: string(payload), Source: src, SessionID: in.SessionID,
 		Status: model.StatusPending, ProposedBy: in.ProposedBy,
 	}
@@ -94,7 +118,7 @@ func (u *Usecase) Propose(ctx context.Context, in ProposeInput) (*model.Approval
 	return a, nil
 }
 
-// List / Get / CountPending â€” inbox reads.
+// List / Get / CountPending â€?inbox reads.
 func (u *Usecase) List(ctx context.Context, status string, limit int) ([]*model.Approval, error) {
 	return u.repo.List(ctx, status, limit)
 }
@@ -110,6 +134,22 @@ func (u *Usecase) CountPending(ctx context.Context) (int64, error) { return u.re
 // its Kind, runs the action and records the result. Only a pending row can
 // be approved (the repo guards against double-decisions).
 func (u *Usecase) Approve(ctx context.Context, approverID uint64, id string) (*model.Approval, error) {
+	if err := u.AuthorizeApproval(ctx, approverID); err != nil {
+		return nil, err
+	}
+
+	if u.results != nil {
+		proposed, err := u.repo.Get(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if proposed.Source == model.SourceAgent && proposed.SessionID != "" {
+			if err = u.results.Preflight(ctx, toolresult.Scope{SessionID: proposed.SessionID, UserID: proposed.ProposedBy}); err != nil {
+				return nil, fmt.Errorf("result storage unavailable; approval was not executed: %w", err)
+			}
+		}
+	}
+	ctx = toolcapture.WithState(ctx)
 	now := time.Now().UTC()
 	if err := u.repo.Decide(ctx, id, map[string]any{
 		"status": model.StatusApproved, "approved_by": approverID, "decided_at": now,
@@ -120,26 +160,58 @@ func (u *Usecase) Approve(ctx context.Context, approverID uint64, id string) (*m
 	if err != nil {
 		return nil, err
 	}
-	exec, ok := u.executors[a.Kind]
-	if !ok {
-		u.log.Warn("approved but no executor for kind", slog.String("id", id), slog.String("kind", a.Kind))
-		return a, nil
+	u.executorMu.RLock()
+	exec := u.executors[executorKey{kind: a.Kind, runtimeVersion: a.RuntimeVersion}]
+	u.executorMu.RUnlock()
+	var res string
+	var runErr error
+	if exec == nil {
+		runErr = fmt.Errorf("approval executor for %q runtime %q is unavailable; submit a new request", a.Kind, a.RuntimeVersion)
+	} else {
+		res, runErr = exec(ctx, a.PayloadJSON)
 	}
-	res, runErr := exec(ctx, a.PayloadJSON)
 	status := model.StatusExecuted
 	if runErr != nil {
 		status = model.StatusFailed
-		res = fmt.Sprintf(`{"error":%q}`, runErr.Error())
+		payload, err := json.Marshal(struct {
+			Error string `json:"error"`
+		}{Error: runErr.Error()})
+		if err != nil {
+			return nil, fmt.Errorf("encode approval failure: %w", err)
+		}
+		res = string(payload)
 	}
-	if err := u.repo.SetResult(ctx, id, status, res, time.Now().UTC()); err != nil {
-		u.log.Warn("set approval result failed", slog.String("id", id), slog.Any("err", err))
+
+	if u.results != nil && a.Source == model.SourceAgent && a.SessionID != "" {
+		until := time.Now().UTC().Add(90 * 24 * time.Hour)
+		res = u.results.Capture(ctx, toolresult.Scope{SessionID: a.SessionID, UserID: a.ProposedBy}, "approval:"+a.ID, a.Kind, res, runErr, []resultmodel.Reference{{Kind: "approval", ID: a.ID, RetainUntil: &until}})
+		_, a.ResultID, _ = toolcapture.Get(ctx)
 	}
-	a, _ = u.repo.Get(ctx, id)
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+	var saveErr error
+	if writer, ok := u.repo.(interface {
+		SetStoredResult(context.Context, string, string, string, string, time.Time) error
+	}); ok {
+		saveErr = writer.SetStoredResult(writeCtx, id, status, res, a.ResultID, time.Now().UTC())
+	} else {
+		saveErr = u.repo.SetResult(writeCtx, id, status, res, time.Now().UTC())
+	}
+	if err := saveErr; err != nil {
+		return nil, fmt.Errorf("persist approval execution result: %w", err)
+	}
+	a, err = u.repo.Get(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("read completed approval: %w", err)
+	}
 	return a, nil
 }
 
 // Reject marks the proposal rejected with a reason. No execution.
 func (u *Usecase) Reject(ctx context.Context, approverID uint64, id, reason string) error {
+	if err := u.AuthorizeApproval(ctx, approverID); err != nil {
+		return err
+	}
 	now := time.Now().UTC()
 	return u.repo.Decide(ctx, id, map[string]any{
 		"status": model.StatusRejected, "approved_by": approverID,
@@ -171,3 +243,5 @@ func (u *Usecase) InvalidatePending(ctx context.Context, id, reason string) erro
 	}
 	return nil
 }
+
+func (u *Usecase) SetToolResults(results *toolresult.Usecase) { u.results = results }

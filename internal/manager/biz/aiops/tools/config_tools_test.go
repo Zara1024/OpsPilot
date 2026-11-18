@@ -77,11 +77,11 @@ func TestConfigDraftToolUsesInvokeUserTextWhenRequestTextMissing(t *testing.T) {
 	fake := &fakeConfigManager{}
 	tool := NewDraftConfigChangeTool(fake, nil)
 	_, err := tool.InvokableRun(context.Background(), `{"domain":"alert_rule","action":"create","rule":{"rule_key":"log_rule","name":"Log Rule"}}`,
-		basetool.WithUserText("系统 journald 日志 level=6 ERROR 超过 3 次"))
+		basetool.WithUserText("系统 journald 日志 level=6 ERROR 超过 3 �?))
 	if err != nil {
 		t.Fatalf("InvokableRun() error = %v", err)
 	}
-	if fake.lastDraft.RequestText != "系统 journald 日志 level=6 ERROR 超过 3 次" {
+	if fake.lastDraft.RequestText != "系统 journald 日志 level=6 ERROR 超过 3 �? {
 		t.Fatalf("RequestText = %q, want invoke user text", fake.lastDraft.RequestText)
 	}
 }
@@ -115,7 +115,7 @@ func TestConfigDraftToolInfoDescribesDraftValidationContract(t *testing.T) {
 			t.Fatalf("Parameters should describe alert draft contract, missing %q: %s", want, params)
 		}
 	}
-	for _, overSpecified := range []string{`conn_type=\"current\"`, `clamp_min`, `opspilot_source=\"db:...\"`} {
+	for _, overSpecified := range []string{`conn_type=\"current\"`, `clamp_min`, `ongrid_source=\"db:...\"`} {
 		if strings.Contains(params, overSpecified) {
 			t.Fatalf("Parameters should not hard-code database PromQL policy %q: %s", overSpecified, params)
 		}

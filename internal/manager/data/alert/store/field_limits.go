@@ -16,7 +16,7 @@ func limitAlertTitle(title string) string {
 	if utf8.RuneCountInString(title) <= alertTitleLimit {
 		return title
 	}
-	return string([]rune(title)[:alertTitleLimit-1]) + "â€¦"
+	return string([]rune(title)[:alertTitleLimit-1]) + "â€?
 }
 
 func normalizeAlertDedupeKey(key string) string {

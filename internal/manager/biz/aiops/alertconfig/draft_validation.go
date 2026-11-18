@@ -28,7 +28,7 @@ func validateAlertRuleDraft(rule aiopstools.AlertRuleConfigInput, requestText st
 			Severity:   severity,
 			Code:       "preview_skipped",
 			Message:    "告警规则预览未完成：" + preview.SkippedReason,
-			Suggestion: "根据 skipped_reason 补全缺失字段、修正 selector/metric，或在指标目录中选择实际存在的信号后重新生成草稿。",
+			Suggestion: "根据 skipped_reason 补全缺失字段、修�?selector/metric，或在指标目录中选择实际存在的信号后重新生成草稿�?,
 		})
 	}
 	issues = append(issues, validatePreviewContract(rule, preview)...)
@@ -62,8 +62,8 @@ func validateMetricRawDraft(rule aiopstools.AlertRuleConfigInput, requestText st
 		issues = append(issues, aiopstools.ConfigValidationIssue{
 			Severity:   validationSeverityError,
 			Code:       "metric_raw_predicate_missing",
-			Message:    "metric_raw 的 PromQL 必须是布尔告警谓词；裸数值序列会在返回任意样本时被规则引擎当成触发。",
-			Suggestion: "为表达式补上明确比较条件，例如 `rate(x[5m]) > 0.5`，或把持续性写进 PromQL 后再比较阈值。",
+			Message:    "metric_raw �?PromQL 必须是布尔告警谓词；裸数值序列会在返回任意样本时被规则引擎当成触发�?,
+			Suggestion: "为表达式补上明确比较条件，例�?`rate(x[5m]) > 0.5`，或把持续性写�?PromQL 后再比较阈值�?,
 		})
 		return issues
 	}
@@ -72,8 +72,8 @@ func validateMetricRawDraft(rule aiopstools.AlertRuleConfigInput, requestText st
 			issues = append(issues, aiopstools.ConfigValidationIssue{
 				Severity:   validationSeverityError,
 				Code:       "metric_raw_no_preview_series",
-				Message:    "PromQL 通过语法检查，但预览窗口内没有任何可评估序列；对带算术/比值的表达式，这通常表示 metric label 不匹配、分子缺失或 selector 过窄。",
-				Suggestion: "重新用 list_metric_catalog 返回的 sample_labels 校对表达式。多指标计算请先按同一维度聚合，例如 sum/max by (device_id, opspilot_source)，再用 on(device_id, opspilot_source) group_left 连接；分子可能为空时用 or/vector 或先加存在性条件。",
+				Message:    "PromQL 通过语法检查，但预览窗口内没有任何可评估序列；对带算术/比值的表达式，这通常表示 metric label 不匹配、分子缺失或 selector 过窄�?,
+				Suggestion: "重新�?list_metric_catalog 返回�?sample_labels 校对表达式。多指标计算请先按同一维度聚合，例�?sum/max by (device_id, ongrid_source)，再�?on(device_id, ongrid_source) group_left 连接；分子可能为空时�?or/vector 或先加存在性条件�?,
 			})
 		}
 		if issue, ok := suspiciousMagnitudeIssue(preview, threshold); ok {
@@ -84,16 +84,16 @@ func validateMetricRawDraft(rule aiopstools.AlertRuleConfigInput, requestText st
 		issues = append(issues, aiopstools.ConfigValidationIssue{
 			Severity:   validationSeverityWarning,
 			Code:       "sustained_window_missing",
-			Message:    "用户描述包含“持续/连续”语义，但 metric_raw 表达式主要是即时谓词；当前引擎会在 PromQL 返回序列时立即触发。",
-			Suggestion: "把持续性写进 PromQL，例如使用 min_over_time/avg_over_time/count_over_time 的子查询，或让表达式本身只在整个窗口都满足时返回序列。",
+			Message:    "用户描述包含“持�?连续”语义，�?metric_raw 表达式主要是即时谓词；当前引擎会�?PromQL 返回序列时立即触发�?,
+			Suggestion: "把持续性写�?PromQL，例如使�?min_over_time/avg_over_time/count_over_time 的子查询，或让表达式本身只在整个窗口都满足时返回序列�?,
 		})
 	}
 	if preview != nil && preview.FireCount > 100 {
 		issues = append(issues, aiopstools.ConfigValidationIssue{
 			Severity:   validationSeverityWarning,
 			Code:       "high_preview_fire_count",
-			Message:    fmt.Sprintf("预览窗口内命中 %d 次，创建后可能立即产生大量告警。", preview.FireCount),
-			Suggestion: "检查阈值、聚合维度和持续窗口；如果这是预期行为，可以保留，否则提高阈值或增加更窄 selector。",
+			Message:    fmt.Sprintf("预览窗口内命�?%d 次，创建后可能立即产生大量告警�?, preview.FireCount),
+			Suggestion: "检查阈值、聚合维度和持续窗口；如果这是预期行为，可以保留，否则提高阈值或增加更窄 selector�?,
 		})
 	}
 	if issue, ok := sparseCounterMinRateIssue(expr); ok {
@@ -111,8 +111,8 @@ func validateLogMatchDraft(rule aiopstools.AlertRuleConfigInput) []aiopstools.Co
 		issues = append(issues, aiopstools.ConfigValidationIssue{
 			Severity:   validationSeverityError,
 			Code:       "log_query_not_normalized",
-			Message:    "日志规则包含 query，但当前 evaluator 只执行 stream_selector + line_filter；直接保存 query 会被忽略。",
-			Suggestion: "把完整 LogQL 拆成 stream_selector 和 line_filter，或重新生成草稿让 draft_config_change 完成规范化。",
+			Message:    "日志规则包含 query，但当前 evaluator 只执�?stream_selector + line_filter；直接保�?query 会被忽略�?,
+			Suggestion: "把完�?LogQL 拆成 stream_selector �?line_filter，或重新生成草稿�?draft_config_change 完成规范化�?,
 		})
 	}
 	broadFilter := strings.Contains(filter, "error") || strings.Contains(filter, "panic") || strings.Contains(filter, "exception")
@@ -121,8 +121,8 @@ func validateLogMatchDraft(rule aiopstools.AlertRuleConfigInput) []aiopstools.Co
 		issues = append(issues, aiopstools.ConfigValidationIssue{
 			Severity:   validationSeverityWarning,
 			Code:       "broad_log_match",
-			Message:    "日志规则使用了较泛的错误关键字，但 stream_selector 没有限定 unit/service/identifier，容易把 exporter 或系统噪声当成业务故障。",
-			Suggestion: "优先把 stream_selector 收窄到明确的 unit/service/identifier，或提高 threshold/增加通知抑制策略。",
+			Message:    "日志规则使用了较泛的错误关键字，�?stream_selector 没有限定 unit/service/identifier，容易把 exporter 或系统噪声当成业务故障�?,
+			Suggestion: "优先�?stream_selector 收窄到明确的 unit/service/identifier，或提高 threshold/增加通知抑制策略�?,
 		})
 	}
 	return issues
@@ -146,8 +146,8 @@ func validatePreviewContract(rule aiopstools.AlertRuleConfigInput, preview *Prev
 	return []aiopstools.ConfigValidationIssue{{
 		Severity:   validationSeverityError,
 		Code:       "host_preview_missing_device_id",
-		Message:    "host 作用域规则的预览结果没有 device_id label；创建后命中也无法写入主机告警事件。",
-		Suggestion: "让 PromQL/规则表达式按 device_id 保留结果标签，或将非主机维度规则改为 global 作用域。",
+		Message:    "host 作用域规则的预览结果没有 device_id label；创建后命中也无法写入主机告警事件�?,
+		Suggestion: "�?PromQL/规则表达式按 device_id 保留结果标签，或将非主机维度规则改为 global 作用域�?,
 	}}
 }
 
@@ -164,8 +164,8 @@ func validateScopeConsistency(rule aiopstools.AlertRuleConfigInput, requestText 
 	return []aiopstools.ConfigValidationIssue{{
 		Severity:   validationSeverityWarning,
 		Code:       "host_scope_recommended",
-		Message:    "这条规则看起来是按主机维度命中的，但当前 scope_type=global；创建后告警能触发，不过不会作为设备告警关联到主机。",
-		Suggestion: "将 scope_type 改为 host，并确保预览结果保留 device_id label。",
+		Message:    "这条规则看起来是按主机维度命中的，但当前 scope_type=global；创建后告警能触发，不过不会作为设备告警关联到主机�?,
+		Suggestion: "�?scope_type 改为 host，并确保预览结果保留 device_id label�?,
 	}}
 }
 
@@ -276,16 +276,16 @@ func suspiciousMagnitudeIssue(preview *PreviewResult, threshold float64) (aiopst
 			return aiopstools.ConfigValidationIssue{
 				Severity:   validationSeverityError,
 				Code:       "metric_raw_non_finite_value",
-				Message:    "PromQL 预览产生了 NaN/Inf，通常是分母为 0 或缺失数据造成的。",
-				Suggestion: "为除法分母增加非零保护，或先用存在性条件过滤分母为 0 的序列后再计算比例。",
+				Message:    "PromQL 预览产生�?NaN/Inf，通常是分母为 0 或缺失数据造成的�?,
+				Suggestion: "为除法分母增加非零保护，或先用存在性条件过滤分母为 0 的序列后再计算比例�?,
 			}, true
 		}
 		if math.Abs(sample.Value) > limit {
 			return aiopstools.ConfigValidationIssue{
 				Severity:   validationSeverityError,
 				Code:       "metric_raw_suspicious_magnitude",
-				Message:    fmt.Sprintf("PromQL 预览值 %.4g 远高于阈值 %.4g，量纲或分母很可能不正确。", sample.Value, threshold),
-				Suggestion: "检查百分比/比值表达式的分母是否可能为 0，避免用 clamp_min(..., 1) 掩盖未配置容量；优先加分母存在性条件，或按相同标签维度聚合后再相除。",
+				Message:    fmt.Sprintf("PromQL 预览�?%.4g 远高于阈�?%.4g，量纲或分母很可能不正确�?, sample.Value, threshold),
+				Suggestion: "检查百分比/比值表达式的分母是否可能为 0，避免用 clamp_min(..., 1) 掩盖未配置容量；优先加分母存在性条件，或按相同标签维度聚合后再相除�?,
 			}, true
 		}
 	}
@@ -303,8 +303,8 @@ func sparseCounterMinRateIssue(expr string) (aiopstools.ConfigValidationIssue, b
 	return aiopstools.ConfigValidationIssue{
 		Severity:   validationSeverityWarning,
 		Code:       "sparse_counter_min_rate",
-		Message:    "表达式对稀疏事件计数器使用 min_over_time(rate(...)) > 0，可能要求整个窗口持续增长，容易漏掉单次事件。",
-		Suggestion: "如果目标是检测窗口内发生过事件，优先使用 increase(counter[窗口]) > 0；只有确实要求持续增长时才保留当前写法。",
+		Message:    "表达式对稀疏事件计数器使用 min_over_time(rate(...)) > 0，可能要求整个窗口持续增长，容易漏掉单次事件�?,
+		Suggestion: "如果目标是检测窗口内发生过事件，优先使用 increase(counter[窗口]) > 0；只有确实要求持续增长时才保留当前写法�?,
 	}, true
 }
 
@@ -340,7 +340,7 @@ func validationWarnings(v aiopstools.ConfigValidationResult) []string {
 	for _, issue := range v.Issues {
 		if issue.Severity == validationSeverityWarning {
 			if issue.Suggestion != "" {
-				out = append(out, issue.Message+" 建议："+issue.Suggestion)
+				out = append(out, issue.Message+" 建议�?+issue.Suggestion)
 			} else {
 				out = append(out, issue.Message)
 			}
@@ -357,7 +357,7 @@ func validationErrorMessage(v aiopstools.ConfigValidationResult) string {
 		}
 		msg := strings.TrimSpace(issue.Message)
 		if issue.Suggestion != "" {
-			msg += " 建议：" + issue.Suggestion
+			msg += " 建议�? + issue.Suggestion
 		}
 		if issue.Code != "" {
 			msg = issue.Code + ": " + msg

@@ -11,7 +11,7 @@ import (
 )
 
 // Migrate registers the alert tables with gorm AutoMigrate. After AutoMigrate
-// adds new columns (it never drops or changes existing ones â€” ),
+// adds new columns (it never drops or changes existing ones â€?),
 // we run any backfills the new schema expects so a v0.2.0 -> v0.3.0 upgrade
 // keeps existing rule rows usable.
 //
@@ -33,7 +33,7 @@ func Migrate(db *gorm.DB) error {
 	// PR-E backfill: rows created before Rule.Kind existed default to
 	// metric_raw (post-Phase-3-final collapse, the friendly metric_threshold
 	// form is UI-only and compiles to metric_raw at save time, so empty
-	// kind values resolve to metric_raw). Idempotent â€” second boot finds
+	// kind values resolve to metric_raw). Idempotent â€?second boot finds
 	// no NULL/'' rows and updates nothing. Any actual content from those
 	// pre-Kind rows is rewritten by the metric_thresholdâ†’metric_raw sweep
 	// below.
@@ -45,7 +45,7 @@ func Migrate(db *gorm.DB) error {
 
 	// rename: legacy kind values to the (now also legacy
 	// in Phase-3) names. We still translate via the Phase-3
-	// rewrites below â€” left here so two-step upgrades from very old DBs
+	// rewrites below â€?left here so two-step upgrades from very old DBs
 	// terminate cleanly. Idempotent.
 	if err := db.Model(&model.Rule{}).
 		Where("kind = ?", "prom_query").
@@ -57,7 +57,7 @@ func Migrate(db *gorm.DB) error {
 	// health_ingest / event_internal kinds were removed entirely.
 	// Existing rows are rewritten in place to a metric_raw rule that
 	// queries the new self-observability metrics the manager exposes.
-	// Idempotent â€” each UPDATE matches nothing on a second boot because
+	// Idempotent â€?each UPDATE matches nothing on a second boot because
 	// the prior pass already converted every row.
 	rewrites := []struct {
 		fromKind   string
@@ -69,7 +69,7 @@ func Migrate(db *gorm.DB) error {
 		{
 			// edge_absence + pre-edge_offline. Threshold=90s
 			// matches the seed rule; user-customised thresholds are
-			// not preserved (pre-launch â€” clean cut, the spec says).
+			// not preserved (pre-launch â€?clean cut, the spec says).
 			fromKind:   "edge_absence",
 			conditions: `{"expr":"device_last_seen_seconds_ago > 90"}`,
 		},
@@ -115,11 +115,11 @@ func Migrate(db *gorm.DB) error {
 	}
 
 	// Scope split: pre-PR rows used `monitoring_pipeline` for two
-	// concepts â€” (a) the platform's own observability stack, and
+	// concepts â€?(a) the platform's own observability stack, and
 	// (b) cross-host fleet aggregation. We now distinguish them as
 	// `monitoring_pipeline` (a) and `global` (b). For each kind we know
 	// the conceptually correct scope; rewrite rows that disagree.
-	// Idempotent â€” runs once and matches nothing on subsequent boots.
+	// Idempotent â€?runs once and matches nothing on subsequent boots.
 	if err := db.Model(&model.Rule{}).
 		Where("scope_type = ? AND kind IN ?", model.RuleScopeMonitoringPipeline, []string{
 			model.RuleKindMetricAnomaly,
@@ -136,7 +136,7 @@ func Migrate(db *gorm.DB) error {
 
 	// scope sweep: rule rows that used to bear
 	// scope_type=monitoring_pipeline because of a now-deleted kind
-	// (edge_absence / health_ingest / event_internal â€” already
+	// (edge_absence / health_ingest / event_internal â€?already
 	// rewritten above to metric_raw) need their scope flipped to
 	// global. The metric_raw evaluator does not differentiate
 	// monitoring_pipeline vs global semantically; consolidating onto
@@ -150,7 +150,7 @@ func Migrate(db *gorm.DB) error {
 		return err
 	}
 
-	// May 2026 entity split: rename edge_id â†’ device_id on alert_incidents
+	// May 2026 entity split: rename edge_id â†?device_id on alert_incidents
 	// + alert_silences (and best-effort chat_tool_calls). AutoMigrate above
 	// has added device_id where the gorm tag asks for it; this step
 	// migrates data over and drops the legacy edge_id column.
@@ -158,8 +158,7 @@ func Migrate(db *gorm.DB) error {
 		return err
 	}
 
-	// Same split, rule_key side: built-in rule key edge_offline â†’
-	// device_offline. The displayed name was already "è®¾å¤‡ç¦»çº¿" all
+	// Same split, rule_key side: built-in rule key edge_offline â†?	// device_offline. The displayed name was already "è®¾å¤‡ç¦»çº¿" all
 	// along; this aligns the wire key with that vocabulary so the
 	// Alerts page row footer ("#42 Â· edge_offline") doesn't lie. Both
 	// rule + incident rows get updated. Idempotent.
@@ -195,15 +194,14 @@ func Migrate(db *gorm.DB) error {
 }
 
 // renameLegacyEdgeIDColumns runs ALTER TABLE RENAME COLUMN to migrate
-// alert_incidents.edge_id â†’ device_id and alert_silences.edge_id â†’
-// device_id (May 2026 entity split). Pre-launch we drop the old column
+// alert_incidents.edge_id â†?device_id and alert_silences.edge_id â†?// device_id (May 2026 entity split). Pre-launch we drop the old column
 // outright; idempotent because RENAME COLUMN no-ops when the column is
 // already gone (we check HasColumn first).
 //
 // On SQLite this requires 3.25.0+ (we run 3.40+); on MySQL it's 8.0+.
 //
 // Also kept here so the migration runs after AutoMigrate adds the new
-// column â€” gorm's AutoMigrate will create device_id on the existing
+// column â€?gorm's AutoMigrate will create device_id on the existing
 // table without touching edge_id, so we rename data over and then drop
 // the legacy column.
 func renameLegacyEdgeIDColumns(db *gorm.DB) error {
@@ -221,7 +219,7 @@ func renameLegacyEdgeIDColumns(db *gorm.DB) error {
 			// Rename the column outright.
 			if err := db.Migrator().RenameColumn(t.name, "edge_id", "device_id"); err != nil {
 				// Some dialects (sqlite older than 3.25) don't support
-				// rename â€” fall back to ALTER ADD + UPDATE + DROP.
+				// rename â€?fall back to ALTER ADD + UPDATE + DROP.
 				if err2 := db.Exec("ALTER TABLE " + t.name + " ADD COLUMN device_id INTEGER").Error; err2 != nil {
 					return err
 				}
@@ -234,7 +232,7 @@ func renameLegacyEdgeIDColumns(db *gorm.DB) error {
 			_ = db.Exec("UPDATE " + t.name + " SET device_id = edge_id WHERE device_id IS NULL AND edge_id IS NOT NULL").Error
 			_ = db.Migrator().DropColumn(t.name, "edge_id")
 		default:
-			// new only or neither â€” nothing to do.
+			// new only or neither â€?nothing to do.
 		}
 	}
 	// Same for chat_tool_calls (aiops audit), best-effort.
@@ -259,7 +257,7 @@ func renameLegacyEdgeIDColumns(db *gorm.DB) error {
 // rewriteMetricRawToExprOnly walks every metric_raw rule row, looks
 // for the legacy 4-field shape, and rewrites it to the new 1-field
 // shape with the comparison inlined into expr. Rows already in the
-// new shape (no "operator" key) are skipped â€” making the migration
+// new shape (no "operator" key) are skipped â€?making the migration
 // idempotent across boots.
 func rewriteMetricRawToExprOnly(db *gorm.DB) error {
 	type row struct {
@@ -277,13 +275,13 @@ func rewriteMetricRawToExprOnly(db *gorm.DB) error {
 	for _, r := range rows {
 		var raw map[string]any
 		if err := json.Unmarshal([]byte(r.ConditionsJSON), &raw); err != nil {
-			// Non-JSON or empty rows are left alone â€” the runtime
+			// Non-JSON or empty rows are left alone â€?the runtime
 			// compile step will surface a clear error to the operator
 			// instead of us silently rewriting unknown shapes.
 			continue
 		}
 		if _, hasOp := raw["operator"]; !hasOp {
-			// Already in the new shape â€” skip.
+			// Already in the new shape â€?skip.
 			continue
 		}
 		expr, _ := raw["expr"].(string)
@@ -317,7 +315,7 @@ func rewriteMetricRawToExprOnly(db *gorm.DB) error {
 	return nil
 }
 
-// metricExprFor mirrors the biz-side closed-set host metric â†’ PromQL
+// metricExprFor mirrors the biz-side closed-set host metric â†?PromQL
 // lookup. Duplicated here to avoid importing biz from data (circular).
 // The two tables MUST stay in sync; the alert package's
 // evaluators_phaseA.metricExprFor is the source of truth.
@@ -354,8 +352,8 @@ func metricExprFor(metric string) (string, bool) {
 // operator can intervene.
 //
 // The compile rules mirror compileMetricThresholdExpr in the alert
-// biz package â€” see usecase.go. Single condition â†’ bare comparison;
-// multi-condition â†’ AND-joined with on(device_id) (default) or OR.
+// biz package â€?see usecase.go. Single condition â†?bare comparison;
+// multi-condition â†?AND-joined with on(device_id) (default) or OR.
 func rewriteMetricThresholdToMetricRaw(db *gorm.DB) error {
 	type row struct {
 		ID             uint64

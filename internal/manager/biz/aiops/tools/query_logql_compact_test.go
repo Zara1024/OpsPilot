@@ -27,9 +27,9 @@ func TestMarshalQueryLogQLToolResult_ElasticsearchKeepsOnlyKeyFields(t *testing.
 			ResourceAttributes: map[string]string{
 				"device_id":    "123",
 				"cluster_id":   "48",
-				"namespace":    "opspilot-system",
-				"workload":     "opspilot-edge-node",
-				"pod":          "opspilot-edge-node-hgzlq",
+				"namespace":    "ongrid-system",
+				"workload":     "ongrid-edge-node",
+				"pod":          "ongrid-edge-node-hgzlq",
 				"container":    "edge-node",
 				"node":         "worker1",
 				"source_id":    "kubernetes:pod",
@@ -62,8 +62,8 @@ func TestMarshalQueryLogQLToolResult_ElasticsearchKeepsOnlyKeyFields(t *testing.
 	if record.Timestamp != timestamp || record.Message != "request timed out" || record.SeverityText != "error" {
 		t.Fatalf("record core fields = %#v", record)
 	}
-	if record.DeviceID != "123" || record.ClusterID != "48" || record.Namespace != "opspilot-system" ||
-		record.Workload != "opspilot-edge-node" || record.Pod != "opspilot-edge-node-hgzlq" ||
+	if record.DeviceID != "123" || record.ClusterID != "48" || record.Namespace != "ongrid-system" ||
+		record.Workload != "ongrid-edge-node" || record.Pod != "ongrid-edge-node-hgzlq" ||
 		record.Container != "edge-node" || record.Node != "worker1" {
 		t.Fatalf("record location fields = %#v", record)
 	}
@@ -103,7 +103,7 @@ func TestMarshalQueryLogQLToolResult_LokiStreamsKeepOnlyKeyDimensions(t *testing
 			"stream":{
 				"device_id":"123",
 				"cluster_id":"48",
-				"namespace":"opspilot-system",
+				"namespace":"ongrid-system",
 				"pod":"edge-node-1",
 				"service_name":"unknown_service",
 				"span_id":"span-1",
@@ -113,7 +113,7 @@ func TestMarshalQueryLogQLToolResult_LokiStreamsKeepOnlyKeyDimensions(t *testing
 				"1700000000000000000",
 				"request timed out",
 				{
-					"opspilot_source":"kubernetes:pod",
+					"ongrid_source":"kubernetes:pod",
 					"level":"error",
 					"trace_id":"trace-1",
 					"custom":"drop-me"
@@ -141,7 +141,7 @@ func TestMarshalQueryLogQLToolResult_LokiStreamsKeepOnlyKeyDimensions(t *testing
 		t.Fatalf("streams = %#v", streams)
 	}
 	if streams[0].Stream["device_id"] != "123" || streams[0].Stream["cluster_id"] != "48" ||
-		streams[0].Stream["namespace"] != "opspilot-system" || streams[0].Stream["pod"] != "edge-node-1" {
+		streams[0].Stream["namespace"] != "ongrid-system" || streams[0].Stream["pod"] != "edge-node-1" {
 		t.Fatalf("stream dimensions = %#v", streams[0].Stream)
 	}
 	for _, field := range []string{"service_name", "span_id", "job"} {
@@ -157,7 +157,7 @@ func TestMarshalQueryLogQLToolResult_LokiStreamsKeepOnlyKeyDimensions(t *testing
 	if err := json.Unmarshal(value[2], &metadata); err != nil {
 		t.Fatalf("decode compact metadata: %v", err)
 	}
-	if metadata["opspilot_source"] != "kubernetes:pod" || metadata["level"] != "error" || metadata["trace_id"] != "trace-1" {
+	if metadata["ongrid_source"] != "kubernetes:pod" || metadata["level"] != "error" || metadata["trace_id"] != "trace-1" {
 		t.Fatalf("metadata = %#v", metadata)
 	}
 	if _, ok := metadata["custom"]; ok {

@@ -50,7 +50,7 @@ func TestToolBag_BelowThreshold(t *testing.T) {
 	tools := []basetool.BaseTool{
 		newStub("get_host_load", "live host metrics"),
 		newStub("query_promql", "PromQL query"),
-		newStub("rank_edges", "rank edges by metric"),
+		newStub("rank_hosts", "rank edges by metric"),
 	}
 	bag := NewToolBag(tools, 30)
 	if bag.IsDeferring() {
@@ -84,21 +84,21 @@ func TestToolBag_OverThresholdSplits(t *testing.T) {
 		newStub("get_topology", ""),
 		newStub("query_incidents", ""),
 		newStub("query_change_events", ""),
-		newStub("get_edge_summary", ""),
+		newStub("get_host_summary", ""),
 		newStub("correlate_incident", ""),
 		newStub("AgentTool", ""),
 		newStub("SendMessage", ""),
 		newStub("TaskStop", ""),
 		// 14 core entries.
-		newStub("rank_edges", ""),
-		newStub("find_outlier_edges", ""),
+		newStub("rank_hosts", ""),
+		newStub("find_outlier_hosts", ""),
 		newStub("get_incident_detail", ""),
 		newStub("query_alert_rules", ""),
 		newStub("host_find_large_files", ""),
 		newStub("host_du_summary", ""),
 		newStub("host_stat_file", ""),
 		newStub("host_restart_service", ""),
-		// 8 specialty entries â†’ 22 so far.
+		// 8 specialty entries â†?22 so far.
 	}
 	for i := 0; i < 13; i++ {
 		in = append(in, newStub("synthetic_pack_tool_"+string(rune('a'+i)), "synthetic"))
@@ -118,7 +118,7 @@ func TestToolBag_OverThresholdSplits(t *testing.T) {
 	}
 
 	deferred := bag.DeferredTools()
-	// 7 known specialty + 13 unknown â†’ 20 deferred.
+	// 7 known specialty + 13 unknown â†?20 deferred.
 	if len(deferred) != 20 {
 		t.Errorf("DeferredTools len=%d want 20", len(deferred))
 	}
@@ -325,7 +325,7 @@ func TestCoreToolNames_UsesRegistrationTier(t *testing.T) {
 	}
 }
 
-// TestToolBag_NilSafety guards against panics on a nil receiver â€” used
+// TestToolBag_NilSafety guards against panics on a nil receiver â€?used
 // by the runtime when the bag isn't wired in test harnesses.
 func TestToolBag_NilSafety(t *testing.T) {
 	var bag *ToolBag
@@ -379,4 +379,23 @@ func countNameString(values []string, want string) int {
 		}
 	}
 	return count
+}
+
+func TestToolBagUpsertReplacesWithoutDuplicatesAndSearchUsesNewSchema(t *testing.T) {
+	old := newStub("host_test", "old")
+	bag := NewToolBag([]basetool.BaseTool{old}, 0)
+	replacement := newStub("host_test", "new")
+	bag.UpsertTools([]basetool.BaseTool{replacement, newStub("host_other", "other")})
+	bag.UpsertTools([]basetool.BaseTool{replacement})
+	all := bag.AllTools()
+	if len(all) != 2 {
+		t.Fatalf("count=%d want=2", len(all))
+	}
+	result, err := NewToolSearchTool(bag, nil).InvokableRun(context.Background(), `{"query":"select:host_test"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, `"description":"new"`) {
+		t.Fatalf("stale search result: %s", result)
+	}
 }

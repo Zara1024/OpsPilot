@@ -13,7 +13,7 @@ import (
 //
 // chat_mutating_proposals (added PR-7 of / reviewer
 // reality-check) is the audit source of truth for
-// â€” every mutating tool_call leaves one row regardless of approve /
+// â€?every mutating tool_call leaves one row regardless of approve /
 // reject. See model.MutatingProposal for the schema rationale.
 func Migrate(db *gorm.DB) error {
 	return db.AutoMigrate(

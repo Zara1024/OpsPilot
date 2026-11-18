@@ -1,8 +1,7 @@
-// nodes.go â€” the node executors and the seams they call through.
-// Each executor: resolved config in â†’ (data output, control port) out.
-// Seams are wired in cmd/opspilot/main.go over the existing subsystems
-// (chatruntime worker spawn, tools.Registry, notification channels) â€”
-// nil seams degrade that node type to a config-time error, the engine
+// nodes.go â€?the node executors and the seams they call through.
+// Each executor: resolved config in â†?(data output, control port) out.
+// Seams are wired in cmd/ongrid/main.go over the existing subsystems
+// (chatruntime worker spawn, tools.Registry, notification channels) â€?// nil seams degrade that node type to a config-time error, the engine
 // itself stays testable with fakes.
 package flow
 
@@ -34,12 +33,13 @@ type Notifier interface {
 	Notify(ctx context.Context, channelIDs []uint64, title, message string) error
 }
 
-// LLMRunner does ONE chat completion (system + user â†’ text), no tools,
+// LLMRunner does ONE chat completion (system + user â†?text), no tools,
 // no persona, no multi-turn. The `llm` node uses it for cheap pure-text
 // transforms (summarize / rewrite / classify / extract) where a full
 // ReAct agent node is overkill. Implemented in main.go over the routing
-// llm.Client (provider/model omitted â†’ DefaultResolver picks the
-// configured default). nil â†’ the llm node degrades with a clear error.
+// llm.Client (provider/model omitted â†?DefaultResolver picks the
+// configured default). The client owns the request timeout. nil â†?the
+// llm node degrades with a clear error.
 type LLMRunner interface {
 	RunLLM(ctx context.Context, system, user string) (string, error)
 }
@@ -50,7 +50,7 @@ type NodeResult struct {
 	Output any
 	Port   string
 	// Vars carries set-node variable writes. The engine applies them to
-	// the shared RunContext UNDER ITS LOCK â€” executors run OUTSIDE the
+	// the shared RunContext UNDER ITS LOCK â€?executors run OUTSIDE the
 	// engine lock (concurrent fan-out), so an executor must never mutate
 	// rc.Vars directly or it races every other branch. nil for the common
 	// case of a node that sets no vars.
@@ -65,18 +65,16 @@ type Executors struct {
 	Notify Notifier
 }
 
-// defaultNodeTimeout bounds every non-agent node. Agent nodes get the
-// longer budget â€” a ReAct worker legitimately runs minutes. The llm
-// node sits between: a single completion, no tool loop.
+// Tool and notify nodes use the default timeout; agent workers get a
+// longer budget. LLM nodes use the client's configured request timeout.
 const (
 	defaultNodeTimeout = 2 * time.Minute
 	agentNodeTimeout   = 15 * time.Minute
-	llmNodeTimeout     = 3 * time.Minute
 )
 
 // execute runs one node by dispatching to its registered NodeSpec. cfg is
 // the node's config AFTER expression resolution. The per-type behaviour
-// lives in noderegistry.go â€” this is pure dispatch, no switch.
+// lives in noderegistry.go â€?this is pure dispatch, no switch.
 func (x Executors) execute(ctx context.Context, node GraphNode, cfg map[string]any, rc *RunContext) (NodeResult, error) {
 	spec := LookupNode(node.Type)
 	if spec == nil || spec.Execute == nil {
@@ -86,7 +84,7 @@ func (x Executors) execute(ctx context.Context, node GraphNode, cfg map[string]a
 }
 
 // parseLooseJSON accepts a raw JSON object possibly wrapped in a code
-// fence or surrounded by stray prose â€” models do that even when told
+// fence or surrounded by stray prose â€?models do that even when told
 // not to. It extracts the outermost {...} and decodes it.
 func parseLooseJSON(s string) (map[string]any, error) {
 	start := strings.Index(s, "{")

@@ -20,7 +20,7 @@ import (
 // save time); seeded rules go straight to the canonical shape.
 //
 // Rules whose threshold is <= 0 are skipped (the env effectively
-// disables them — absent the row the evaluator simply has nothing to
+// disables them �?absent the row the evaluator simply has nothing to
 // fire).
 func SeedBuiltinRules(ctx context.Context, repo *Repo, cfg config.AlertConfig) error {
 	if repo == nil {
@@ -63,38 +63,38 @@ func SeedHostRulesFromConfig(ctx context.Context, repo *Repo, cfg config.AlertCo
 
 // seedHostMetricRules seeds the canonical CPU / Mem / Disk / Load
 // thresholds as metric_raw rules. The PromQL expressions match what
-// metricExprFor renders for the closed-set host metrics — the same
+// metricExprFor renders for the closed-set host metrics �?the same
 // shape the UI's friendly metric_threshold form would compile to.
 func seedHostMetricRules(ctx context.Context, repo *Repo, cfg config.AlertConfig) error {
 	type metricSeed struct {
 		Key, Name, Severity string
 		// Expr is the full predicate including the comparison.
-		// Threshold is interpolated via fmt; a Threshold ≤ 0 means
+		// Threshold is interpolated via fmt; a Threshold �?0 means
 		// "skip this seed" so config-disabled defaults stay absent.
 		ExprFmt   string
 		Threshold float64
 	}
 	candidates := []metricSeed{
 		{
-			Key: "cpu_high", Name: "CPU 高负载",
+			Key: "cpu_high", Name: "CPU 高负�?,
 			Severity:  string(notify.SeverityWarning),
 			ExprFmt:   `100 * (1 - avg by (device_id) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) >= %g`,
 			Threshold: cfg.CPUPercent,
 		},
 		{
-			Key: "mem_high", Name: "内存高占用",
+			Key: "mem_high", Name: "内存高占�?,
 			Severity:  string(notify.SeverityWarning),
 			ExprFmt:   `100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) >= %g`,
 			Threshold: cfg.MemPercent,
 		},
 		{
-			Key: "disk_high", Name: "磁盘高占用",
+			Key: "disk_high", Name: "磁盘高占�?,
 			Severity:  string(notify.SeverityWarning),
 			ExprFmt:   `100 * (1 - node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) >= %g`,
 			Threshold: cfg.DiskUsedPercent,
 		},
 		{
-			Key: "load1_high", Name: "Load1 高",
+			Key: "load1_high", Name: "Load1 �?,
 			Severity:  string(notify.SeverityWarning),
 			ExprFmt:   `node_load1 >= %g`,
 			Threshold: cfg.Load1,
@@ -143,7 +143,7 @@ func seedEdgeOfflineRule(ctx context.Context, repo *Repo, cfg config.AlertConfig
 		return fmt.Errorf("marshal device_offline spec: %w", err)
 	}
 	row := &model.Rule{
-		// Key renamed from edge_offline → device_offline (May 2026 entity
+		// Key renamed from edge_offline �?device_offline (May 2026 entity
 		// split). Migration UPDATE in migrate.go re-keys pre-existing rows
 		// + their incidents so historical data keeps joining.
 		RuleKey:        "device_offline",
@@ -232,7 +232,7 @@ func seedDiskFullWarningRule(ctx context.Context, repo *Repo) error {
 	row := &model.Rule{
 		RuleKey:        "disk_full_warning",
 		Kind:           model.RuleKindMetricRaw,
-		Name:           "磁盘使用率 > 85%",
+		Name:           "磁盘使用�?> 85%",
 		SourceType:     model.RuleSourceBuiltin,
 		ScopeType:      model.RuleScopeHost,
 		JoinMode:       model.RuleJoinModeAll,
@@ -260,7 +260,7 @@ func seedCPUHighDefaultRule(ctx context.Context, repo *Repo) error {
 	row := &model.Rule{
 		RuleKey:        "cpu_high_default",
 		Kind:           model.RuleKindMetricRaw,
-		Name:           "CPU 高负载（PromQL）",
+		Name:           "CPU 高负载（PromQL�?,
 		SourceType:     model.RuleSourceBuiltin,
 		ScopeType:      model.RuleScopeHost,
 		JoinMode:       model.RuleJoinModeAll,
@@ -274,7 +274,7 @@ func seedCPUHighDefaultRule(ctx context.Context, repo *Repo) error {
 	return nil
 }
 
-// seedSwapHighRule fires when swap usage exceeds 50% — a strong signal
+// seedSwapHighRule fires when swap usage exceeds 50% �?a strong signal
 // that the host is under memory pressure even when MemAvailable still
 // reports headroom.
 func seedSwapHighRule(ctx context.Context, repo *Repo) error {
@@ -288,7 +288,7 @@ func seedSwapHighRule(ctx context.Context, repo *Repo) error {
 	row := &model.Rule{
 		RuleKey:        "swap_high",
 		Kind:           model.RuleKindMetricRaw,
-		Name:           "Swap 使用率 > 50%",
+		Name:           "Swap 使用�?> 50%",
 		SourceType:     model.RuleSourceBuiltin,
 		ScopeType:      model.RuleScopeHost,
 		JoinMode:       model.RuleJoinModeAll,
@@ -303,7 +303,7 @@ func seedSwapHighRule(ctx context.Context, repo *Repo) error {
 }
 
 // seedFDExhaustionRule fires when allocated file descriptors approach
-// the system maximum — usually points at a leaky daemon and lands
+// the system maximum �?usually points at a leaky daemon and lands
 // before the kernel starts denying socket / file opens.
 func seedFDExhaustionRule(ctx context.Context, repo *Repo) error {
 	spec := map[string]any{
@@ -316,7 +316,7 @@ func seedFDExhaustionRule(ctx context.Context, repo *Repo) error {
 	row := &model.Rule{
 		RuleKey:        "fd_exhaustion",
 		Kind:           model.RuleKindMetricRaw,
-		Name:           "文件描述符接近耗尽（>85%）",
+		Name:           "文件描述符接近耗尽�?85%�?,
 		SourceType:     model.RuleSourceBuiltin,
 		ScopeType:      model.RuleScopeHost,
 		JoinMode:       model.RuleJoinModeAll,

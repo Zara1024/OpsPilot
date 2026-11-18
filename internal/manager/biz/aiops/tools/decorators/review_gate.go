@@ -28,8 +28,7 @@ import (
 //     regardless of which kernel (legacy / graph) drives them, AS
 //     LONG AS the wiring code wraps the tool with chain.Wrap. That
 //     gives one chokepoint to enforce
-//   - Class-driven dispatch is invisible at the agent loop layer —
-//     the loop calls InvokableRun and either gets a real result (if
+//   - Class-driven dispatch is invisible at the agent loop layer �?//     the loop calls InvokableRun and either gets a real result (if
 //     class=read or reviewer approved) or an error (if reviewer
 //     rejected). No special-casing of mutating tools at the loop
 //     level.
@@ -39,7 +38,7 @@ import (
 //
 // Position in the chain (chain.go's Wrap):
 //
-//	tenant_bind → REVIEW_GATE → timeout → audit → ratelimit → metric
+//	tenant_bind �?REVIEW_GATE �?timeout �?audit �?ratelimit �?metric
 //
 // Why outside timeout: the reviewer worker is itself a graph.Invoke
 // against an LLM with its own internal turn budget; wrapping ReviewGate
@@ -48,7 +47,7 @@ import (
 // independent Timeout (default 60s) for the reviewer round-trip; once
 // approve fires, the inner tool runs under its own timeout decorator.
 //
-// Why outside audit: the audit row records the **execution** — for a
+// Why outside audit: the audit row records the **execution** �?for a
 // rejected proposal there is no execution to audit (we have a row in
 // chat_mutating_proposals instead). Putting ReviewGate inside audit
 // would write a synthetic execution row for every reject; we don't
@@ -90,7 +89,7 @@ const DefaultReviewerAgent = "reviewer"
 // DefaultReviewerTimeout is the per-call ceiling for the reviewer
 // round-trip. 60s is generous: the reviewer has up to 5 turns of LLM
 // + tool calls to make a decision. Longer than the inner-tool
-// timeout (15s) on purpose — see package doc.
+// timeout (15s) on purpose �?see package doc.
 const DefaultReviewerTimeout = 60 * time.Second
 
 // ErrReviewRejected wraps the reviewer's rejection. The agent loop /
@@ -108,13 +107,13 @@ var ErrReviewRejected = errors.New("review rejected")
 var ErrReviewUndecided = errors.New("reviewer returned no decision")
 
 // ErrReviewerSpawn fires when the spawner itself errors (agent not
-// found, runtime down). Treated as a reject for safety — when the
+// found, runtime down). Treated as a reject for safety �?when the
 // review system is broken, no mutation runs.
 var ErrReviewerSpawn = errors.New("reviewer spawn failed")
 
 // ReviewSpawnRequest is the seam-side spawn shape passed to
 // ReviewSpawner.SpawnReviewer. We deliberately do NOT import
-// chatruntime types — the decorator package must stay free of
+// chatruntime types �?the decorator package must stay free of
 // chat-runtime coupling (module boundaries).
 type ReviewSpawnRequest struct {
 	// AgentName is the reviewer persona to spawn ("reviewer" by
@@ -132,7 +131,7 @@ type ReviewSpawnRequest struct {
 // "Decision: approve" / "Decision: reject"; TaskID is recorded on
 // the audit row for cross-reference.
 type ReviewSpawnResult struct {
-	// TaskID is the chatruntime.Worker.ID — opaque to the decorator
+	// TaskID is the chatruntime.Worker.ID �?opaque to the decorator
 	// but persisted on the audit row.
 	TaskID string
 
@@ -154,7 +153,7 @@ type ReviewSpawnResult struct {
 // Synchronous semantics: SpawnReviewer blocks until the reviewer
 // reaches a terminal state. We pass background=false to the runtime
 // because the gate is itself a synchronous call from the agent loop's
-// perspective — the LLM is waiting for the tool result.
+// perspective �?the LLM is waiting for the tool result.
 type ReviewSpawner interface {
 	SpawnReviewer(ctx context.Context, req ReviewSpawnRequest) (*ReviewSpawnResult, error)
 }
@@ -166,7 +165,7 @@ type ReviewSpawner interface {
 // to chat_mutating_proposals; tests use an in-memory fake.
 //
 // Why a sink interface (vs importing the repo): same reason as the
-// AuditSink seam in audit.go — decorators stay free of biz repo
+// AuditSink seam in audit.go �?decorators stay free of biz repo
 // coupling.
 type MutatingProposalSink interface {
 	// Insert records the intercepted proposal in DecisionPending state.
@@ -177,7 +176,7 @@ type MutatingProposalSink interface {
 
 	// UpdateDecision flips the row to approve / reject and records
 	// the reviewer's reason. Errors are logged but MUST NOT propagate
-	// to the caller — audit failures don't fail the tool decision.
+	// to the caller �?audit failures don't fail the tool decision.
 	UpdateDecision(ctx context.Context, id, decision string, reason string) error
 
 	// MarkExecuted stamps the row when the inner tool's InvokableRun
@@ -220,12 +219,12 @@ const alertRuleCreateDeterministicApprovalReason = "deterministic policy approve
 // WithReviewGate returns inner wrapped so InvokableRun first checks
 // Class:
 //
-//   - Class != "write" && Class != "destructive" → pass-through.
+//   - Class != "write" && Class != "destructive" �?pass-through.
 //     The decorator is a no-op overhead-wise (one Info call); we
 //     could conditionally apply at chain.Wrap time but applying
 //     unconditionally keeps the chain order documentable in one
 //     place.
-//   - Class == "write" || "destructive" → deterministic approval when
+//   - Class == "write" || "destructive" �?deterministic approval when
 //     narrowly allowed; otherwise spawn reviewer worker, parse
 //     decision, gate the inner call.
 //
@@ -254,7 +253,7 @@ func WithReviewGate(inner basetool.BaseTool, spawner ReviewSpawner, cfg ReviewGa
 	}
 }
 
-// Info passes through unchanged — schema is invariant under review.
+// Info passes through unchanged �?schema is invariant under review.
 // The Class field is what ReviewGate reads to decide whether to gate.
 func (g *ReviewGate) Info(ctx context.Context) (*basetool.ToolInfo, error) {
 	return g.inner.Info(ctx)
@@ -266,7 +265,7 @@ func (g *ReviewGate) InvokableRun(ctx context.Context, argsJSON string, opts ...
 	if err != nil || info == nil {
 		// Pass-through on missing info so an Info-broken tool surfaces
 		// its own error from the inner call rather than confusing the
-		// reviewer with a malformed proposal. Defensive only — every
+		// reviewer with a malformed proposal. Defensive only �?every
 		// production tool returns a valid Info.
 		return g.inner.InvokableRun(ctx, argsJSON, opts...)
 	}
@@ -286,7 +285,7 @@ func (g *ReviewGate) InvokableRun(ctx context.Context, argsJSON string, opts ...
 	resolved := basetool.ResolveOptions(opts)
 
 	// 1) Persist the pending proposal (best-effort; sink errors are
-	//    logged but don't block the call — an audit outage shouldn't
+	//    logged but don't block the call �?an audit outage shouldn't
 	//    halt the reviewer flow).
 	createdAt := g.nowFn().UTC()
 	proposalID := ""
@@ -466,7 +465,7 @@ func isCreateConfigAction(action string) bool {
 }
 
 // buildReviewerPrompt assembles the markdown brief the reviewer worker
-// receives as its first user message. Keep this terse — the
+// receives as its first user message. Keep this terse �?the
 // reviewer.md system prompt drives the workflow; this prompt only
 // supplies the proposal payload + a reminder to emit the decision
 // marker.
@@ -488,7 +487,7 @@ func buildReviewerPrompt(toolName, toolClass, argsJSON string, operatorUID uint6
 	}
 	var b strings.Builder
 	b.WriteString("# 二审 proposal\n\n")
-	b.WriteString("收到 mutating tool_call 提案，请按你的 system prompt 工作流审查并决议。\n\n")
+	b.WriteString("收到 mutating tool_call 提案，请按你�?system prompt 工作流审查并决议。\n\n")
 	b.WriteString("**Tool**: `")
 	b.WriteString(toolName)
 	b.WriteString("`  \n")
@@ -503,11 +502,11 @@ func buildReviewerPrompt(toolName, toolClass, argsJSON string, operatorUID uint6
 	}
 	b.WriteString("```\n\n")
 	b.WriteString("---\n\n")
-	b.WriteString("**输出格式硬性要求**: 你的最终消息必须包含一行 `Decision: approve` 或 `Decision: reject`，")
+	b.WriteString("**输出格式硬性要�?*: 你的最终消息必须包含一�?`Decision: approve` �?`Decision: reject`�?)
 	b.WriteString("否则 ReviewGate 会按 reject 处理（safe default）。reject 时把理由写在 Decision 行下方，")
-	b.WriteString("approve 时也写一段 1-2 句风险提示。\n\n")
-	b.WriteString("如果没有 `get_sop_text` 工具，按 SRE 通用经验判断：")
-	b.WriteString("有 SOP 工具就调；没有就基于 reviewer.md system prompt 的三条门控（SOP / 并行操作 / 回滚路径）做判断。\n")
+	b.WriteString("approve 时也写一�?1-2 句风险提示。\n\n")
+	b.WriteString("如果没有 `get_sop_text` 工具，按 SRE 通用经验判断�?)
+	b.WriteString("�?SOP 工具就调；没有就基于 reviewer.md system prompt 的三条门控（SOP / 并行操作 / 回滚路径）做判断。\n")
 	return b.String()
 }
 
@@ -524,7 +523,7 @@ func indentJSON(raw []byte) ([]byte, error) {
 // parseReviewerDecision scans the reviewer's output for a line
 // starting with "Decision:" (case-insensitive). The first such line
 // wins; the rest of the message after that line (or below it) becomes
-// the reason (best-effort — we just take the next non-empty paragraph
+// the reason (best-effort �?we just take the next non-empty paragraph
 // or the trailing 200 chars).
 //
 // Why line-scan and not LLM re-parse: a second LLM call would double
@@ -533,7 +532,7 @@ func indentJSON(raw []byte) ([]byte, error) {
 // line; if a future reviewer flavour decides to emit JSON we'd add a
 // json fence detector here, not a second LLM call.
 //
-// Returns (decision, reason) where decision ∈ {"approve","reject",""}.
+// Returns (decision, reason) where decision �?{"approve","reject",""}.
 func parseReviewerDecision(text string) (decision, reason string) {
 	if strings.TrimSpace(text) == "" {
 		return "", ""
@@ -563,7 +562,7 @@ func parseReviewerDecision(text string) (decision, reason string) {
 				case strings.HasPrefix(rest, "reject"):
 					decision = "reject"
 				default:
-					// Keep scanning — maybe the reviewer wrote a
+					// Keep scanning �?maybe the reviewer wrote a
 					// preamble like "Decision: pending" we can ignore
 					// in favour of a later definitive line.
 					continue
@@ -596,14 +595,13 @@ func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n] + "…"
+	return s[:n] + "�?
 }
 
 // model_DecisionApprove / Reject mirror model.DecisionApprove /
 // DecisionReject without forcing this package to import
 // internal/manager/model/aiops (which would create a manager-side
-// dependency tree the decorator package must stay clear of —
-// The string values are the source-of-truth contract;
+// dependency tree the decorator package must stay clear of �?// The string values are the source-of-truth contract;
 // the model file's constants must equal these.
 const (
 	model_DecisionApprove = "approve"

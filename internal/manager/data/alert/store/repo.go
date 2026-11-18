@@ -52,7 +52,7 @@ func (r *Repo) ListIncidents(ctx context.Context, f biz.IncidentFilter) ([]*mode
 
 // CountIncidents returns total matching rows ignoring Limit/Offset.
 // Mirrors ListIncidents's filter predicate so the per-page list and the
-// global count stay in sync 鈥?fixes the "badge says 1 but page shows 9"
+// global count stay in sync �?fixes the "badge says 1 but page shows 9"
 // bug caused by the handler taking total = len(items).
 func (r *Repo) CountIncidents(ctx context.Context, f biz.IncidentFilter) (int64, error) {
 	tx := dbx.WithContext(ctx, r.db).Model(&model.Incident{})
@@ -374,7 +374,7 @@ func (r *Repo) CountEventsByType(ctx context.Context, eventType string, since ti
 		tx = tx.Where("severity = ?", filterSeverity)
 	}
 	if filterRule != "" {
-		// Rule filter requires a join with alert_incidents 鈥?use a sub-
+		// Rule filter requires a join with alert_incidents �?use a sub-
 		// query so the index on incident_id stays useful.
 		tx = tx.Where("incident_id IN (?)", dbx.WithContext(ctx, r.db).
 			Model(&model.Incident{}).Select("id").Where("rule = ?", filterRule))
@@ -594,7 +594,7 @@ func (r *Repo) ListRules(ctx context.Context, scopeType string) ([]*model.Rule, 
 }
 
 // UpdateRule replaces editable fields of an existing rule. SourceType,
-// CreatedAt, CreatedBy and the unique RuleKey are preserved 鈥?caller must
+// CreatedAt, CreatedBy and the unique RuleKey are preserved �?caller must
 // pass the row's existing RuleKey.
 func (r *Repo) UpdateRule(ctx context.Context, id uint64, in *model.Rule) error {
 	if in == nil {
@@ -611,7 +611,7 @@ func (r *Repo) UpdateRule(ctx context.Context, id uint64, in *model.Rule) error 
 		"annotations_json": in.AnnotationsJSON,
 		"runbook_url":      in.RunbookURL,
 		// 鍙戦€佺瓥鐣?(send-policy): a map-based Updates only writes the keys
-		// listed here 鈥?omitting these three silently dropped every edit to
+		// listed here �?omitting these three silently dropped every edit to
 		// the rule's dampening window / threshold / pinned channels.
 		"notify_window_seconds":   in.NotifyWindowSeconds,
 		"notify_min_fires":        in.NotifyMinFires,
@@ -731,7 +731,7 @@ func (r *Repo) UpdateChannelEnabled(ctx context.Context, id uint64, enabled bool
 }
 
 // UpdateChannel rewrites editable fields of an existing channel row. ID,
-// CreatedAt and CreatedBy are preserved 鈥?caller passes the merged row.
+// CreatedAt and CreatedBy are preserved �?caller passes the merged row.
 func (r *Repo) UpdateChannel(ctx context.Context, id uint64, in *model.Channel) error {
 	if in == nil {
 		return errs.ErrInvalid

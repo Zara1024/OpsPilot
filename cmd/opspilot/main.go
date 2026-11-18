@@ -59,6 +59,7 @@ import (
 
 	"github.com/Zara1024/OpsPilot/internal/pkg/embedding"
 	"github.com/Zara1024/OpsPilot/internal/pkg/qdrantx"
+	"github.com/Zara1024/OpsPilot/internal/pkg/resultanalysis"
 	"github.com/Zara1024/OpsPilot/internal/pkg/tracing"
 
 	pkglogquery "github.com/Zara1024/OpsPilot/internal/pkg/logquery"
@@ -129,9 +130,11 @@ import (
 	managerbizsecret "github.com/Zara1024/OpsPilot/internal/manager/biz/secret"
 	managerbizsetting "github.com/Zara1024/OpsPilot/internal/manager/biz/setting"
 	managerbizskill "github.com/Zara1024/OpsPilot/internal/manager/biz/skill"
+	resultbiz "github.com/Zara1024/OpsPilot/internal/manager/biz/toolresult"
 	managerwebshellbiz "github.com/Zara1024/OpsPilot/internal/manager/biz/webshell"
 	externalmcpdata "github.com/Zara1024/OpsPilot/internal/manager/data/externalmcp"
 	manageraiopsdata "github.com/Zara1024/OpsPilot/internal/manager/data/aiops/store"
+	resultdata "github.com/Zara1024/OpsPilot/internal/manager/data/toolresult/store"
 	managerapprovaldata "github.com/Zara1024/OpsPilot/internal/manager/data/approval/store"
 	managerimbridgedata "github.com/Zara1024/OpsPilot/internal/manager/data/imbridge/store"
 	managerknowledgedata "github.com/Zara1024/OpsPilot/internal/manager/data/knowledge/store"
@@ -231,6 +234,16 @@ func init() {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == resultanalysis.WorkerArg {
+		if err := resultanalysis.Worker(os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			if errors.Is(err, resultanalysis.ErrOutputLimit) {
+				os.Exit(resultanalysis.OutputLimitExitCode)
+			}
+			os.Exit(1)
+		}
+		return
+	}
 	fmt.Fprintf(os.Stderr, "opspilot %s starting\n", version)
 
 	cfg, err := config.Load()
@@ -312,6 +325,7 @@ func main() {
 		managertopologydata.Migrate,
 		managermetricdata.Migrate,
 		manageraiopsdata.Migrate,
+		resultdata.Migrate,
 		externalmcpdata.Migrate,
 		managerbizskill.Migrate,
 		managersettingdata.Migrate,
@@ -1184,7 +1198,9 @@ func main() {
 	webSearchProbe := managerbizsetting.NewWebSearchProbe(managerbizsetting.NewWebSearchResolver(settingSvc))
 	integrationHandler = managerserverintegration.NewHandler(grafanaSvc, promProbe, lokiProbe, tempoIngestProbe, webSearchProbe)
 	integrationHandler.SetLLMRouter(llmRouter)
-	integrationHandler.SetLLMProbe(managerbizsetting.NewLLMConfigurationService(llmEnvDefaults, settingSvc))
+	llmConfiguration := managerbizsetting.NewLLMConfigurationService(llmEnvDefaults, settingSvc)
+	llmConfiguration.SetModelCatalog(llmRouter)
+	integrationHandler.SetLLMProbe(llmConfiguration)
 
 	// Prom-backed metric read handler (PR-F replacement for the MySQL
 	// fast path). When prom is disabled the handler still installs but
@@ -1401,6 +1417,60 @@ func main() {
 	// callback chain checks before each ChatModel turn — see Phase 4 cbDeps
 	// build below where the checker is set when the limit > 0.
 	aiopsRepo := manageraiopsdata.NewSessionRepo(db)
+	quota := resultdata.DefaultQuota
+	if value := os.Getenv("OPSPILOT_TOOL_RESULTS_MAX_BYTES"); value != "" {
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || parsed < 128<<20 {
+			log.Error("invalid tool result quota; using default")
+		} else {
+			quota = parsed
+		}
+	} else if value := os.Getenv("ONGRID_TOOL_RESULTS_MAX_BYTES"); value != "" {
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || parsed < 128<<20 {
+			log.Error("invalid tool result quota; using default")
+		} else {
+			quota = parsed
+		}
+	}
+	resultsDir := os.Getenv("OPSPILOT_TOOL_RESULTS_DIR")
+	if resultsDir == "" {
+		resultsDir = os.Getenv("ONGRID_TOOL_RESULTS_DIR")
+	}
+	if resultsDir == "" {
+		resultsDir = "/var/lib/opspilot/tool-results"
+	}
+	resultRepo := resultdata.New(db, resultsDir, quota)
+	results := resultbiz.New(resultRepo, aiopsRepo, []byte("tool-result-cursors:"+cfg.JWT.Secret), log)
+	analyzer, err := resultanalysis.NewClient()
+	if err != nil {
+		log.Error("tool result analysis disabled", slog.Any("err", err))
+	} else {
+		results.SetAnalyzer(analyzer)
+	}
+
+	if resultRepo != nil {
+		go func() {
+			tick := time.NewTicker(5 * time.Minute)
+			defer tick.Stop()
+			for {
+				pass, cancel := context.WithTimeout(rootCtx, 30*time.Second)
+				if _, err := resultRepo.Recover(pass); err != nil {
+					log.Error("tool results recovery failed", slog.Any("err", err))
+				}
+				if _, err := resultRepo.Cleanup(pass, time.Now().UTC()); err != nil {
+					log.Error("tool results cleanup failed", slog.Any("err", err))
+				}
+				cancel()
+				select {
+				case <-rootCtx.Done():
+					return
+				case <-tick.C:
+				}
+			}
+		}()
+	}
+
 	operationUC := managerbizaiops.NewOperationUsecase(aiopsRepo)
 	mutatingProposalRepo := manageraiopsdata.NewMutatingProposalRepo(db)
 	// PromQuerier is the interface tools/registry takes; passing a typed-nil
@@ -1419,6 +1489,7 @@ func main() {
 		traceQuerier = pkgtracequery.New(cfg.Traces.URL, log.With(slog.String("comp", "aiops-tracequery")))
 	}
 	toolsReg := aiopstools.NewRegistry(fbClient, edgeUC, deviceUC, promQuerier, logQuerier, traceQuerier, alertUC, log)
+	toolsReg.SetToolResults(results)
 	packetCaptureUC := managerbizpacketcapture.New(
 		managerpacketcapturedata.New(db),
 		fbClient,
@@ -1729,6 +1800,7 @@ func main() {
 	aiopsSvc.WithAPMSourceResolver(apmService)
 	aiopsSvc.SetAttachmentRepo(aiopsRepo)
 	aiopsSvc.SetModelCatalog(llmRouter)
+	aiopsSvc.SetToolResults(results)
 	aiopsHandler := managerserveraiops.NewHandler(aiopsSvc)
 	aiopsHandler.SetOperationActions(operationUC, func(ctx context.Context, operation *manageraiopsmodel.Operation, action string) (*manageraiopsmodel.Operation, error) {
 		if operation == nil || action != "cancel" || operation.Kind != "packet_capture_session" {
@@ -1953,6 +2025,7 @@ func main() {
 				// chat_messages and synthesise a low-confidence
 				// report instead of an empty failure.
 				WithMessageReader(aiopsRepo).
+				WithEvidenceReader(aiopsRepo).
 				WithLocaleResolver(settingSvc)
 			rcaInv = rcaInvConcrete
 			log.Info("alert: structured RCA investigator wired",
@@ -2070,6 +2143,7 @@ func main() {
 
 	alertHandler := managerserveralert.NewHandler(alertSvc, alertSvc, alertSvc).
 		WithInvestigations(manageralertdata.NewInvestigationRepo(db)).
+		WithEvidenceReader(aiopsRepo).
 		WithRuntime(cfg.Alert.EvaluatorInterval, cfg.Alert.Cooldown)
 	if rcaInvConcrete != nil {
 		alertHandler.WithInvestigationTrigger(rcaInvConcrete)
@@ -2234,6 +2308,7 @@ func main() {
 	// actions (agent cloud-shell, etc.). Additive — empty until a producer
 	// proposes; producers register their execute-on-approve executor.
 	approvalUC := managerbizapproval.NewUsecase(managerapprovaldata.NewRepo(db), log.With(slog.String("comp", "approval")))
+	approvalUC.SetToolResults(toolsReg.ToolResults())
 	humanApprovalBroker.SetUsecase(approvalUC)
 	approvalUC.RegisterExecutor(genericAgentToolApprovalKind, humanApprovalBroker.Execute)
 	approvalHandler := managerserverapproval.NewHandler(approvalUC)
@@ -4235,6 +4310,7 @@ func buildAIOpsRuntime(
 		SkillRegistry:   skillReg,
 		AgentRegistry:   agentReg,
 		Sessions:        sessions,
+		Results:         toolsReg.ToolResults(),
 		ChatModel:       chatModel,
 		ToolBag:         wrapped,
 		MentionResolver: nil, // wired below if we have a searcher

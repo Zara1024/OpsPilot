@@ -22,12 +22,12 @@ import (
 type LLMSettingsResolver struct {
 	svc *Service
 
-	// Env defaults â€” used when the matching DB row is absent. Non-credential
+	// Env defaults â€?used when the matching DB row is absent. Non-credential
 	// fields also keep their legacy empty-value fallback.
 	defaults map[string]EnvProviderDefaults
 
 	// envDefaultProvider is the env-seeded default provider id (e.g.
-	// from OPSPILOT_LLM_DEFAULT_PROVIDER). Used when the DB has no
+	// from ONGRID_LLM_DEFAULT_PROVIDER). Used when the DB has no
 	// default_provider row.
 	envDefaultProvider string
 }
@@ -37,7 +37,7 @@ type LLMSettingsResolver struct {
 // deployments survive without an admin filling in the UI first.
 type EnvProviderDefaults struct {
 	Label   string   // "OpenAI" / "Anthropic" / "æ™ºè°± GLM" / "Gemini"
-	APIKey  string   // env-seeded key (e.g. OPSPILOT_OPENAI_API_KEY)
+	APIKey  string   // env-seeded key (e.g. ONGRID_OPENAI_API_KEY)
 	Model   string   // env-seeded default model
 	BaseURL string   // env-seeded base URL
 	Models  []string // env-seeded model list
@@ -141,7 +141,7 @@ func allProviderKeys() []providerKeys {
 // catalog every call (the router caches the result for 60s; the
 // underlying setting.Service caches for 60s as well). On a transient DB
 // error any single provider may fall back to its env defaults, but a
-// global error is rare â€” Get returns (val, found, err) and treats
+// global error is rare â€?Get returns (val, found, err) and treats
 // "row absent" as found=false rather than err. An empty providers slice is an
 // authoritative no-provider catalog so explicit disable overrides are honored.
 func (r *LLMSettingsResolver) ResolveProviders(ctx context.Context) ([]llm.ProviderConfig, string, error) {
@@ -156,14 +156,14 @@ func (r *LLMSettingsResolver) ResolveProviders(ctx context.Context) ([]llm.Provi
 			apiKey = def.APIKey
 		}
 		if strings.TrimSpace(apiKey) == "" {
-			// Skip â€” provider not configured anywhere.
+			// Skip â€?provider not configured anywhere.
 			continue
 		}
 		baseURL, _, _ := r.svc.Get(ctx, model.CategoryLLM, pk.baseURL)
 		if strings.TrimSpace(baseURL) == "" {
 			baseURL = def.BaseURL
 		}
-		// A custom provider has no default endpoint â€” without a base URL the
+		// A custom provider has no default endpoint â€?without a base URL the
 		// SDK would silently fall back to OpenAI's, sending the operator's key
 		// to the wrong host. Skip until a base URL is supplied.
 		if pk.id == model.LLMProviderCustom && strings.TrimSpace(baseURL) == "" {
@@ -225,13 +225,15 @@ func (r *LLMSettingsResolver) ResolveProviders(ctx context.Context) ([]llm.Provi
 			}
 		}
 		out = append(out, llm.ProviderConfig{
-			TLSInsecure: tlsInsecure,
-			ID:          pk.id,
-			Label:       label,
-			APIKey:      apiKey,
-			Model:       defaultModel,
-			BaseURL:     baseURL,
-			Models:      models,
+			ReasoningOverrides:     r.reasoningOverrides(ctx, pk.id),
+			DefaultReasoningEffort: r.defaultReasoningEffort(ctx, pk.id, defaultModel),
+			TLSInsecure:            tlsInsecure,
+			ID:                     pk.id,
+			Label:                  label,
+			APIKey:                 apiKey,
+			Model:                  defaultModel,
+			BaseURL:                baseURL,
+			Models:                 models,
 		})
 	}
 
@@ -242,6 +244,23 @@ func (r *LLMSettingsResolver) ResolveProviders(ctx context.Context) ([]llm.Provi
 		def = strings.TrimSpace(r.envDefaultProvider)
 	}
 	return out, def, nil
+}
+
+func (r *LLMSettingsResolver) reasoningOverrides(ctx context.Context, provider string) map[string]llm.ReasoningOverride {
+	raw, found, err := r.svc.Get(ctx, model.CategoryLLM, provider+"_reasoning_overrides")
+	if err != nil {
+		r.svc.log.Warn("read reasoning overrides failed", "provider", provider)
+		return nil
+	}
+	if !found || raw == "" {
+		return nil
+	}
+	overrides, err := decodeReasoningOverrides(provider, raw)
+	if err != nil {
+		r.svc.log.Warn("invalid reasoning overrides; using automatic capabilities", "provider", provider)
+		return nil
+	}
+	return overrides
 }
 
 // EncodeModelsList serialises a closed-set of model slugs into the JSON

@@ -58,7 +58,8 @@ var ErrUnknownProvider = errors.New("llm: unknown provider")
 // providerOpts is the impl-specific options bag carried by WithProvider.
 // Kept private so callers reach it only via the WithProvider helper.
 type providerOpts struct {
-	provider string
+	provider        string
+	reasoningEffort string
 }
 
 // WithProvider returns an eino model.Option that selects which inner
@@ -74,6 +75,11 @@ func WithProvider(provider string) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *providerOpts) {
 		o.provider = provider
 	})
+}
+
+// WithReasoningEffort sets a documented effort for this model call.
+func WithReasoningEffort(effort string) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *providerOpts) { o.reasoningEffort = effort })
 }
 
 // RoutingChatModel implements eino's deprecated ChatModel surface (which
@@ -361,6 +367,9 @@ func (c *clientChatModel) Generate(ctx context.Context, input []*schema.Message,
 	if err != nil {
 		return nil, err
 	}
+	specific := model.GetImplSpecificOptions(&providerOpts{}, opts...)
+	req.Provider = specific.provider
+	req.ReasoningEffort = specific.reasoningEffort
 	resp, err := c.inner.Chat(ctx, req)
 	if err != nil {
 		return nil, err
@@ -413,9 +422,10 @@ func (c *clientChatModel) buildChatReq(input []*schema.Message, common *model.Op
 	}
 
 	req := ChatReq{
-		Messages: msgs,
-		Tools:    llmTools,
-		UserID:   c.userID,
+		Messages:     msgs,
+		Tools:        llmTools,
+		UserID:       c.userID,
+		DisableTools: common.ToolChoice != nil && *common.ToolChoice == schema.ToolChoiceForbidden,
 	}
 	if common.Temperature != nil {
 		req.Temperature = *common.Temperature

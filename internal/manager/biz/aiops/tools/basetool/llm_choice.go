@@ -8,7 +8,7 @@
 // Why it matters: without this, runWorker's g.Invoke does not thread
 // any chatModelOpts, so the RoutingChatModel falls back to its built-in
 // default. Installs without an OpenAI API key see specialists fail with
-// `provider "openai" not configured` â€” the cluster default (e.g.
+// `provider "openai" not configured` â€?the cluster default (e.g.
 // deepseek/zhipu) the user picked for the coordinator is the right
 // answer; we just have to forward it.
 
@@ -48,4 +48,15 @@ func LLMProviderFromContext(ctx context.Context) string {
 func LLMModelFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(llmModelCtxKey).(string)
 	return v
+}
+
+// The selected effort follows delegated workers along with the model route.
+type reasoningEffortCtxKey struct{}
+
+func WithReasoningEffort(ctx context.Context, effort string) context.Context {
+	return context.WithValue(ctx, reasoningEffortCtxKey{}, effort)
+}
+func ReasoningEffortFromContext(ctx context.Context) string {
+	effort, _ := ctx.Value(reasoningEffortCtxKey{}).(string)
+	return effort
 }

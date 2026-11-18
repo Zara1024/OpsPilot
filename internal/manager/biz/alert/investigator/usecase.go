@@ -6,12 +6,11 @@
 // writes the result back as an investigation_reports row that the
 // SPA's IncidentDetail page renders.
 //
-// PR-2 first version: the worker's final assistant message is written
-// verbatim into findings_md, with root_cause set to the first line
-// (or first ~120 chars). PR-3 wires a structured second LLM pass over
-// the transcript to fill the rest of the fields.
+// The final narrative is preserved in findings_md. Structured extraction
+// cites persisted observations, and deterministic checks record provenance
+// separately from the report lifecycle and model self-assessment.
 //
-// Failure modes are intentionally non-fatal — a missing chatruntime
+// Failure modes are intentionally non-fatal �?a missing chatruntime
 // runtime, an over-budget tenant, or an LLM crash all log + set the
 // report row to skipped/failed without ever blocking the originating
 // alert pipeline.
@@ -26,12 +25,12 @@ import (
 	"sync"
 	"time"
 
-	chatruntime "github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/chatruntime"
+	chatruntime "github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/runtime/contract"
 	aiopsmodel "github.com/Zara1024/OpsPilot/internal/manager/model/aiops"
 	alertmodel "github.com/Zara1024/OpsPilot/internal/manager/model/alert"
 )
 
-// Repo is the persistence contract — implemented by
+// Repo is the persistence contract �?implemented by
 // data/alert/store.InvestigationRepo.
 type Repo interface {
 	Create(ctx context.Context, rep *alertmodel.InvestigationReport) error
@@ -43,7 +42,7 @@ type Repo interface {
 	// (POST /v1/alerts/incidents/{id}/investigation always force-overwrites).
 	GetByIncident(ctx context.Context, incidentID uint64) (*alertmodel.InvestigationReport, error)
 	DeleteByIncident(ctx context.Context, incidentID uint64) error
-	// ListIncidentsWithoutReport powers the boot compensation pass — see
+	// ListIncidentsWithoutReport powers the boot compensation pass �?see
 	// BackfillUnstartedIncidents. Returns incident IDs in [since, now)
 	// that have no investigation_reports row at all, ordered freshest first.
 	ListIncidentsWithoutReport(ctx context.Context, since time.Time, limit int) ([]uint64, error)
@@ -62,6 +61,7 @@ type ReadyFields struct {
 	PinpointedTargetJSON  string
 	RelatedAlertsJSON     string
 	EvidenceJSON          string
+	EvidenceCheckJSON     *string
 	SuggestedActionsJSON  string
 	FindingsMD            string
 	Confidence            *float64
@@ -81,11 +81,11 @@ type WorkerSpawner interface {
 	StopWorker(ctx context.Context, workerID string) error
 }
 
-// MessageReader is an optional seam — when wired, the investigator
+// MessageReader is an optional seam �?when wired, the investigator
 // can salvage partial RCA work after a worker hits the eino MaxStep
 // cap. Without it, MaxStep just lands as status=failed. The salvage
 // path concatenates the agent's tool results into a synthetic
-// finalAnswer and runs Pass-2 extraction on that — operator gets a
+// finalAnswer and runs Pass-2 extraction on that �?operator gets a
 // low-confidence partial report instead of an empty failure card.
 // Implemented by data/aiops/store.SessionRepo.ListMessages.
 type MessageReader interface {
@@ -100,13 +100,13 @@ type LocaleResolver interface {
 }
 
 // RelatedAlertQuerier finds incidents that fired close in time to the
-// target incident — used to populate the report's related_alerts
+// target incident �?used to populate the report's related_alerts
 // section so operators see co-occurring symptoms (e.g. swap_high +
 // disk_high firing within 30s of each other on the same device).
 //
 // MVP scope: same-device window. Topology-aware fan-out
 // ("incidents on devices reachable via depends_on") lives in a
-// follow-up — needs the topology repo passed in.
+// follow-up �?needs the topology repo passed in.
 type RelatedAlertQuerier interface {
 	RelatedToIncident(ctx context.Context, target *alertmodel.Incident, halfWindow time.Duration, limit int) ([]*alertmodel.Incident, error)
 }
@@ -115,12 +115,12 @@ type RelatedAlertQuerier interface {
 type Config struct {
 	// Enabled gates the whole usecase. When false, Enqueue is a no-op.
 	// Operators can flip this via env at boot
-	// (OPSPILOT_INVESTIGATOR_ENABLED=true) — first-version default OFF
+	// (ONGRID_INVESTIGATOR_ENABLED=true) �?first-version default OFF
 	// so existing deployments don't suddenly start burning LLM tokens.
 	Enabled bool
 
 	// MinSeverity is the lowest alert severity that triggers an
-	// investigation. Defaults to "warning" — anything below (info /
+	// investigation. Defaults to "warning" �?anything below (info /
 	// debug) is skipped silently to keep cost bounded.
 	MinSeverity string
 
@@ -138,20 +138,20 @@ type Config struct {
 	AgentName string
 
 	// SummarizerModel optionally pins the model used for the structured
-	// extraction (PR-3). Empty → use the LLM router default, which tracks
+	// extraction (PR-3). Empty �?use the LLM router default, which tracks
 	// the home-page/default_provider model selection.
 	SummarizerModel string
 
 	// SummarizerProvider optionally routes extraction to a specific
-	// provider (e.g. "zhipu" for GLM-4-air). Empty → router default.
+	// provider (e.g. "zhipu" for GLM-4-air). Empty �?router default.
 	SummarizerProvider string
 
 	// SummarizerTimeout bounds the extraction LLM call. Default 30s
-	// — short prompt, short reply, no tool loop.
+	// �?short prompt, short reply, no tool loop.
 	SummarizerTimeout time.Duration
 
 	// MaxConcurrent caps the total in-flight investigation workers
-	// across the whole manager process. 0 → no cap (legacy behaviour).
+	// across the whole manager process. 0 �?no cap (legacy behaviour).
 	// Default 5 in NewUsecase. Over-cap Enqueue calls mark the row
 	// skipped with reason="concurrency limit (N inflight)" rather
 	// than queueing, so the operator sees the cap immediately
@@ -160,10 +160,9 @@ type Config struct {
 
 	// DefaultLocale is the language the auto-fire / backfill path uses
 	// for the worker + extractor prompts. Manual triggers can override
-	// per-request via the HTTP handler's Accept-Language → ForceEnqueue.
-	// "en" → "Respond in English.", "zh" → "请用中文回答。", empty →
-	// no directive (persona's language wins, currently Chinese). Set via
-	// OPSPILOT_DEFAULT_LOCALE env at boot — see [[feedback_ai_output_locale]]:
+	// per-request via the HTTP handler's Accept-Language �?ForceEnqueue.
+	// "en" �?"Respond in English.", "zh" �?"请用中文回答�?, empty �?	// no directive (persona's language wins, currently Chinese). Set via
+	// ONGRID_DEFAULT_LOCALE env at boot �?see [[feedback_ai_output_locale]]:
 	// AI 输出语言跟随用户 UI locale.
 	DefaultLocale string
 }
@@ -175,6 +174,7 @@ type Usecase struct {
 	summarizer LLMSummarizer
 	related    RelatedAlertQuerier
 	messages   MessageReader
+	evidence   EvidenceReader
 	locales    LocaleResolver
 	cfg        Config
 	log        *slog.Logger
@@ -190,16 +190,16 @@ type Usecase struct {
 	// sem caps total concurrent workers (cfg.MaxConcurrent). Buffered
 	// chan acts as a counting semaphore: send to acquire, recv to
 	// release. nil when MaxConcurrent <= 0 (uncapped). Try-acquire is
-	// non-blocking — over-cap callers mark the row skipped instead of
+	// non-blocking �?over-cap callers mark the row skipped instead of
 	// queueing.
 	sem chan struct{}
 }
 
-// NewUsecase wires the orchestrator. spawner may be nil — when nil,
+// NewUsecase wires the orchestrator. spawner may be nil �?when nil,
 // Enqueue returns a "skipped: spawner not wired" status row instead
-// of attempting to invoke the worker. summarizer may be nil — when
+// of attempting to invoke the worker. summarizer may be nil �?when
 // nil, the structured-extraction step is skipped and the report
-// ships findings_md + first-line root_cause only.
+// preserves findings_md and marks structured extraction incomplete.
 func NewUsecase(repo Repo, spawner WorkerSpawner, summarizer LLMSummarizer, cfg Config, log *slog.Logger) *Usecase {
 	if log == nil {
 		log = slog.Default()
@@ -250,10 +250,14 @@ func (uc *Usecase) WithRelatedQuerier(q RelatedAlertQuerier) *Usecase {
 	return uc
 }
 
-// WithMessageReader wires the optional partial-result salvage path —
-// see MessageReader doc + the "exceeds max steps" handler in run().
+// WithMessageReader wires the optional partial-result salvage path �?// see MessageReader doc + the "exceeds max steps" handler in run().
 func (uc *Usecase) WithMessageReader(m MessageReader) *Usecase {
 	uc.messages = m
+	return uc
+}
+
+func (uc *Usecase) WithEvidenceReader(r EvidenceReader) *Usecase {
+	uc.evidence = r
 	return uc
 }
 
@@ -290,7 +294,7 @@ func (uc *Usecase) releaseSem() {
 }
 
 // InflightCount returns the current count of running investigator
-// workers. Exposed for the prom self-obs sampler. Cheap — reads the
+// workers. Exposed for the prom self-obs sampler. Cheap �?reads the
 // channel length under no lock.
 func (uc *Usecase) InflightCount() int {
 	if uc == nil || uc.sem == nil {
@@ -300,7 +304,7 @@ func (uc *Usecase) InflightCount() int {
 }
 
 // logger returns a non-nil *slog.Logger so call sites can use it
-// without checking nil — tests sometimes construct &Usecase{} directly
+// without checking nil �?tests sometimes construct &Usecase{} directly
 // without going through NewUsecase.
 func (uc *Usecase) logger() *slog.Logger {
 	if uc.log != nil {
@@ -311,8 +315,7 @@ func (uc *Usecase) logger() *slog.Logger {
 
 // InvestigateAsync satisfies biz/alert.Investigator. Called from
 // alert.Usecase.recordFire on the isNew transition (so reopens or
-// follow-up notifies don't double-spawn). Never blocks the caller —
-// gate checks are fast DB reads and the actual investigation runs in
+// follow-up notifies don't double-spawn). Never blocks the caller �?// gate checks are fast DB reads and the actual investigation runs in
 // its own goroutine.
 //
 // Returns nothing (per the alert.Investigator contract): gate failures
@@ -333,7 +336,7 @@ type EnqueueOpts struct {
 	Locale string
 }
 
-// Enqueue is the lower-level entry that takes a context — exposed for
+// Enqueue is the lower-level entry that takes a context �?exposed for
 // tests + callers that have a richer context (deadline / tracing) to
 // pass through. Most production callers should use InvestigateAsync.
 // Delegates to EnqueueWith with empty opts (Config.DefaultLocale wins).
@@ -342,7 +345,7 @@ func (uc *Usecase) Enqueue(ctx context.Context, incident *alertmodel.Incident) {
 }
 
 // EnqueueWith is Enqueue with request context. Locale resolution is:
-// live Agent setting → request locale → deployment default.
+// live Agent setting �?request locale �?deployment default.
 func (uc *Usecase) EnqueueWith(ctx context.Context, incident *alertmodel.Incident, opts EnqueueOpts) {
 	if uc == nil || !uc.cfg.Enabled {
 		return
@@ -351,7 +354,7 @@ func (uc *Usecase) EnqueueWith(ctx context.Context, incident *alertmodel.Inciden
 		return
 	}
 
-	// Gate 1: severity floor. info / debug skip silently — no row
+	// Gate 1: severity floor. info / debug skip silently �?no row
 	// written, no log noise. The threshold is configurable; default
 	// "warning" means we only investigate warning / error / critical.
 	if !severityAtLeast(incident.Severity, uc.cfg.MinSeverity) {
@@ -361,10 +364,9 @@ func (uc *Usecase) EnqueueWith(ctx context.Context, incident *alertmodel.Inciden
 	// Gate 2: in-process inflight guard, keyed by incident_id. Multiple
 	// concurrent Enqueue calls for the SAME incident (e.g. the alert
 	// pipeline double-fires on a flap) get coalesced to one spawn.
-	// Different incidents — even on the same (rule, device) tuple —
-	// run in parallel: each is a separate failure event and deserves
+	// Different incidents �?even on the same (rule, device) tuple �?	// run in parallel: each is a separate failure event and deserves
 	// its own analysis (per-incident parallelism feedback 2026-05-19).
-	// The prior (rule, device, window=5m) dedup was over-broad — it
+	// The prior (rule, device, window=5m) dedup was over-broad �?it
 	// suppressed analysis of distinct incidents that happened to share
 	// a device, leaving operators with a confusing "skipped" UI state.
 	// DB uniqueness on incident_id remains the durable check (Create
@@ -411,8 +413,7 @@ func (uc *Usecase) EnqueueWith(ctx context.Context, incident *alertmodel.Inciden
 
 	// Create the pending row up-front so the SPA can show "investigating..."
 	// even before the worker starts. Uniqueness on incident_id means a
-	// concurrent Enqueue for the same incident returns ErrConflict —
-	// caught + skipped below.
+	// concurrent Enqueue for the same incident returns ErrConflict �?	// caught + skipped below.
 	rep := &alertmodel.InvestigationReport{
 		IncidentID: incident.ID,
 		Status:     alertmodel.InvestigationStatusPending,
@@ -429,7 +430,7 @@ func (uc *Usecase) EnqueueWith(ctx context.Context, incident *alertmodel.Inciden
 		return
 	}
 
-	// Detach the actual run from the caller's context — the alert
+	// Detach the actual run from the caller's context �?the alert
 	// pipeline's ctx is request-scoped and short, the investigation
 	// is minutes-scale. Spawn the goroutine and return immediately.
 	// run() defers releaseSem so the slot frees on any termination
@@ -459,20 +460,20 @@ func (uc *Usecase) resolveLocale(ctx context.Context, requested string) string {
 //   - No dedup gate (operator explicitly asked for a fresh run; the
 //     dedup window is meant to suppress alert storms on the auto path).
 //   - Stops + deletes any existing report for this incident first:
-//     pending/running → kill the worker; ready/failed/skipped → just
+//     pending/running �?kill the worker; ready/failed/skipped �?just
 //     wipe the row so the next Create succeeds against the unique
 //     incident_id index.
 //   - Releases the in-process inflight guard before re-enqueuing so a
 //     stale entry from a crashed prior run doesn't block.
 //
-// Severity floor (gate 1) still applies — there's no use spawning an
+// Severity floor (gate 1) still applies �?there's no use spawning an
 // info-level RCA even on explicit request.
 func (uc *Usecase) ForceEnqueue(ctx context.Context, incident *alertmodel.Incident) error {
 	return uc.ForceEnqueueWith(ctx, incident, EnqueueOpts{})
 }
 
 // ForceEnqueueWith is ForceEnqueue with per-call overrides. HTTP handler
-// uses this to thread Accept-Language → opts.Locale so the operator's
+// uses this to thread Accept-Language �?opts.Locale so the operator's
 // current UI locale governs the regenerated report.
 func (uc *Usecase) ForceEnqueueWith(ctx context.Context, incident *alertmodel.Incident, opts EnqueueOpts) error {
 	if uc == nil {
@@ -491,7 +492,7 @@ func (uc *Usecase) ForceEnqueueWith(ctx context.Context, incident *alertmodel.In
 	// Stop any visibly-running prior worker so it can't write back to
 	// a to-be-deleted row. GetByIncident uses gorm's default scope so
 	// it doesn't see rows that were already soft-deleted by an earlier
-	// ForceEnqueue — that's fine, those rows have no live worker.
+	// ForceEnqueue �?that's fine, those rows have no live worker.
 	if prior, err := uc.repo.GetByIncident(ctx, incident.ID); err == nil && prior != nil {
 		if prior.WorkerID != nil && *prior.WorkerID != "" && uc.spawner != nil {
 			if stopErr := uc.spawner.StopWorker(ctx, *prior.WorkerID); stopErr != nil {
@@ -500,7 +501,7 @@ func (uc *Usecase) ForceEnqueueWith(ctx context.Context, incident *alertmodel.In
 			}
 		}
 	}
-	// Always hard-delete by incident_id — covers both the visible row
+	// Always hard-delete by incident_id �?covers both the visible row
 	// (just stopped its worker) and any soft-deleted row from prior
 	// ForceEnqueue calls. The unique index uniq_invreports_incident is
 	// over incident_id alone (no deleted_at filter), so a left-behind
@@ -526,20 +527,19 @@ func (uc *Usecase) ForceEnqueueWith(ctx context.Context, incident *alertmodel.In
 // without any investigation_reports row and enqueues an investigation for
 // each through the normal Enqueue path (severity, in-process inflight, and
 // concurrency-cap gates all still apply). Returns the number of incidents
-// it dispatched (not necessarily the number that will produce a report —
-// gates may still skip).
+// it dispatched (not necessarily the number that will produce a report �?// gates may still skip).
 //
 // Why this exists: SetInvestigator is wired only at manager startup, and
 // the structured RCA chain is only built when buildAIOpsRuntime succeeds,
 // which requires at least one LLM provider configured. Fresh installs
 // (and any time the manager boots before the operator has set a provider
 // key) thus have a window where incidents fire with no investigator wired
-// — RecordFiring silently skips, no row is written, and the IncidentDetail
+// �?RecordFiring silently skips, no row is written, and the IncidentDetail
 // page shows status=not_started indefinitely. Once the operator adds a
 // provider and the manager restarts, this pass repairs the window.
 //
 // Bounded by `limit` to cap the LLM cost of a burst (the global concurrency
-// cap in Enqueue further damps the burst — over-cap calls land as skipped
+// cap in Enqueue further damps the burst �?over-cap calls land as skipped
 // rows rather than queueing).
 func (uc *Usecase) BackfillUnstartedIncidents(ctx context.Context, since time.Time, limit int, loadIncident IncidentLoader) (int, error) {
 	if uc == nil || !uc.cfg.Enabled || loadIncident == nil {
@@ -557,7 +557,7 @@ func (uc *Usecase) BackfillUnstartedIncidents(ctx context.Context, since time.Ti
 				slog.Uint64("incident_id", id), slog.Any("err", lerr))
 			continue
 		}
-		// Skip resolved incidents — investigating a closed alert produces
+		// Skip resolved incidents �?investigating a closed alert produces
 		// stale findings and burns LLM cost for no operator benefit.
 		if inc.Status == alertmodel.IncidentStatusResolved {
 			continue
@@ -582,7 +582,7 @@ func (uc *Usecase) run(reportID string, incident alertmodel.Incident, dedupKeyVa
 		delete(uc.inflight, dedupKeyVal)
 		uc.inflightMu.Unlock()
 		// Release the concurrency-cap slot. Always paired with the
-		// tryAcquireSem in Enqueue — covers normal completion AND
+		// tryAcquireSem in Enqueue �?covers normal completion AND
 		// panic / spawn-failure paths.
 		uc.releaseSem()
 	}()
@@ -602,7 +602,7 @@ func (uc *Usecase) run(reportID string, incident alertmodel.Incident, dedupKeyVa
 	worker, err := uc.spawner.SpawnWorker(ctx, chatruntime.SpawnRequest{
 		AgentName:   uc.cfg.AgentName,
 		Prompt:      prompt,
-		Background:  false, // sync — this goroutine blocks until terminal
+		Background:  false, // sync �?this goroutine blocks until terminal
 		SessionKind: "investigation",
 	})
 	if err != nil {
@@ -615,7 +615,7 @@ func (uc *Usecase) run(reportID string, incident alertmodel.Incident, dedupKeyVa
 		return
 	}
 	if worker == nil {
-		// Spawner returned (nil, nil) — only seen in tests with a fake
+		// Spawner returned (nil, nil) �?only seen in tests with a fake
 		// spawner that wasn't fully configured, but the dedup-gate
 		// removal unmasked the path. Fail gracefully so the row at
 		// least reaches a terminal state.
@@ -637,7 +637,7 @@ func (uc *Usecase) run(reportID string, incident alertmodel.Incident, dedupKeyVa
 			slog.String("err", workerErr))
 		// Salvage path: when the eino ReAct graph runs out of step
 		// budget, the worker has typically called 10+ tools and
-		// gathered useful data — it just never wrote the final
+		// gathered useful data �?it just never wrote the final
 		// synthesis turn. Concatenate the trail and let Pass-2
 		// produce a partial report. The operator gets findings +
 		// suggested actions with a low-confidence flag instead of an
@@ -670,14 +670,9 @@ func (uc *Usecase) run(reportID string, incident alertmodel.Incident, dedupKeyVa
 		return
 	}
 
-	// PR-3: structured extraction. Falls back internally to the first-
-	// paragraph heuristic when summarizer is nil / LLM errors / JSON
-	// parse fails — caller sees a fully-populated ReadyFields either way.
-	// tool_call_count is read back from the worker transcript (chat_messages
-	// by session_id) so the report + UI show how many tools the
-	// investigation actually invoked instead of a hardcoded 0.
-	toolCalls := uc.countToolCalls(worker.SessionID)
-	fields := uc.extractStructured(context.Background(), incident, finalAnswer, toolCalls, locale)
+	// Post-processing keeps its own bounded timeouts after the worker finishes.
+	sources := uc.collectEvidence(context.Background(), worker.SessionID)
+	fields := uc.extractStructured(context.Background(), incident, finalAnswer, sources.CallCount, locale, sources)
 
 	if err := uc.repo.MarkReady(context.Background(), reportID, fields); err != nil {
 		uc.log.Warn("mark ready failed",
@@ -697,7 +692,7 @@ func (uc *Usecase) run(reportID string, incident alertmodel.Incident, dedupKeyVa
 // to know where to start without making it dig through unrelated
 // state. The persona body provides the methodology; this prompt is
 // just the "what fired" payload. locale overrides the persona's
-// implicit language (the persona is currently Chinese) — see
+// implicit language (the persona is currently Chinese) �?see
 // [[feedback_ai_output_locale]]: AI 输出语言跟随用户 UI locale.
 func renderAlertPrompt(in *alertmodel.Incident, locale string) string {
 	var b strings.Builder
@@ -724,15 +719,15 @@ func renderAlertPrompt(in *alertmodel.Incident, locale string) string {
 		b.WriteString(fmt.Sprintf("  description: %s\n", in.Description))
 	}
 	b.WriteString("\nStart with correlate_incident to pull metrics + logs + traces + topology around the fire window. ")
-	b.WriteString("Then drill in to identify the specific process / service / time. End with a clear root-cause paragraph.\n")
-	// HARD budget — keep it in the user prompt because models (especially
+	b.WriteString("Then investigate causes supported by the observations. Report confirmed facts, supported explanations or hypotheses, remaining unknowns, and useful next checks. A specific cause may remain unknown; do not invent a causal chain or onset time. Keep the same uncertainty in the narrative and conclusion.\n")
+	// HARD budget �?keep it in the user prompt because models (especially
 	// GLM / non-frontier) follow user-message constraints more strictly
 	// than system-message ones. Without this, repeated empty logql/promql
 	// variants burn the eino MaxStep cap (v0.7.51..v0.7.55 failed RCAs).
 	b.WriteString("\nBUDGET: hard cap 10 tool calls. By tool call #7 you MUST start writing the final report; by #10 you MUST emit it even if some signals are unclear. ")
-	b.WriteString("If a tool returns empty (result:[] or streams:[]) twice in the same direction, STOP that line — empty is a finding, write it into the report and move on. ")
+	b.WriteString("If a tool returns empty (result:[] or streams:[]) twice in the same direction, STOP that line. Record that the query had no matches, not that the event is absent or the target healthy. Failed queries mean evidence was not obtained. Move on. ")
 	b.WriteString("Never call the same tool more than 3 times.\n")
-	// Language directive last — last-in-prompt instructions are stickier in
+	// Language directive last �?last-in-prompt instructions are stickier in
 	// practice, and the persona file (Chinese) tries to set the language
 	// implicitly. Overriding here keeps the persona swappable.
 	if d := localeDirective(locale); d != "" {
@@ -745,16 +740,16 @@ func renderAlertPrompt(in *alertmodel.Incident, locale string) string {
 
 // localeDirective renders an explicit "write the report in <lang>" line
 // from a locale tag. Empty / unknown locales fall through to "" so the
-// persona's implicit language wins (currently Chinese — see
+// persona's implicit language wins (currently Chinese �?see
 // agents/incident-investigator.md). Accepts "en" / "en-US" / "zh" /
 // "zh-CN" etc.; only the primary subtag matters.
 func localeDirective(locale string) string {
 	primary := strings.ToLower(strings.SplitN(strings.TrimSpace(locale), "-", 2)[0])
 	switch primary {
 	case "en":
-		return "LANGUAGE: Write the entire final report in English. Every field — root cause, causal chain, evidence summaries, suggested actions — must be English. The persona description happens to be Chinese; ignore that and respond in English."
+		return "LANGUAGE: Write the entire final report in English. Every field �?observed facts, cause assessment, unknowns, suggested actions �?must be English. The persona description happens to be Chinese; ignore that and respond in English."
 	case "zh":
-		return "LANGUAGE: 全程用简体中文撰写最终报告（根因 / 因果链 / 证据 / 建议动作 各字段都用中文）。"
+		return "LANGUAGE: 全程用简体中文撰写最终报告（已确认事�?/ 原因判断 / 未确认部�?/ 建议动作 各字段都用中文）�?
 	default:
 		return ""
 	}
@@ -776,36 +771,12 @@ func isMaxStepsError(s string) bool {
 		strings.Contains(low, "graphrunerror")
 }
 
-// countToolCalls reads the worker's transcript and counts tool-result
-// turns (role=="tool") — i.e. how many tools the investigation actually
-// invoked. Best-effort: returns 0 when the message reader isn't wired or
-// the session has no rows. Surfaces as the report's tool_call_count and
-// the "调查过程" step count on the incident page (previously hardcoded 0).
-func (uc *Usecase) countToolCalls(sessionID string) int {
-	if uc.messages == nil || sessionID == "" {
-		return 0
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	msgs, err := uc.messages.ListMessages(ctx, sessionID, 200)
-	if err != nil {
-		return 0
-	}
-	n := 0
-	for _, m := range msgs {
-		if m != nil && m.Role == "tool" {
-			n++
-		}
-	}
-	return n
-}
-
 // salvagePartialAnswer pulls the worker's chat trail and synthesises a
 // markdown summary of what it discovered before running out of budget.
 // Returns "" when no useful messages were captured (e.g. session id
 // missing, or the worker errored before any tool ran).
 //
-// The output is intentionally raw — Pass-2 then either extracts
+// The output is intentionally raw �?Pass-2 then either extracts
 // structure from it, or it falls through into findings_md verbatim.
 func (uc *Usecase) salvagePartialAnswer(sessionID string) string {
 	if uc.messages == nil || sessionID == "" {
@@ -813,7 +784,7 @@ func (uc *Usecase) salvagePartialAnswer(sessionID string) string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	// Cap at 100 — enough for the longest possible ReAct loop (25 turns
+	// Cap at 100 �?enough for the longest possible ReAct loop (25 turns
 	// × 2 msg + tool results = ~75) without unbounded growth.
 	msgs, err := uc.messages.ListMessages(ctx, sessionID, 100)
 	if err != nil || len(msgs) == 0 {
@@ -842,7 +813,7 @@ func (uc *Usecase) salvagePartialAnswer(sessionID string) string {
 				b.WriteString("]:** ")
 				body := strings.TrimSpace(*m.Content)
 				if len(body) > 600 {
-					body = body[:600] + "…"
+					body = body[:600] + "�?
 				}
 				b.WriteString(body)
 				b.WriteString("\n\n")
@@ -865,62 +836,7 @@ func severityRank(s string) int {
 	case "debug":
 		return 0
 	}
-	// Unknown → treat as warning so existing rules without a severity
+	// Unknown �?treat as warning so existing rules without a severity
 	// still trigger an investigation under the default floor.
 	return 2
-}
-
-// firstParagraphOneLine returns the first prose-looking line of s,
-// trimmed and truncated to max runes. Lines that are pure markdown
-// scaffolding (headings, dividers, table separators) get skipped so
-// root_cause reads as a sentence not as a section title.
-func firstParagraphOneLine(s string, max int) string {
-	for _, raw := range strings.Split(s, "\n") {
-		line := strings.TrimSpace(raw)
-		if line == "" {
-			continue
-		}
-		// Pure headings — "# Title" / "## Section" — drop entirely so
-		// we land on the first prose paragraph below them.
-		if strings.HasPrefix(line, "#") {
-			continue
-		}
-		// Pure dividers — "---", "===" — drop.
-		if onlyChars(line, "-=") {
-			continue
-		}
-		// Bold section headers — "**现象**" / "**根因（0 号病人）**" — are
-		// titles, not prose. Skip short ones so root_cause lands on the
-		// paragraph beneath; for a longer fully-bold line keep the content
-		// but drop the wrapping "**". (The "现象**" bug: the TrimLeft below
-		// only stripped the *leading* "**", leaving the trailing pair.)
-		if strings.HasPrefix(line, "**") && strings.HasSuffix(line, "**") && len(line) > 4 {
-			inner := strings.TrimSpace(line[2 : len(line)-2])
-			if inner == "" || len([]rune(inner)) <= 24 {
-				continue // pure section header → skip to the prose below
-			}
-			line = inner // long fully-bold line → keep content, drop markers
-		}
-		// Strip leading list / quote markers so "* bullet" → "bullet".
-		line = strings.TrimLeft(line, "*-> \t")
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		runes := []rune(line)
-		if len(runes) > max {
-			return string(runes[:max-1]) + "…"
-		}
-		return line
-	}
-	return ""
-}
-
-func onlyChars(s, allowed string) bool {
-	for _, r := range s {
-		if !strings.ContainsRune(allowed, r) {
-			return false
-		}
-	}
-	return s != ""
 }

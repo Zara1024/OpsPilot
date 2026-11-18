@@ -534,7 +534,7 @@ func normalizeLogStreamSelector(raw, fallback string) string {
 
 func normalizeGuessedJournaldLogSelector(selector string) string {
 	parts := splitPromSelectorMatchers(normalizeSelectorPart(selector))
-	out := []string{`opspilot_source=~"journald(:.*)?"`}
+	out := []string{`ongrid_source=~"journald(:.*)?"`}
 	hasSource := false
 	for _, part := range parts {
 		key, value, op, ok := parsePromLabelMatcherWithOperator(part)
@@ -544,7 +544,7 @@ func normalizeGuessedJournaldLogSelector(selector string) string {
 		switch {
 		case key == "job":
 			continue
-		case key == "opspilot_source":
+		case key == "ongrid_source":
 			if value != "" {
 				out[0] = formatPromLabelMatcher(key, op, value)
 				hasSource = true
@@ -574,7 +574,7 @@ func looksLikeJournaldJobSelector(selector string) bool {
 
 func isKnownLogSelectorLabel(label string) bool {
 	switch strings.TrimSpace(label) {
-	case "detected_level", "device_id", "filename", "identifier", "level", "opspilot_source", "service_name", "unit":
+	case "detected_level", "device_id", "filename", "identifier", "level", "ongrid_source", "service_name", "unit":
 		return true
 	default:
 		return false

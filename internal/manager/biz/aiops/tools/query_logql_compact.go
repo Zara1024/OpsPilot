@@ -150,7 +150,7 @@ func compactQueryLogQLLokiDimensions(input map[string]string) map[string]string 
 	out := make(map[string]string)
 	for _, name := range []string{
 		"device_id", "cluster_id", "namespace", "workload", "pod", "container",
-		"node", "opspilot_source", "level", "filename", "unit", "trace_id",
+		"node", "ongrid_source", "level", "filename", "unit", "trace_id",
 	} {
 		if value := input[name]; value != "" {
 			out[name] = value

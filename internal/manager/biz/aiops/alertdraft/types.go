@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	defaultJournaldLogSelector = `{opspilot_source=~"journald(:.*)?"}`
-	defaultAllLogsSelector     = `{opspilot_source=~".+"}`
+	defaultJournaldLogSelector = `{ongrid_source=~"journald(:.*)?"}`
+	defaultAllLogsSelector     = `{ongrid_source=~".+"}`
 
 	DefaultJournaldLogSelector = defaultJournaldLogSelector
 )

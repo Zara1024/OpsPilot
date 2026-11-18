@@ -3,12 +3,12 @@
 // marketplace lands and tool count climbs past ~30 the cumulative JSON
 // Schema each ChatModel call ships balloons (each tool's parameters
 // block can run hundreds of tokens). Anthropic-style "ToolSearch"
-// deferred loading flips this around — only a small core of always-
+// deferred loading flips this around �?only a small core of always-
 // useful tools advertises a full schema; the rest advertise only their
 // (name, description, when_to_use) and the LLM has to call ToolSearch
 // to pull a real schema before invoking.
 //
-// Two-tier classification (hardcoded by name in tierByName below — v1
+// Two-tier classification (hardcoded by name in tierByName below �?v1
 // keeps the policy out of ToolInfo so the basetool interface stays
 // pure):
 //
@@ -20,7 +20,7 @@
 //     trio, host_restart_service, alert detail, ranking helpers).
 //
 // Threshold gating: when len(all) > threshold (default 30, env
-// OPSPILOT_TOOLBAG_DEFERRAL_THRESHOLD) the bag splits core / specialty
+// ONGRID_TOOLBAG_DEFERRAL_THRESHOLD) the bag splits core / specialty
 // and SchemasForLLM returns the redacted-wrapped slice. Below
 // threshold ALL tools keep their full schema (PR-7 behavioural parity).
 //
@@ -28,8 +28,9 @@
 // to the inner BaseTool and synthesises the redacted ToolInfo on each
 // Info() call. Invocation passes through unchanged so an LLM that
 // somehow already knows the parameter shape (e.g. from system prompt
-// context) can still call the tool — the inner Tool's argsJSON
-// validation handles any malformed input.
+// context) can still call the tool �?the inner Tool's argsJSON
+// validation handles any malformed input. The catalog wraps every entry
+// with schema validation, including appended and dynamically replaced tools.
 package tools
 
 import (
@@ -48,13 +49,14 @@ import (
 // shipping a phantom full-schema for a tool we haven't reasoned
 // through).
 //
-// ToolSearch itself is intentionally NOT listed here — when deferral
+// ToolSearch itself is intentionally NOT listed here �?when deferral
 // kicks in BuildBaseTools attaches it via WithExtra so it's force-loaded
 // with a full schema (the LLM needs ToolSearch's schema to actually
 // call ToolSearch). Below threshold the bag never partitions, so
 // ToolSearch sits in the same flat slice as everything else.
 var tierByName = map[string]string{
 	// core (always full schema).
+	"load_skill":              "core",
 	"get_host_load":           "core",
 	"get_host_processes":      "core",
 	"query_promql":            "core",
@@ -74,27 +76,27 @@ var tierByName = map[string]string{
 	"get_topology":            "core",
 	"query_incidents":         "core",
 	"query_change_events":     "core",
-	"get_edge_summary":        "core",
-	"rank_edges":              "core",
+	"get_host_summary":        "core",
+	"rank_hosts":              "core",
 	"correlate_incident":      "core",
 	"AgentTool":               "core",
 	"SendMessage":             "core",
 	"TaskStop":                "core",
 	"draft_config_change":     "core",
 	"apply_config_change":     "core",
-	// Output/communication primitives — small schemas, frequently the point
+	// Output/communication primitives �?small schemas, frequently the point
 	// of a request ("host this report", "send this to the group"). Keep them
 	// full-schema so the LLM picks them instead of falling back to cloud_bash.
 	"serve_page":        "core",
 	"send_notification": "core",
 
-	// specialty (deferred when over threshold) — host-files trio,
+	// specialty (deferred when over threshold) �?host-files trio,
 	// alert detail tools, ranking helpers, mutating restart, generic
 	// bash. Bash is specialty because it's only-on-demand for
-	// diagnostic exploration — most chats don't need it, and its
+	// diagnostic exploration �?most chats don't need it, and its
 	// when_to_use blob is large enough to want defer-loading once
 	// the marketplace pushes the bag past threshold.
-	"find_outlier_edges":    "specialty",
+	"find_outlier_hosts":    "specialty",
 	"get_incident_detail":   "specialty",
 	"query_alert_rules":     "specialty",
 	"host_find_large_files": "specialty",
@@ -107,7 +109,7 @@ var tierByName = map[string]string{
 }
 
 // toolTier classifies a BaseTool. Errors from Info() are treated as
-// "specialty" — a tool that can't even produce its own metadata
+// "specialty" �?a tool that can't even produce its own metadata
 // shouldn't get the privileged core slot.
 func toolTier(t basetool.BaseTool) string {
 	if t == nil {
@@ -156,12 +158,12 @@ func CoreToolNames(all []basetool.BaseTool) []string {
 
 // ToolBag is the partitioned tool collection. core + deferred together
 // equal the universe of tools the agent has access to. When deferred is
-// empty, deferral is OFF (toolBag size ≤ threshold) and SchemasForLLM
+// empty, deferral is OFF (toolBag size �?threshold) and SchemasForLLM
 // returns the full schema for every tool; when deferred is non-empty,
 // deferral is ON and SchemasForLLM swaps each deferred tool through the
 // redactedTool wrapper.
 //
-// extras is the WithExtra slot — typically just ToolSearch itself — and
+// extras is the WithExtra slot �?typically just ToolSearch itself �?and
 // is appended to core unconditionally so the LLM always sees its full
 // schema when deferral is active. extras is an empty slice when
 // deferral is off (the bag is already flat) so callers can chain
@@ -177,13 +179,20 @@ type ToolBag struct {
 
 // NewToolBag inspects all and partitions by tier when len(all) >
 // threshold. Below or at threshold every tool stays in core and
-// deferred is nil — SchemasForLLM behaves byte-identical to "return
+// deferred is nil �?SchemasForLLM behaves byte-identical to "return
 // all" (PR-7 behaviour).
 //
-// threshold ≤ 0 is treated as "always defer": useful for tests; in
+// threshold �?0 is treated as "always defer": useful for tests; in
 // production main.go passes envIntDefault so 0 isn't reachable through
 // normal env config.
 func NewToolBag(all []basetool.BaseTool, threshold int) *ToolBag {
+	validated := make([]basetool.BaseTool, 0, len(all))
+	for _, tool := range all {
+		if tool != nil {
+			validated = append(validated, basetool.WithValidation(tool))
+		}
+	}
+	all = validated
 	bag := &ToolBag{threshold: threshold}
 	// Below-or-equal threshold: keep flat. We treat "exactly equal"
 	// as still flat so the threshold reads as a high-water mark
@@ -222,7 +231,7 @@ func (b *ToolBag) SchemasForLLM() []basetool.BaseTool {
 	defer b.mu.RUnlock()
 	if !b.deferring {
 		// Flat: extras may still hold ToolSearch (registered
-		// unconditionally by BuildBaseTools — harmless when
+		// unconditionally by BuildBaseTools �?harmless when
 		// deferral is off because ToolSearch returning full
 		// schemas is still a valid no-op affordance).
 		out := make([]basetool.BaseTool, 0, len(b.core)+len(b.extras))
@@ -255,7 +264,7 @@ func (b *ToolBag) AllTools() []basetool.BaseTool {
 	return out
 }
 
-// DeferredTools returns only the redacted-by-default tier — the slice
+// DeferredTools returns only the redacted-by-default tier �?the slice
 // that SchemasForLLM wraps in redactedTool. Used by ToolSearch to bias
 // "select:..."-less keyword queries toward tools that actually need
 // their schema fetched (the others are already fully exposed).
@@ -271,7 +280,7 @@ func (b *ToolBag) DeferredTools() []basetool.BaseTool {
 }
 
 // IsDeferring reports whether the bag is over threshold. Useful for
-// boot-time logging — operators want to see in the manager log whether
+// boot-time logging �?operators want to see in the manager log whether
 // the LLM is going through ToolSearch or seeing flat schemas.
 func (b *ToolBag) IsDeferring() bool {
 	if b == nil {
@@ -303,22 +312,23 @@ func (b *ToolBag) WithExtra(t basetool.BaseTool) *ToolBag {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.extras = append(b.extras, t)
+	b.extras = append(b.extras, basetool.WithValidation(t))
 	return b
 }
 
 // Append injects an extra tool into the partitioned bag AFTER
-// construction — used by AppendHostFilesTools so the host_files trio is
+// construction �?used by AppendHostFilesTools so the host_files trio is
 // bucketed correctly (specialty) without rebuilding the bag.
 //
 // We do NOT re-evaluate the deferral toggle here: a bag built with 8
 // tools below threshold doesn't suddenly start deferring after we
 // append 3 more to a 9-tool bag. The deferral decision is made once at
-// NewToolBag — main.go chains AppendHostFilesTools right after
+// NewToolBag �?main.go chains AppendHostFilesTools right after
 // BuildBaseTools so the natural way to flip on deferral is to bump
-// OPSPILOT_TOOLBAG_DEFERRAL_THRESHOLD or wait for marketplace tools to
+// ONGRID_TOOLBAG_DEFERRAL_THRESHOLD or wait for marketplace tools to
 // land in NewToolBag's input slice directly.
 func (b *ToolBag) Append(t basetool.BaseTool) *ToolBag {
+	t = basetool.WithValidation(t)
 	if b == nil || t == nil {
 		return b
 	}
@@ -373,7 +383,7 @@ func toolNameHasPrefix(tool basetool.BaseTool, prefix string) bool {
 // ----- redactedTool wrapper -----
 
 // redactedTool wraps a BaseTool so its Info() returns an empty JSON
-// schema. The Description + WhenToUse + Name + Class still ship — the
+// schema. The Description + WhenToUse + Name + Class still ship �?the
 // LLM sees enough to decide whether the tool is worth pulling, but not
 // enough to call it without going through ToolSearch first. The
 // wrapper is intentionally not exported: nothing outside this package
@@ -400,13 +410,15 @@ func (r redactedTool) Info(ctx context.Context) (*basetool.ToolInfo, error) {
 		`{"type":"object","properties":{},"description":"Schema redacted; call ToolSearch with query='select:%s' to load the full schema before invoking."}`,
 		info.Name,
 	)
+	if len(out.ExecutionParameters) == 0 {
+		out.ExecutionParameters = append(json.RawMessage(nil), info.Parameters...)
+	}
 	out.Parameters = json.RawMessage(hint)
 	return &out, nil
 }
 
 // InvokableRun delegates to the inner tool. This is the fallback when
-// the LLM tries to call the tool without first fetching the schema —
-// the inner tool's argsJSON unmarshal will fail with a clear error
+// the LLM tries to call the tool without first fetching the schema �?// the inner tool's argsJSON unmarshal will fail with a clear error
 // message that the agent loop classifies as a tool failure. We do NOT
 // short-circuit with our own error: defending against malformed args
 // is the inner tool's job, and a future schema-cache layer might want
@@ -416,4 +428,45 @@ func (r redactedTool) InvokableRun(ctx context.Context, argsJSON string, opts ..
 		return "", fmt.Errorf("redactedTool: inner not wired")
 	}
 	return r.inner.InvokableRun(ctx, argsJSON, opts...)
+}
+
+// UpsertTools 同步后注册工具的完整目录，同名项替换，不生成重复条目�?func (b *ToolBag) UpsertTools(tools []basetool.BaseTool) {
+	if b == nil {
+		return
+	}
+	updates := map[string]basetool.BaseTool{}
+	order := []string{}
+	for _, tool := range tools {
+		if tool == nil {
+			continue
+		}
+		info, err := tool.Info(context.Background())
+		if err != nil || info == nil || info.Name == "" {
+			continue
+		}
+		if _, ok := updates[info.Name]; !ok {
+			order = append(order, info.Name)
+		}
+		updates[info.Name] = tool
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	all := append(append([]basetool.BaseTool{}, b.core...), b.deferred...)
+	for i, t := range all {
+		info, err := t.Info(context.Background())
+		if err != nil || info == nil {
+			continue
+		}
+		if replacement, ok := updates[info.Name]; ok {
+			all[i] = replacement
+			delete(updates, info.Name)
+		}
+	}
+	for _, name := range order {
+		if t, ok := updates[name]; ok {
+			all = append(all, t)
+		}
+	}
+	updated := NewToolBag(all, b.threshold)
+	b.core, b.deferred, b.deferring = updated.core, updated.deferred, updated.deferring
 }

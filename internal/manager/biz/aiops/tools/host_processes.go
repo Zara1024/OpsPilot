@@ -4,8 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/tools/basetool"
+	devicebiz "github.com/Zara1024/OpsPilot/internal/manager/biz/device"
+	edgebiz "github.com/Zara1024/OpsPilot/internal/manager/biz/edge"
 	"github.com/Zara1024/OpsPilot/internal/pkg/tunnel"
 )
 
@@ -14,55 +18,171 @@ const ToolNameGetProcessList = "get_host_processes"
 
 // GetProcessListDescription is the single-sentence description the model
 // reads when deciding whether to call this tool.
-const GetProcessListDescription = "Return the top-N processes on the named edge host, sorted by CPU or memory usage."
+const GetProcessListDescription = "Return the top-N processes on the selected host, sorted by CPU or memory usage. CPU is a short-interval delta normalized to total host capacity when cpu_basis=host_total; inspect cpu_sample_status and cpu_window_seconds. legacy_unspecified values must not be compared to current host utilization."
 
-// GetProcessListSchema is the JSON Schema of the tool's argument object.
-var GetProcessListSchema = json.RawMessage(`{
+// processListCallTimeout caps how long a single dispatch may wait. Same
+// rationale as hostLoadCallTimeout.
+const processListCallTimeout = 60 * time.Second
+
+// host_processes.go �?N+15 batch refactor. The BaseTool form
+// of get_process_list now takes a `device_ids[]` array and fans out
+// manager-side. top_n / sort_by are SHARED across all ids (one knob
+// applied per device) �?the typical use case is "top 10 cpu procs on
+// each of these 5 nodes" and asking for per-id top_n would clutter the
+// schema for negligible benefit. Edge handler is unchanged.
+
+// GetProcessListTool is the BaseTool form of get_process_list.
+type GetProcessListTool struct {
+	caller   Caller
+	edges    *edgebiz.Usecase
+	resolver hostFilesDeviceResolver
+	log      *slog.Logger
+}
+
+// NewGetProcessListTool builds the BaseTool variant. devices is required
+// for device_id �?edge_id resolution.
+func NewGetProcessListTool(caller Caller, edges *edgebiz.Usecase, devices *devicebiz.Usecase, log *slog.Logger) *GetProcessListTool {
+	if log == nil {
+		log = slog.Default()
+	}
+	return &GetProcessListTool{
+		caller:   caller,
+		edges:    edges,
+		resolver: deviceResolverAdapter{inner: NewDeviceResolver(devices, edges)},
+		log:      log,
+	}
+}
+
+// GetProcessListBatchArgs is the typed form of the batch schema.
+type GetProcessListBatchArgs struct {
+	DeviceIDs []uint64 `json:"device_ids"`
+	TopN      uint32   `json:"top_n"`
+	SortBy    string   `json:"sort_by"`
+}
+
+// ProcessListResultEntry is one slot in the batch envelope.
+type ProcessListResultEntry struct {
+	DeviceID    uint64                         `json:"device_id"`
+	ProcessList *tunnel.GetProcessListResponse `json:"process_list,omitempty"`
+	Error       string                         `json:"error,omitempty"`
+}
+
+// ProcessListBatchResponse is the wire envelope.
+type ProcessListBatchResponse struct {
+	SuccessCount int                      `json:"success_count"`
+	ErrorCount   int                      `json:"error_count"`
+	Results      []ProcessListResultEntry `json:"results"`
+}
+
+// GetProcessListBatchSchema is the JSON schema for the batched call.
+// top_n / sort_by are scalars applied uniformly per device.
+var GetProcessListBatchSchema = json.RawMessage(`{
   "type": "object",
   "properties": {
-    "edge_name": {
-      "type": "string",
-      "description": "Name of the edge as set when the edge was created."
+    "device_ids": {
+      "type": "array",
+      "items": {"type": "integer", "minimum": 1},
+      "minItems": 1,
+      "maxItems": 16,
+      "description": "设备 id 列表，一次最�?16 个。fleet 视角看进程对比应该一次性给所�?id�?
     },
     "top_n": {
       "type": "integer",
       "minimum": 1,
       "maximum": 100,
-      "description": "How many processes to return (default 10)."
+      "description": "每台设备返回 top-N 进程（默�?10）�?
     },
     "sort_by": {
       "type": "string",
       "enum": ["cpu", "mem"],
-      "description": "Sort key: cpu or mem (default cpu)."
+      "description": "排序依据：cpu �?mem（默�?cpu）�?
     }
   },
-  "required": ["edge_name"]
+  "required": ["device_ids"]
 }`)
 
-// GetProcessListArgs is the typed form of GetProcessListSchema.
-type GetProcessListArgs struct {
-	EdgeName string `json:"edge_name"`
-	TopN     uint32 `json:"top_n"`
-	SortBy   string `json:"sort_by"`
+// getProcessListWhenToUse �?batch-first routing hint (N+15).
+const getProcessListWhenToUse = "对一组设备一次拉 top N 进程�?fleet 比对（typical 5-10 device 一次）�? +
+	"top_n / sort_by 对所�?device 共享（一个口子调一次）�? +
+	"NOT for: 单设备深查（直接 host_bash 'ps aux' 更灵活）/ 历史进程数据 / 日志（用 query_logql�? " +
+	"指标趋势（用 query_promql）�?
+
+// Info returns metadata. Class=read.
+func (t *GetProcessListTool) Info(_ context.Context) (*basetool.ToolInfo, error) {
+	return &basetool.ToolInfo{
+		Name:        ToolNameGetProcessList,
+		Description: GetProcessListDescription,
+		WhenToUse:   getProcessListWhenToUse,
+		Parameters:  GetProcessListBatchSchema,
+		Class:       "read",
+	}, nil
 }
 
-// processListCallTimeout caps how long a single dispatch may wait. Same
-// rationale as hostLoadCallTimeout.
-const processListCallTimeout = 15 * time.Second
-
-// executeGetProcessList resolves edge_name -> edge.ID and dispatches a
-// get_process_list reverse call through the frontier. TopN defaults to
-// 10; SortBy defaults to "cpu".
-func (r *Registry) executeGetProcessList(ctx context.Context, args json.RawMessage) (ExecuteResult, error) {
-	var in GetProcessListArgs
-	if err := json.Unmarshal(args, &in); err != nil {
-		return ExecuteResult{}, fmt.Errorf("get_process_list: bad args: %w", err)
+// singleProcessList runs one inner GetProcessList call. Failure paths
+// fold into ResultEntry.Error so the runBatch slice stays full-length.
+func (t *GetProcessListTool) singleProcessList(ctx context.Context, deviceID uint64, topN uint32, sortBy string) ProcessListResultEntry {
+	entry := ProcessListResultEntry{DeviceID: deviceID}
+	if deviceID == 0 {
+		entry.Error = "device_id must be > 0"
+		return entry
 	}
-	if in.EdgeName == "" {
-		return ExecuteResult{}, fmt.Errorf("get_process_list: edge_name required")
+	edgeID, err := t.resolver.LookupHostEdge(ctx, deviceID)
+	if err != nil {
+		entry.Error = fmt.Sprintf("resolve device %d: %v", deviceID, err)
+		return entry
+	}
+	if edgeID == 0 {
+		entry.Error = fmt.Sprintf("device_id=%d has no host-edge link", deviceID)
+		return entry
+	}
+
+	req := tunnel.GetProcessListRequest{TopN: topN, SortBy: sortBy}
+	body, err := json.Marshal(req)
+	if err != nil {
+		entry.Error = fmt.Sprintf("marshal req: %v", err)
+		return entry
+	}
+	callCtx, cancel := context.WithTimeout(ctx, processListCallTimeout)
+	defer cancel()
+	respBody, err := t.caller.Call(callCtx, edgeID, tunnel.MethodGetProcessList, body)
+	if err != nil {
+		entry.Error = fmt.Sprintf("dispatch: %v", err)
+		return entry
+	}
+	var resp tunnel.GetProcessListResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		entry.Error = fmt.Sprintf("decode resp: %v", err)
+		return entry
+	}
+	if resp.CPUBasis == "" {
+		resp.CPUBasis = "legacy_unspecified"
+	}
+	for i := range resp.Processes {
+		if resp.Processes[i].CPUSampleStatus == "" {
+			resp.Processes[i].CPUSampleStatus = "unknown"
+		}
+	}
+	entry.ProcessList = &resp
+	return entry
+}
+
+// InvokableRun parses, validates, fans out, marshals envelope.
+func (t *GetProcessListTool) InvokableRun(ctx context.Context, argsJSON string, _ ...basetool.InvokeOption) (string, error) {
+	if t.caller == nil {
+		return "", fmt.Errorf("get_process_list: caller not configured")
+	}
+	var in GetProcessListBatchArgs
+	if err := json.Unmarshal([]byte(argsJSON), &in); err != nil {
+		return "", fmt.Errorf("get_process_list: bad args: %w", err)
+	}
+	if err := validateBatchIDs("device_ids", in.DeviceIDs); err != nil {
+		return "", fmt.Errorf("get_process_list: %w", err)
 	}
 	if in.TopN == 0 {
 		in.TopN = 10
+	}
+	if in.TopN > 100 {
+		return "", fmt.Errorf("get_host_processes: top_n must not exceed 100")
 	}
 	switch in.SortBy {
 	case tunnel.ProcessSortByCPU, tunnel.ProcessSortByMem:
@@ -70,32 +190,23 @@ func (r *Registry) executeGetProcessList(ctx context.Context, args json.RawMessa
 	case "":
 		in.SortBy = tunnel.ProcessSortByCPU
 	default:
-		return ExecuteResult{}, fmt.Errorf("get_process_list: sort_by must be cpu or mem (got %q)", in.SortBy)
+		return "", fmt.Errorf("get_process_list: sort_by must be cpu or mem (got %q)", in.SortBy)
 	}
 
-	edge, err := r.edges.GetByName(ctx, in.EdgeName)
+	results := runBatch(ctx, in.DeviceIDs, func(ctx context.Context, id uint64) ProcessListResultEntry {
+		return t.singleProcessList(ctx, id, in.TopN, in.SortBy)
+	})
+	env := ProcessListBatchResponse{Results: results}
+	for _, r := range results {
+		if r.Error != "" {
+			env.ErrorCount++
+		} else {
+			env.SuccessCount++
+		}
+	}
+	out, err := json.Marshal(env)
 	if err != nil {
-		return ExecuteResult{}, fmt.Errorf("get_process_list: resolve edge: %w", err)
+		return "", fmt.Errorf("get_process_list: marshal response: %w", err)
 	}
-
-	req := tunnel.GetProcessListRequest{TopN: in.TopN, SortBy: in.SortBy}
-	body, err := json.Marshal(req)
-	if err != nil {
-		return ExecuteResult{DeviceID: &edge.ID}, fmt.Errorf("get_process_list: marshal req: %w", err)
-	}
-	callCtx, cancel := context.WithTimeout(ctx, processListCallTimeout)
-	defer cancel()
-	respBody, err := r.caller.Call(callCtx, edge.ID, tunnel.MethodGetProcessList, body)
-	if err != nil {
-		return ExecuteResult{DeviceID: &edge.ID}, fmt.Errorf("get_process_list: dispatch: %w", err)
-	}
-	var resp tunnel.GetProcessListResponse
-	if err := json.Unmarshal(respBody, &resp); err != nil {
-		return ExecuteResult{DeviceID: &edge.ID}, fmt.Errorf("get_process_list: decode resp: %w", err)
-	}
-	out, err := json.Marshal(resp)
-	if err != nil {
-		return ExecuteResult{DeviceID: &edge.ID}, fmt.Errorf("get_process_list: marshal response: %w", err)
-	}
-	return ExecuteResult{ResultJSON: out, DeviceID: &edge.ID}, nil
+	return string(out), nil
 }

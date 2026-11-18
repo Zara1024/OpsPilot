@@ -4,25 +4,16 @@
 //
 // Ownership model: every session has a single owning user_id.
 // Non-owners get ErrNotFound (not ErrForbidden) to avoid leaking session
-// existence. Admins bypass the ownership check — the handler passes the
+// existence. Admins bypass the ownership check �?the handler passes the
 // caller's role through, and the service re-reads the session to pick the
 // owning user_id for the agent call.
-//
-// PR-9 of introduces the kernel switch. The service holds:
-//
-//   - legacyAgent: the pre-PR-9 agent.Agent for-loop kernel.
-//   - runtime: the new chatruntime.Runtime graph kernel.
-//   - kernel: "legacy" | "graph" — picks which kernel runs.
-//
-// Default = "legacy" so the cutover is opt-in via OPSPILOT_AGENT_KERNEL.
-// The HTTP handler is unchanged: the SSE frame names emitted by both
-// kernels are byte-equal so the SPA round-trips without changes.
 package aiops
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/toolresult"
 	"io"
 	"log/slog"
 	"reflect"
@@ -31,8 +22,8 @@ import (
 	"time"
 
 	biz "github.com/Zara1024/OpsPilot/internal/manager/biz/aiops"
-	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/agent"
-	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/chatruntime"
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/chatprotocol"
+	chatruntime "github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/runtime/contract"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/aiops"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 	"github.com/Zara1024/OpsPilot/internal/pkg/llm"
@@ -47,31 +38,6 @@ const (
 	RoleViewer = "viewer"
 )
 
-// Kernel enumerates the two agent kernels the service can dispatch
-// to. The graph runtime is the default; legacy remains an explicit rollback.
-type Kernel string
-
-const (
-	// KernelLegacy is the pre-PR-9 agent.Agent for-loop (agent.go).
-	KernelLegacy Kernel = "legacy"
-	// KernelGraph is the new eino + chatruntime + graph kernel
-	// (PR-1..PR-7 of).
-	KernelGraph Kernel = "graph"
-)
-
-// ParseKernel normalises a string env value into a Kernel. Empty or
-// unrecognised values default to KernelGraph. Used by cmd/opspilot/main.go.
-func ParseKernel(s string) Kernel {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "legacy":
-		return KernelLegacy
-	case "graph":
-		return KernelGraph
-	default:
-		return KernelGraph
-	}
-}
-
 // Service bundles the agent + session repo. Handlers call into it with the
 // caller's user-id + role; ownership enforcement lives here.
 type APMSourceResolver interface {
@@ -79,66 +45,40 @@ type APMSourceResolver interface {
 }
 
 type Service struct {
+	results           *toolresult.Usecase
 	checkPageIncident func(context.Context, Caller, uint64) error
 	apmSource         APMSourceResolver
-	legacyAgent       *agent.Agent
 	runtime           RuntimeHandler
-	kernel            Kernel
 	sessions          biz.SessionRepo
-	attachments  biz.AttachmentRepo
-	modelCatalog modelCapabilityCatalog
-	proposals    biz.MutatingProposalRepo
-	usage        *biz.UsageUsecase
-	log          *slog.Logger
+	attachments       biz.AttachmentRepo
+	modelCatalog      modelCapabilityCatalog
+	proposals         biz.MutatingProposalRepo
+	usage             *biz.UsageUsecase
+	log               *slog.Logger
 
 	// cancels maps an in-flight turn's session id to its cancel func, so an
 	// explicit user "stop" (Esc) can interrupt the turn. This is needed
-	// BECAUSE runWithKernel detaches the turn from the HTTP request ctx
-	// (WithoutCancel, so a refresh doesn't kill it, HLD-021) — passive
+	// BECAUSE runChat detaches the turn from the HTTP request ctx
+	// (WithoutCancel, so a refresh doesn't kill it, HLD-021) �?passive
 	// disconnect no longer cancels, so stopping requires an explicit signal.
 	cancelMu sync.Mutex
 	cancels  map[string]context.CancelFunc
 }
 
 // RuntimeHandler is the narrow contract the service depends on for the
-// graph kernel. *chatruntime.Runtime satisfies it by structural typing.
+// runtime router. Version implementations satisfy it by structural typing.
 // The seam is a service-private interface so unit tests can inject a
 // fake without standing up the full graph + tool decorator chain.
 type RuntimeHandler interface {
 	Handle(ctx context.Context, req *chatruntime.Request) (*chatruntime.Reply, error)
 }
 
-// New builds the Service. runtime + kernel may be zero-valued; in
-// that case the legacy kernel is the only path. NewWithKernel is the
-// kernel-aware constructor introduced by PR-9 of
-func New(a *agent.Agent, sessions biz.SessionRepo, usage *biz.UsageUsecase, log *slog.Logger) *Service {
-	return NewWithKernel(a, nil, KernelLegacy, sessions, usage, log)
+// New 构造唯一 Graph 聊天入口；runtime 不可用时调用明确失败，不回退旧循环�?func New(runtime RuntimeHandler, sessions biz.SessionRepo, usage *biz.UsageUsecase, log *slog.Logger) *Service {
+	return &Service{runtime: runtime, sessions: sessions, usage: usage, log: log, cancels: map[string]context.CancelFunc{}}
 }
-
-// NewWithKernel is the kernel-aware constructor. When kernel == graph
-// AND runtime != nil, every chat-send path runs through
-// chatruntime.Runtime; otherwise the legacy agent.Agent for-loop is
-// used. Mismatched configurations (kernel=graph but runtime=nil) fall
-// back to legacy with a logger warning at first PostMessage call.
-func NewWithKernel(a *agent.Agent, runtime RuntimeHandler, kernel Kernel, sessions biz.SessionRepo, usage *biz.UsageUsecase, log *slog.Logger) *Service {
-	return &Service{
-		legacyAgent: a,
-		runtime:     runtime,
-		kernel:      kernel,
-		sessions:    sessions,
-		usage:       usage,
-		log:         log,
-		cancels:     map[string]context.CancelFunc{},
-	}
-}
-
-// Kernel returns the active kernel. Exposed so cmd/opspilot/main.go can
-// log the resolved value at boot.
-func (s *Service) Kernel() Kernel { return s.kernel }
 
 // SetMutatingProposalRepo wires the ReviewGate proposal audit reader after
-// the repo has been constructed in cmd. It is optional so legacy tests and
-// deployments without graph ReviewGate keep starting; the HTTP endpoint fails
+// the repo has been constructed in cmd. Without the dependency the HTTP endpoint fails
 // closed with ErrNotWiredYet until wired.
 func (s *Service) SetMutatingProposalRepo(repo biz.MutatingProposalRepo) {
 	s.proposals = repo
@@ -153,6 +93,29 @@ type modelCapabilityCatalog interface {
 }
 
 func (s *Service) SetModelCatalog(catalog modelCapabilityCatalog) { s.modelCatalog = catalog }
+
+func (s *Service) modelProviders(ctx context.Context) []llm.ProviderInfo {
+	if catalog, ok := s.modelCatalog.(interface {
+		ProvidersContext(context.Context) []llm.ProviderInfo
+	}); ok {
+		return catalog.ProvidersContext(ctx)
+	}
+	return s.modelCatalog.Providers()
+}
+
+func (s *Service) validateReasoningEffort(ctx context.Context, provider, model, effort string) error {
+	if effort == "" {
+		return nil
+	}
+	if s.modelCatalog != nil {
+		for _, entry := range s.modelProviders(ctx) {
+			if entry.ID == provider {
+				return entry.Reasoning(model).Validate(provider, model, effort)
+			}
+		}
+	}
+	return llm.ValidateReasoningEffort(provider, model, effort)
+}
 
 func (s *Service) UploadAttachment(ctx context.Context, caller Caller, sessionID, name, mimeType string, size int64, src io.Reader) (*model.Attachment, error) {
 	if caller.IsViewer() {
@@ -234,8 +197,9 @@ func (s *Service) ListMutatingProposals(ctx context.Context, caller Caller, f bi
 // the signature stays additive (callers don't break when a new field
 // like RelatedIncidentID lands).
 type CreateSessionInput struct {
-	PageContext *model.PageContext
-	APMSource   *model.APMSourceTarget
+	ReasoningEffort *string
+	PageContext     *model.PageContext
+	APMSource       *model.APMSourceTarget
 
 	Title             string
 	Scope             []string
@@ -247,7 +211,7 @@ type CreateSessionInput struct {
 	// SystemPrompt + filtered ToolBag take effect on every Handle() call
 	// for this session. Empty = use the global coordinator default.
 	// Stale agent names (deleted persona) silently fall back to default
-	// at run time — see runtime.go::Handle.
+	// at run time �?see runtime.go::Handle.
 	AgentID string
 }
 
@@ -291,7 +255,42 @@ func (s *Service) CreateSession(ctx context.Context, caller Caller, in CreateSes
 	if (provider == "") != (selectedModel == "") {
 		return nil, fmt.Errorf("%w: provider and model must be supplied together", errs.ErrInvalid)
 	}
+	effort := ""
+	if s.modelCatalog != nil {
+		if provider == "" {
+			provider, selectedModel = s.modelCatalog.Default()
+		}
+		if in.ReasoningEffort == nil {
+
+			for _, entry := range s.modelProviders(ctx) {
+				if entry.ID == provider {
+					effort = entry.DefaultEffort(selectedModel)
+					break
+				}
+			}
+		}
+	}
+	if in.ReasoningEffort != nil {
+		effort = *in.ReasoningEffort
+	}
+	if err := s.validateReasoningEffort(ctx, provider, selectedModel, effort); err != nil {
+		return nil, fmt.Errorf("%w: %v", errs.ErrInvalid, err)
+	}
+	// The current direct-runtime compatibility path is v3. Production uses
+	// the router's validated default; no caller-facing version override yet.
+	version := chatruntime.V3
+	if selector, ok := s.runtime.(interface {
+		SessionVersion(context.Context) (chatruntime.Version, error)
+	}); ok {
+		var err error
+		version, err = selector.SessionVersion(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
 	sess := &model.Session{
+		ReasoningEffort:   effort,
+		RuntimeVersion:    string(version),
 		UserID:            caller.UserID,
 		Title:             title,
 		RelatedIncidentID: in.RelatedIncidentID,
@@ -335,7 +334,7 @@ func (s *Service) CreateSession(ctx context.Context, caller Caller, in CreateSes
 // ListSessions returns the caller's sessions. When relatedIncidentID is
 // non-nil only sessions linked to that incident are returned (used by
 // the IncidentDetail page's agent-timeline panel). Admins see only
-// their own — an explicit /v1/chat/sessions?all=1 can be added later.
+// their own �?an explicit /v1/chat/sessions?all=1 can be added later.
 func (s *Service) ListSessions(ctx context.Context, caller Caller, limit, offset int, relatedIncidentID *uint64) ([]*model.Session, error) {
 	return s.sessions.ListSessions(ctx, caller.UserID, limit, offset, relatedIncidentID)
 }
@@ -401,7 +400,7 @@ func (s *Service) RenameSession(ctx context.Context, caller Caller, sessionID st
 // UpdateSessionModel changes the persisted LLM route for one owned session.
 // Provider/model form a pair; accepting only one would create an ambiguous
 // route and could send a model slug to the wrong upstream.
-func (s *Service) UpdateSessionModel(ctx context.Context, caller Caller, sessionID string, provider string, selectedModel string) error {
+func (s *Service) UpdateSessionModel(ctx context.Context, caller Caller, sessionID string, provider string, selectedModel string, reasoningEffort string) error {
 	if _, err := s.GetSession(ctx, caller, sessionID); err != nil {
 		return err
 	}
@@ -410,37 +409,40 @@ func (s *Service) UpdateSessionModel(ctx context.Context, caller Caller, session
 	if (provider == "") != (selectedModel == "") {
 		return fmt.Errorf("%w: provider and model must be supplied together", errs.ErrInvalid)
 	}
-	return s.sessions.UpdateSessionModel(ctx, sessionID, provider, selectedModel)
+	if err := s.validateReasoningEffort(ctx, provider, selectedModel, reasoningEffort); err != nil {
+		return fmt.Errorf("%w: %v", errs.ErrInvalid, err)
+	}
+	return s.sessions.UpdateSessionModel(ctx, sessionID, provider, selectedModel, reasoningEffort)
 }
 
 // PostMessage runs one user turn through the agent and returns the final
-// assistant Reply. This is a blocking call — the full OpenAI loop plus any
+// assistant Reply. This is a blocking call �?the full OpenAI loop plus any
 // tunnel dispatches complete before returning. The agent itself re-checks
 // ownership; to support admin-bypass we resolve the owning user_id here
 // and pass it in.
-func (s *Service) PostMessage(ctx context.Context, caller Caller, sessionID string, content string) (*agent.Reply, error) {
-	return s.PostMessageWithOpts(ctx, caller, sessionID, content, agent.RunOptions{})
+func (s *Service) PostMessage(ctx context.Context, caller Caller, sessionID string, content string) (*chatprotocol.Reply, error) {
+	return s.PostMessageWithOpts(ctx, caller, sessionID, content, chatprotocol.RunOptions{})
 }
 
 // PostMessageWithOpts is the override-aware sibling of PostMessage. Per-
 // call provider/model + mentions flow into the agent unchanged.
-func (s *Service) PostMessageWithOpts(ctx context.Context, caller Caller, sessionID string, content string, opts agent.RunOptions) (*agent.Reply, error) {
-	return s.runWithKernel(ctx, caller, sessionID, content, nil, opts)
+func (s *Service) PostMessageWithOpts(ctx context.Context, caller Caller, sessionID string, content string, opts chatprotocol.RunOptions) (*chatprotocol.Reply, error) {
+	return s.runChat(ctx, caller, sessionID, content, nil, opts)
 }
 
 // PostMessageStream is the SSE variant of PostMessage. emit fires once per
 // agent phase (assistant turn / tool start / tool end / done); the final
 // Reply (or error) is still returned so the handler can decide whether to
 // emit a trailing SSE error event.
-func (s *Service) PostMessageStream(ctx context.Context, caller Caller, sessionID string, content string, emit agent.Emit) (*agent.Reply, error) {
-	return s.PostMessageStreamWithOpts(ctx, caller, sessionID, content, emit, agent.RunOptions{})
+func (s *Service) PostMessageStream(ctx context.Context, caller Caller, sessionID string, content string, emit chatprotocol.Emit) (*chatprotocol.Reply, error) {
+	return s.PostMessageStreamWithOpts(ctx, caller, sessionID, content, emit, chatprotocol.RunOptions{})
 }
 
 // PostMessageStreamWithOpts streams agent events while honouring per-call
 // provider/model + mention overrides. Empty opts behaves identically to
 // PostMessageStream.
-func (s *Service) PostMessageStreamWithOpts(ctx context.Context, caller Caller, sessionID string, content string, emit agent.Emit, opts agent.RunOptions) (*agent.Reply, error) {
-	return s.runWithKernel(ctx, caller, sessionID, content, emit, opts)
+func (s *Service) PostMessageStreamWithOpts(ctx context.Context, caller Caller, sessionID string, content string, emit chatprotocol.Emit, opts chatprotocol.RunOptions) (*chatprotocol.Reply, error) {
+	return s.runChat(ctx, caller, sessionID, content, emit, opts)
 }
 
 // TurnRejectedError means the runtime never received the user message.
@@ -448,11 +450,7 @@ type TurnRejectedError struct{ error }
 
 func (e *TurnRejectedError) Unwrap() error { return e.error }
 
-// runWithKernel is the single chokepoint that decides which kernel
-// runs for this request. Both legacy and graph paths return the same
-// agent.Reply DTO so the HTTP layer doesn't care which path served
-// the response.
-func (s *Service) runWithKernel(ctx context.Context, caller Caller, sessionID string, content string, emit agent.Emit, opts agent.RunOptions) (*agent.Reply, error) {
+// runChat 是聊天请求的统一入口，完成鉴权、取消管理后调用 Graph runtime�?func (s *Service) runChat(ctx context.Context, caller Caller, sessionID string, content string, emit chatprotocol.Emit, opts chatprotocol.RunOptions) (*chatprotocol.Reply, error) {
 	content = strings.TrimSpace(content)
 	if content == "" && len(opts.Attachments) == 0 {
 		return nil, &TurnRejectedError{fmt.Errorf("%w: content required", errs.ErrInvalid)}
@@ -489,6 +487,11 @@ func (s *Service) runWithKernel(ctx context.Context, caller Caller, sessionID st
 	// Empty legacy session fields deliberately fall through to the router's
 	// deployment-wide default.
 	opts = resolveSessionRunOptions(sess, opts)
+	if opts.ReasoningEffort != nil {
+		if err := s.validateReasoningEffort(ctx, opts.Provider, opts.Model, *opts.ReasoningEffort); err != nil {
+			return nil, &TurnRejectedError{fmt.Errorf("%w: %v", errs.ErrInvalid, err)}
+		}
+	}
 	if err := s.validateImageContext(ctx, sessionID, &opts); err != nil {
 		return nil, &TurnRejectedError{err}
 	}
@@ -505,29 +508,19 @@ func (s *Service) runWithKernel(ctx context.Context, caller Caller, sessionID st
 	ctx = context.WithoutCancel(ctx)
 
 	// ...but make the detached turn explicitly cancellable so a user "stop"
-	// (Esc → StopSession) can interrupt it. Register under the session id;
+	// (Esc �?StopSession) can interrupt it. Register under the session id;
 	// unregister on return (guarding against a newer turn having replaced us).
 	ctx, cancel := context.WithCancel(ctx)
 	s.registerCancel(sess.ID, cancel)
 	defer s.unregisterCancel(sess.ID, cancel)
 
-	// Graph kernel — only when explicitly enabled AND wired.
-	if s.kernel == KernelGraph && s.runtime != nil {
-		return s.runGraph(ctx, sess, content, emit, opts)
+	if s.runtime == nil {
+		return nil, &TurnRejectedError{fmt.Errorf("chat runtime unavailable: %w", errs.ErrNotWiredYet)}
 	}
-	// Legacy fallback. Logs once if kernel=graph but runtime is nil
-	// — ops misconfig that we want to be visible.
-	if s.kernel == KernelGraph && s.runtime == nil && s.log != nil {
-		s.log.Warn("aiops kernel=graph but runtime is nil — falling back to legacy agent",
-			slog.String("session_id", sess.ID))
-	}
-	if s.legacyAgent == nil {
-		return nil, &TurnRejectedError{errs.ErrNotWiredYet}
-	}
-	return s.legacyAgent.RunStreamWithOpts(ctx, sessionID, sess.UserID, content, emit, opts)
+	return s.runGraph(ctx, sess, content, emit, opts)
 }
 
-func (s *Service) validateImageContext(ctx context.Context, sessionID string, opts *agent.RunOptions) error {
+func (s *Service) validateImageContext(ctx context.Context, sessionID string, opts *chatprotocol.RunOptions) error {
 	var total int64
 	for _, attachment := range opts.Attachments {
 		total += attachment.Size
@@ -548,11 +541,11 @@ func (s *Service) validateImageContext(ctx context.Context, sessionID string, op
 	// model. OpenAI-compatible model catalogs do not expose a standard,
 	// reliable vision-capability flag, so requiring an administrator-maintained
 	// allowlist creates false negatives. Unsupported models return their native
-	// error while OpsPilot continues to enforce attachment safety and size limits.
+	// error while Ongrid continues to enforce attachment safety and size limits.
 	return nil
 }
 
-func resolveSessionRunOptions(sess *model.Session, opts agent.RunOptions) agent.RunOptions {
+func resolveSessionRunOptions(sess *model.Session, opts chatprotocol.RunOptions) chatprotocol.RunOptions {
 	if sess == nil {
 		return opts
 	}
@@ -562,12 +555,16 @@ func resolveSessionRunOptions(sess *model.Session, opts agent.RunOptions) agent.
 	if strings.TrimSpace(opts.Model) == "" && sess.Model != nil {
 		opts.Model = strings.TrimSpace(*sess.Model)
 	}
+	if opts.ReasoningEffort == nil && sess.Provider != nil && sess.Model != nil && opts.Provider == *sess.Provider && opts.Model == *sess.Model {
+		effort := sess.ReasoningEffort
+		opts.ReasoningEffort = &effort
+	}
 	return opts
 }
 
 // registerCancel records the in-flight turn's cancel under its session id. If
 // a previous turn for the same session is somehow still registered (shouldn't
-// happen — the SPA serializes turns per session), cancel it first so we never
+// happen �?the SPA serializes turns per session), cancel it first so we never
 // leak a turn.
 func (s *Service) registerCancel(sessionID string, cancel context.CancelFunc) {
 	s.cancelMu.Lock()
@@ -578,7 +575,7 @@ func (s *Service) registerCancel(sessionID string, cancel context.CancelFunc) {
 	s.cancelMu.Unlock()
 }
 
-// unregisterCancel removes the mapping on turn completion — but only if it is
+// unregisterCancel removes the mapping on turn completion �?but only if it is
 // still ours. A newer turn (or a StopSession that already fired) may have
 // replaced/cleared the entry; comparing by pointer avoids clobbering it.
 func (s *Service) unregisterCancel(sessionID string, cancel context.CancelFunc) {
@@ -617,11 +614,11 @@ func sameCancel(a, b context.CancelFunc) bool {
 }
 
 // runGraph dispatches the request through chatruntime.Runtime. The
-// agent.Reply translation back happens here so the HTTP layer's DTO
+// chatprotocol.Reply translation back happens here so the HTTP layer's DTO
 // stays kernel-agnostic. SSE frames are translated through a closure
-// that maps chatruntime events back to agent.Event so the existing
+// that maps chatruntime events back to chatprotocol.Event so the existing
 // http.go writeSSE path reuses unchanged.
-func (s *Service) runGraph(ctx context.Context, sess *model.Session, content string, emit agent.Emit, opts agent.RunOptions) (*agent.Reply, error) {
+func (s *Service) runGraph(ctx context.Context, sess *model.Session, content string, emit chatprotocol.Emit, opts chatprotocol.RunOptions) (*chatprotocol.Reply, error) {
 	var graphEmit chatruntime.Emit
 	if emit != nil {
 		graphEmit = func(ev chatruntime.Event) {
@@ -632,7 +629,7 @@ func (s *Service) runGraph(ctx context.Context, sess *model.Session, content str
 	mentions := translateMentionsToRuntime(opts.Mentions)
 	// Pull the caller's role from the request context (set by the auth
 	// middleware). Empty when the call originates from a background
-	// scheduler (no JWT) — runtime treats that as non-viewer (full tools).
+	// scheduler (no JWT) �?runtime treats that as non-viewer (full tools).
 	role := ""
 	if t, ok := tenantctx.From(ctx); ok {
 		role = t.Role
@@ -650,6 +647,9 @@ func (s *Service) runGraph(ctx context.Context, sess *model.Session, content str
 		Attachments:      opts.Attachments,
 		Emit:             graphEmit,
 	}
+	if opts.ReasoningEffort != nil {
+		req.ReasoningEffort = *opts.ReasoningEffort
+	}
 	reply, err := s.runtime.Handle(ctx, req)
 	if err != nil {
 		return nil, err
@@ -658,12 +658,12 @@ func (s *Service) runGraph(ctx context.Context, sess *model.Session, content str
 }
 
 // translateRuntimeEvent maps a chatruntime.Event into the legacy
-// agent.Event shape so the SSE handler can keep its existing
+// chatprotocol.Event shape so the SSE handler can keep its existing
 // switch-on-Type code path untouched. Frame names stay byte-equal.
-func translateRuntimeEvent(ev chatruntime.Event) agent.Event {
-	out := agent.Event{Type: agent.EventType(ev.Type)}
+func translateRuntimeEvent(ev chatruntime.Event) chatprotocol.Event {
+	out := chatprotocol.Event{Type: chatprotocol.EventType(ev.Type)}
 	if ev.Assistant != nil {
-		out.Assistant = &agent.AssistantEvent{
+		out.Assistant = &chatprotocol.AssistantEvent{
 			Iteration:        ev.Assistant.Iteration,
 			MessageID:        ev.Assistant.MessageID,
 			Content:          ev.Assistant.Content,
@@ -672,7 +672,7 @@ func translateRuntimeEvent(ev chatruntime.Event) agent.Event {
 		}
 	}
 	if ev.Tool != nil {
-		out.Tool = &agent.ToolEvent{
+		out.Tool = &chatprotocol.ToolEvent{
 			ToolCallID: ev.Tool.ToolCallID,
 			Name:       ev.Tool.Name,
 			DeviceID:   ev.Tool.DeviceID,
@@ -689,7 +689,7 @@ func translateRuntimeEvent(ev chatruntime.Event) agent.Event {
 		out.Done = runtimeReplyToAgentReply(ev.Done)
 	}
 	if ev.Notification != nil {
-		out.Notification = &agent.TaskNotificationEvent{
+		out.Notification = &chatprotocol.TaskNotificationEvent{
 			TaskID:  ev.Notification.TaskID,
 			Status:  string(ev.Notification.Status),
 			Summary: ev.Notification.Summary,
@@ -699,7 +699,7 @@ func translateRuntimeEvent(ev chatruntime.Event) agent.Event {
 		}
 	}
 	if ev.Approval != nil {
-		out.Approval = &agent.ApprovalPendingEvent{
+		out.Approval = &chatprotocol.ApprovalPendingEvent{
 			ApprovalID:  ev.Approval.ApprovalID,
 			ToolCallID:  ev.Approval.ToolCallID,
 			Kind:        ev.Approval.Kind,
@@ -711,9 +711,9 @@ func translateRuntimeEvent(ev chatruntime.Event) agent.Event {
 	return out
 }
 
-// translateMentionsToRuntime copies the legacy agent.Mention shape
-// into the chatruntime.Mention shape. One alloc per turn — fine.
-func translateMentionsToRuntime(in []agent.Mention) []chatruntime.Mention {
+// translateMentionsToRuntime copies the shared chatprotocol.Mention shape
+// into the chatruntime.Mention shape. One alloc per turn �?fine.
+func translateMentionsToRuntime(in []chatprotocol.Mention) []chatruntime.Mention {
 	if len(in) == 0 {
 		return nil
 	}
@@ -725,14 +725,14 @@ func translateMentionsToRuntime(in []agent.Mention) []chatruntime.Mention {
 }
 
 // runtimeReplyToAgentReply translates the graph kernel's Reply back
-// into the legacy agent.Reply shape so the HTTP handler's DTO
+// into the shared chatprotocol.Reply shape so the HTTP handler's DTO
 // transformer (toPostMessageResp) doesn't care which kernel produced
 // the answer.
-func runtimeReplyToAgentReply(r *chatruntime.Reply) *agent.Reply {
+func runtimeReplyToAgentReply(r *chatruntime.Reply) *chatprotocol.Reply {
 	if r == nil {
 		return nil
 	}
-	return &agent.Reply{
+	return &chatprotocol.Reply{
 		Message:    r.Message,
 		Usage:      r.Usage,
 		Iterations: r.Iterations,

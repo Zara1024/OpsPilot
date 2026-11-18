@@ -36,8 +36,8 @@ func (s *chainAuditSink) OnToolEnd(_ context.Context, _ string, ev decorators.To
 	return nil
 }
 
-// TestBaseTool_DecoratedChain_QueryPromQL â€” verifies that wrapping
-// query_promql_basetool with decorators.Wrap() runs all 5 decorators in
+// TestBaseTool_DecoratedChain_QueryPromQL â€?verifies that wrapping
+// query_promql with decorators.Wrap() runs all 5 decorators in
 // order. Mirrors decorators_test.TestChain_RunsAllInOrder but exercises
 // a real BaseTool implementation, satisfying the PR-7 requirement that
 // the new tools play with the standard chain.
@@ -87,7 +87,7 @@ func TestBaseTool_DecoratedChain_QueryPromQL(t *testing.T) {
 	}
 }
 
-// TestBaseTool_DecoratedChain_HostLoad â€” same chain check on a tool that
+// TestBaseTool_DecoratedChain_HostLoad â€?same chain check on a tool that
 // goes through the frontier caller path. Confirms the decorator chain
 // is shape-compatible with all tool flavours, not just the prom one.
 func TestBaseTool_DecoratedChain_HostLoad(t *testing.T) {
@@ -128,8 +128,8 @@ func TestBaseTool_DecoratedChain_HostLoad(t *testing.T) {
 	}
 }
 
-// TestBaseTool_DecoratedChain_Order â€” confirms the documented decorator
-// order: tenant_bind â†’ timeout â†’ audit â†’ ratelimit â†’ metric.
+// TestBaseTool_DecoratedChain_Order â€?confirms the documented decorator
+// order: tenant_bind â†?timeout â†?audit â†?ratelimit â†?metric.
 //
 // We can't trivially look at decorator wrapping order at runtime, so the
 // test instead validates two observable consequences of the order:
@@ -154,7 +154,7 @@ func TestBaseTool_DecoratedChain_Order(t *testing.T) {
 		Limiter: limiter,
 	})
 
-	// First call: success â€” burns the token.
+	// First call: success â€?burns the token.
 	if _, err := wrapped.InvokableRun(context.Background(), `{"expr":"up"}`,
 		basetool.WithUserID(11)); err != nil {
 		t.Fatalf("first call: %v", err)
@@ -172,9 +172,9 @@ func TestBaseTool_DecoratedChain_Order(t *testing.T) {
 	}
 }
 
-// TestBaseTool_DecoratedChain_TenantBindNoOpForPromQL â€” query_promql's
+// TestBaseTool_DecoratedChain_TenantBindNoOpForPromQL â€?query_promql's
 // schema doesn't declare a tenant_id property, so the tenant_bind layer
-// should pass through without injecting. (â€” tenant_bind
+// should pass through without injecting. (â€?tenant_bind
 // inspects the JSON Schema before mutating args.) This confirms the
 // new BaseTools coexist with the chain even when they're tenant-agnostic.
 func TestBaseTool_DecoratedChain_TenantBindNoOpForPromQL(t *testing.T) {
@@ -188,13 +188,13 @@ func TestBaseTool_DecoratedChain_TenantBindNoOpForPromQL(t *testing.T) {
 		basetool.WithUserID(99)); err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
-	// PromQuerier received the original expr â€” no tenant_id contamination.
+	// PromQuerier received the original expr â€?no tenant_id contamination.
 	if pq.gotExpr != "up" {
 		t.Errorf("expr mutated by tenant_bind: %q", pq.gotExpr)
 	}
 }
 
-// chainCounter reads opspilot_tool_invocations_total{name=,result=} from a
+// chainCounter reads ongrid_tool_invocations_total{name=,result=} from a
 // custom registry. Matches decorators.mustCounter shape; duplicated here
 // because that one is in the decorators package's _test.go and not
 // exported.
@@ -205,7 +205,7 @@ func chainCounter(t *testing.T, reg *prometheus.Registry, name, result string) f
 		t.Fatalf("Gather: %v", err)
 	}
 	for _, mf := range mfs {
-		if mf.GetName() != "opspilot_tool_invocations_total" {
+		if mf.GetName() != "ongrid_tool_invocations_total" {
 			continue
 		}
 		for _, m := range mf.GetMetric() {

@@ -74,7 +74,7 @@ func metricSourceIdentityMatchersFromSpec(spec map[string]interface{}) []metricS
 
 func isMetricSourceRequestIdentityLabel(label string) bool {
 	switch strings.ToLower(strings.TrimSpace(label)) {
-	case "opspilot_source", "device_id", "job", "instance", "service":
+	case "ongrid_source", "device_id", "job", "instance", "service":
 		return true
 	default:
 		return false
@@ -86,7 +86,7 @@ func requestExplicitlyScopesMetricSource(requestText string, spec map[string]int
 	if text == "" {
 		return false
 	}
-	if strings.Contains(text, "opspilot_source") || strings.Contains(text, "device_id") ||
+	if strings.Contains(text, "ongrid_source") || strings.Contains(text, "device_id") ||
 		strings.Contains(text, "db:") || strings.Contains(text, "custom:") {
 		return true
 	}
@@ -104,7 +104,7 @@ func requestMentionsMetricSourceMatcher(lowerText string, matcher metricSourceId
 		return false
 	}
 	switch matcher.key {
-	case "opspilot_source":
+	case "ongrid_source":
 		if strings.Contains(lowerText, value) {
 			return true
 		}

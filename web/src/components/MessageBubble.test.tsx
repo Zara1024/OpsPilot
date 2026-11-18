@@ -6,7 +6,7 @@ import { MessageBubble, type ConfigDraftResult } from './MessageBubble';
 import type { ChatMessage } from '@/api/chat';
 import { executeOperationAction, getOperation } from '@/api/operations';
 import { getPacketCaptureSession } from '@/api/packetCaptures';
-import { getApproval } from '@/api/approvals';
+import { getApproval, approveApproval, type Approval } from '@/api/approvals';
 import { setLocale } from '@/i18n/locale';
 import * as chatApi from '@/api/chat';
 
@@ -47,6 +47,40 @@ describe('MessageBubble image preview', () => {
 });
 
 describe('MessageBubble shared approval card', () => {
+  it('explains a host policy override before allowing explicit approval', async () => {
+    setLocale('en-US');
+    const approval: Approval = {
+      id: 'policy-approval',
+      kind: 'host_bash',
+      title: 'Command policy override',
+      summary: 'device_ids=[3]',
+      payload: JSON.stringify({ device_ids: [3], command: 'python3 --version', policy_reason: 'device_id=3: binary "python3" is in denied class' }),
+      source: 'agent',
+      session_id: 'session-1',
+      status: 'pending',
+      proposed_by: 1,
+      created_at: new Date().toISOString(),
+    };
+    vi.mocked(getApproval).mockResolvedValue(approval);
+    vi.mocked(approveApproval).mockResolvedValue({ ...approval, status: 'executed', result: '{"exit_code":0}' });
+    render(<MessageBubble message={{
+      id: 'policy-card',
+      role: 'tool',
+      kind: 'tool_card',
+      tool_call: {
+        id: 'call-policy',
+        name: 'host_bash',
+        status: 'pending',
+        result: { status: 'pending_approval', approval_id: 'policy-approval', kind: 'host_bash', command: 'device_ids=[3] python3 --version' },
+      },
+    }} />);
+    expect(await screen.findByText(/Approval bypasses command policy for this command only/)).toBeInTheDocument();
+    expect(screen.getByText('device_id=3: binary "python3" is in denied class')).toBeInTheDocument();
+    expect(approveApproval).not.toHaveBeenCalled();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Approve & run' }));
+    await waitFor(() => expect(approveApproval).toHaveBeenCalledWith('policy-approval'));
+  });
+
   it.each([
     ['zh-CN', '需要你确认才能执行 capture_pcap'],
     ['en-US', 'Needs your approval to run capture_pcap'],
@@ -327,7 +361,7 @@ describe('MessageBubble config draft card', () => {
 });
 
 describe('MessageBubble operation card', () => {
-  it('renders a cancellable running operation card and executes the stop action', async () => {
+  it('renders a cancellable operation from a bounded saved result and executes stop', async () => {
     vi.mocked(getOperation).mockRejectedValue(new Error('skip poll'));
     vi.mocked(executeOperationAction).mockResolvedValue({
       id: 'op-123',
@@ -342,6 +376,7 @@ describe('MessageBubble operation card', () => {
       role: 'tool',
       tool_name: 'capture_pcap',
       content: JSON.stringify({
+        kind: 'tool_result', result_id: 'saved-capture', storage_status: 'ready', preview: 'partial capture response',
         operation: {
           id: 'op-123',
           kind: 'packet_capture_session',

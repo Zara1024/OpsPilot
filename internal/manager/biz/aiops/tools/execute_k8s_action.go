@@ -17,26 +17,37 @@ import (
 	"github.com/Zara1024/OpsPilot/internal/pkg/integrationauth"
 	"github.com/Zara1024/OpsPilot/internal/pkg/tenantctx"
 	"github.com/Zara1024/OpsPilot/internal/pkg/tunnel"
-	"github.com/cloudwego/eino/compose"
 )
 
 const ToolNameExecuteK8sAction = "execute_k8s_action"
 
 const ExecuteK8sActionDescription = "Execute a small, audited Kubernetes write through the cluster controller edge. " +
-	"MUTATING â€” real writes require a successful dry-run preflight and kernel-specific approval before dispatch; the default legacy kernel always asks for human confirmation."
+	"MUTATING â€?real writes require a successful dry-run preflight and kernel-specific approval before dispatch; the default legacy kernel always asks for human confirmation."
 
 var ExecuteK8sActionSchema = json.RawMessage(`{
   "type": "object",
-  "required": ["cluster_id", "action", "name"],
+  "required": [
+    "cluster_id",
+    "action",
+    "name"
+  ],
   "properties": {
     "cluster_id": {
       "type": "integer",
       "minimum": 1,
-      "description": "Kubernetes cluster id in opspilot."
+      "description": "Kubernetes cluster id in ongrid."
     },
     "action": {
       "type": "string",
-      "enum": ["rollout_restart", "scale", "delete_pod", "evict_pod", "cordon", "uncordon", "drain"],
+      "enum": [
+        "rollout_restart",
+        "scale",
+        "delete_pod",
+        "evict_pod",
+        "cordon",
+        "uncordon",
+        "drain"
+      ],
       "description": "Kubernetes write action to execute."
     },
     "kind": {
@@ -112,7 +123,85 @@ var ExecuteK8sActionSchema = json.RawMessage(`{
       "type": "string",
       "description": "Why the action is requested. Included in review/audit context."
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "enum": [
+              "scale",
+              "rollout_restart"
+            ]
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "then": {
+        "required": [
+          "kind",
+          "namespace"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "scale"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "then": {
+        "required": [
+          "replicas"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "enum": [
+              "delete_pod",
+              "evict_pod"
+            ]
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "then": {
+        "required": [
+          "namespace"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "dry_run": {
+            "const": true
+          }
+        },
+        "required": [
+          "dry_run"
+        ]
+      },
+      "else": {
+        "required": [
+          "preflight_token",
+          "expected_resource_version"
+        ]
+      }
+    }
+  ]
 }`)
 
 const executeK8sActionWhenToUse = "Use ONLY when the user explicitly asks to mutate Kubernetes state: rollout restart a Deployment/StatefulSet/DaemonSet, " +
@@ -132,18 +221,10 @@ const (
 	maxK8sGracePeriodSeconds      = 3600
 )
 
-// K8sActionProposer queues a preflight-validated Kubernetes write for human
-// approval and returns the post-approval execution result. The legacy kernel
-// wires this seam because it does not have the graph kernel's ReviewGate.
-type K8sActionProposer interface {
-	ProposeAndAwait(ctx context.Context, args ExecuteK8sActionArgs, sessionID, toolCallID string, userID uint64) (string, error)
-}
-
 type ExecuteK8sActionTool struct {
 	persistent PreflightStore
 	caller     Caller
 	reader     K8sSnapshotReader
-	proposer   K8sActionProposer
 	log        *slog.Logger
 
 	preflightMu sync.Mutex
@@ -170,20 +251,12 @@ type executeK8sActionPreflightGrant struct {
 }
 
 func NewExecuteK8sActionTool(caller Caller, reader K8sSnapshotReader, log *slog.Logger) *ExecuteK8sActionTool {
-	return NewExecuteK8sActionToolWithProposer(caller, reader, nil, log)
-}
-
-// NewExecuteK8sActionToolWithProposer builds the legacy-compatible variant.
-// A nil proposer preserves the graph-kernel path: ReviewGate authorizes the
-// call and InvokableRun dispatches directly after consuming its preflight.
-func NewExecuteK8sActionToolWithProposer(caller Caller, reader K8sSnapshotReader, proposer K8sActionProposer, log *slog.Logger) *ExecuteK8sActionTool {
 	if log == nil {
 		log = slog.Default()
 	}
 	return &ExecuteK8sActionTool{
 		caller:     caller,
 		reader:     reader,
-		proposer:   proposer,
 		log:        log,
 		preflights: make(map[string]executeK8sActionPreflightGrant),
 	}
@@ -250,47 +323,12 @@ func (t *ExecuteK8sActionTool) InvokableRun(ctx context.Context, argsJSON string
 		return "", err
 	}
 	if !req.DryRun {
-		if t.proposer != nil && !basetool.AgentWriteAllowedFromContext(ctx) {
-			return `{"status":"blocked","message":"Agent write actions are disabled; the Kubernetes action was not proposed or run."}`, nil
-		}
 		if err := t.consumeForContext(ctx, strings.TrimSpace(in.PreflightToken), req, caller.UserID, basetool.SessionIDFromContext(ctx)); err != nil {
 			return "", err
 		}
-		if t.proposer != nil {
-			toolCallID := compose.GetToolCallID(ctx)
-			if toolCallID == "" {
-				toolCallID = basetool.ToolCallIDFromContext(ctx)
-			}
-			result, err := t.proposer.ProposeAndAwait(ctx, in, basetool.SessionIDFromContext(ctx), toolCallID, caller.UserID)
-			if err != nil {
-				return "", fmt.Errorf("%s: propose: %w", ToolNameExecuteK8sAction, err)
-			}
-			return result, nil
-		}
+
 	}
 	return t.dispatch(ctx, req, caller.UserID, basetool.SessionIDFromContext(ctx))
-}
-
-// RunApproved dispatches the exact action payload stored in an approved inbox
-// row. InvokableRun already consumed and bound the one-time preflight token
-// before creating that row, so this method deliberately does not consume it a
-// second time. The expected_resource_version still gives the controller an
-// optimistic-lock guard if cluster state changed while approval was pending.
-func (t *ExecuteK8sActionTool) RunApproved(ctx context.Context, in ExecuteK8sActionArgs, userID uint64, sessionID string) (string, error) {
-	if userID == 0 || strings.TrimSpace(sessionID) == "" {
-		return "", fmt.Errorf("%s: approved action is missing proposer identity", ToolNameExecuteK8sAction)
-	}
-	if strings.TrimSpace(in.PreflightToken) == "" {
-		return "", fmt.Errorf("%s: approved action is missing preflight_token", ToolNameExecuteK8sAction)
-	}
-	req, err := normalizeExecuteK8sActionArgs(in)
-	if err != nil {
-		return "", err
-	}
-	if req.DryRun {
-		return "", fmt.Errorf("%s: approved action must not be a dry-run", ToolNameExecuteK8sAction)
-	}
-	return t.dispatch(ctx, req, userID, sessionID)
 }
 
 func (t *ExecuteK8sActionTool) dispatch(ctx context.Context, req tunnel.KubernetesActionRequest, userID uint64, sessionID string) (string, error) {

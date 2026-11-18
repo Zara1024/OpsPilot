@@ -236,8 +236,8 @@ func suggestedAlertRunbookURL(ruleKey string) string {
 	key := strings.TrimSpace(ruleKey)
 	switch key {
 	case "cpu_high", "mem_high", "disk_high", "load1_high", "load5_high", "load15_high":
-		return "https://github.com/zara1024/vault/blob/main/alerts/host-metrics.md#" + key
+		return "https://github.com/ongridio/vault/blob/main/alerts/host-metrics.md#" + key
 	default:
-		return "https://github.com/zara1024/vault/blob/main/concepts/alerting.md"
+		return "https://github.com/ongridio/vault/blob/main/concepts/alerting.md"
 	}
 }

@@ -116,7 +116,7 @@ func TestCompileDraft_RecommendsHostScopeForDatabaseRule(t *testing.T) {
 			Kind:      "metric_raw",
 			ScopeType: "global",
 			Spec: map[string]interface{}{
-				"expr": `100 * sum by (device_id, opspilot_source) (pg_stat_database_numbackends) / max by (device_id, opspilot_source) (pg_settings_max_connections) > 85`,
+				"expr": `100 * sum by (device_id, ongrid_source) (pg_stat_database_numbackends) / max by (device_id, ongrid_source) (pg_settings_max_connections) > 85`,
 			},
 		},
 	})

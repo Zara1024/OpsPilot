@@ -114,6 +114,7 @@ func TestAgentTool_Sync_HappyPath(t *testing.T) {
 	tool := NewAgentTool(sp, fakeSubagentRegistry{names: map[string]bool{"general-purpose": true}}, nil)
 
 	ctx := basetool.WithSessionID(context.Background(), "parent-session-1")
+	ctx = basetool.WithReasoningEffort(ctx, "high")
 	out, err := tool.InvokableRun(ctx,
 		`{"description":"check disk","subagent_type":"general-purpose","prompt":"please check"}`)
 	if err != nil {
@@ -134,6 +135,9 @@ func TestAgentTool_Sync_HappyPath(t *testing.T) {
 	}
 	if sp.lastSpawn.AgentName != "general-purpose" {
 		t.Errorf("forwarded agent name = %q", sp.lastSpawn.AgentName)
+	}
+	if sp.lastSpawn.ReasoningEffort != "high" {
+		t.Fatalf("worker lost effort: %+v", sp.lastSpawn)
 	}
 	if sp.lastSpawn.ParentSession != "parent-session-1" {
 		t.Errorf("forwarded parent session = %q", sp.lastSpawn.ParentSession)
@@ -159,11 +163,11 @@ func TestAgentTool_DedupeDoesNotCrossSessions(t *testing.T) {
 	}
 }
 
-// TestAgentTool_IgnoresBackgroundFlag â€” the schema no longer exposes
+// TestAgentTool_IgnoresBackgroundFlag â€?the schema no longer exposes
 // background; even when the LLM tries to pass it (older sessions /
 // model bias), we force sync and ignore the field. This locks in the
 // "coordinator dispatch is always synchronous" invariant that
-// eliminated the "task_id pending â†’ user told to wait â†’ never followed
+// eliminated the "task_id pending â†?user told to wait â†?never followed
 // up" failure mode (see E2E eval D4).
 func TestAgentTool_IgnoresBackgroundFlag(t *testing.T) {
 	sp := newFakeSpawner()
@@ -180,7 +184,7 @@ func TestAgentTool_IgnoresBackgroundFlag(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	if got["result"] != "ok" {
-		t.Errorf("result missing â€” sync path didn't run: %v", got)
+		t.Errorf("result missing â€?sync path didn't run: %v", got)
 	}
 	if sp.lastSpawn.Background {
 		t.Errorf("Background should be forced to false regardless of LLM input")

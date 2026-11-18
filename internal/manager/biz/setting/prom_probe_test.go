@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 	"github.com/golang/snappy"
+	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 )
 
 func TestPromConfigurationProbe_UsesUnsavedDraftForQueryAndWrite(t *testing.T) {

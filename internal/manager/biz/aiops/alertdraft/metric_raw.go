@@ -157,7 +157,7 @@ func isCustomMetricName(metric string) bool {
 
 func isDatabaseIdentityLabel(label string) bool {
 	switch strings.TrimSpace(label) {
-	case "opspilot_source", "device_id", "job", "instance", "service":
+	case "ongrid_source", "device_id", "job", "instance", "service":
 		return true
 	default:
 		return false
@@ -228,7 +228,7 @@ func selectorContainsImplicitMetricSourceIdentity(selector string) bool {
 
 func isMetricSourceIdentityLabel(label string) bool {
 	switch strings.TrimSpace(label) {
-	case "opspilot_source", "device_id", "instance":
+	case "ongrid_source", "device_id", "instance":
 		return true
 	default:
 		return false
@@ -258,7 +258,7 @@ func selectorContainsJobMatcher(selector string) bool {
 func selectorContainsKnownCollectedSource(selector string) bool {
 	for _, part := range splitPromSelectorMatchers(normalizeSelectorPart(selector)) {
 		key, value, _, ok := parsePromLabelMatcherWithOperator(part)
-		if !ok || key != "opspilot_source" {
+		if !ok || key != "ongrid_source" {
 			continue
 		}
 		if strings.HasPrefix(value, "db:") || strings.HasPrefix(value, "custom:") {
