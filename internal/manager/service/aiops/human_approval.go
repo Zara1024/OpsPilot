@@ -131,7 +131,8 @@ func (b *HumanApprovalBroker) ProposeAndAwait(ctx context.Context, req aiopstool
 			}
 			if owner != "" && row.Status == "pending" && time.Since(lastRenewed) >= 10*time.Second {
 				if err := uc.RenewExecutionLease(ctx, a.ID, owner); err != nil {
-					// 批准可能在读�?pending 与续租之间胜出，不应撤掉已批准操作的执行闭包�?					latest, readErr := uc.Get(ctx, a.ID)
+					// 批准可能在读取 pending 与续租之间胜出，不应撤掉已批准操作的执行闭包。
+					latest, readErr := uc.Get(ctx, a.ID)
 					if readErr == nil && latest.Status != "pending" {
 						continue
 					}
@@ -171,7 +172,7 @@ func (b *HumanApprovalBroker) Execute(ctx context.Context, payloadJSON string) (
 
 func truncateApprovalTitle(title string) string {
 	if len(title) > 100 {
-		return title[:100] + "�?
+		return title[:100] + "…"
 	}
 	return title
 }

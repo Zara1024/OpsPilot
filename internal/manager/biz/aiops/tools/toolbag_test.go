@@ -98,7 +98,7 @@ func TestToolBag_OverThresholdSplits(t *testing.T) {
 		newStub("host_du_summary", ""),
 		newStub("host_stat_file", ""),
 		newStub("host_restart_service", ""),
-		// 8 specialty entries â†?22 so far.
+		// 8 specialty entries â†’ 22 so far.
 	}
 	for i := 0; i < 13; i++ {
 		in = append(in, newStub("synthetic_pack_tool_"+string(rune('a'+i)), "synthetic"))
@@ -118,7 +118,7 @@ func TestToolBag_OverThresholdSplits(t *testing.T) {
 	}
 
 	deferred := bag.DeferredTools()
-	// 7 known specialty + 13 unknown â†?20 deferred.
+	// 7 known specialty + 13 unknown â†’ 20 deferred.
 	if len(deferred) != 20 {
 		t.Errorf("DeferredTools len=%d want 20", len(deferred))
 	}
@@ -325,7 +325,7 @@ func TestCoreToolNames_UsesRegistrationTier(t *testing.T) {
 	}
 }
 
-// TestToolBag_NilSafety guards against panics on a nil receiver â€?used
+// TestToolBag_NilSafety guards against panics on a nil receiver â€” used
 // by the runtime when the bag isn't wired in test harnesses.
 func TestToolBag_NilSafety(t *testing.T) {
 	var bag *ToolBag

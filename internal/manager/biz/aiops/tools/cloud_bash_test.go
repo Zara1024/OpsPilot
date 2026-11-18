@@ -44,7 +44,7 @@ func TestCloudBash_ThreadsSessionID(t *testing.T) {
 	}
 }
 
-// Empty ctx (no session attached) â†?empty session id, not a panic. The
+// Empty ctx (no session attached) â†’ empty session id, not a panic. The
 // executor then falls back to a transient dir (legacy behavior).
 func TestCloudBash_NoSessionID(t *testing.T) {
 	p := &recProposer{}

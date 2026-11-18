@@ -18,7 +18,7 @@ import (
 // internal/skill/builtin/web_search.go so cmd/main.go can wire the
 // skill at boot without internal/skill importing biz/setting.
 //
-// Mirrors LokiResolver / TempoResolver â€?single dependency on Service,
+// Mirrors LokiResolver / TempoResolver â€” single dependency on Service,
 // nil-safe Get path so the skill returns "not configured" cleanly when
 // the row is absent.
 type WebSearchResolver struct {
@@ -46,16 +46,16 @@ func (r *WebSearchResolver) get(ctx context.Context, key string) string {
 //
 // Selection rules (in priority order):
 //
-//  1. Explicit `websearch.provider` row â†?use it (validated against the
+//  1. Explicit `websearch.provider` row â†’ use it (validated against the
 //     known set; unknown values fall through to step 2).
-//  2. Tavily key set + nothing else â†?"tavily" (back-compat with
+//  2. Tavily key set + nothing else â†’ "tavily" (back-compat with
 //     installs that pre-date SearXNG; swapping default would silently
 //     reroute traffic).
-//  3. Brave key set + nothing else â†?"brave".
-//  4. Default â†?"searxng".
+//  3. Brave key set + nothing else â†’ "brave".
+//  4. Default â†’ "searxng".
 //
 // Note: when both SearXNG and Tavily are configured (provider unset),
-// SearXNG wins per spec â€?it's free / unlimited.
+// SearXNG wins per spec â€” it's free / unlimited.
 func (r *WebSearchResolver) Provider(ctx context.Context) string {
 	if r == nil {
 		return model.ProviderSearxng
@@ -69,7 +69,7 @@ func (r *WebSearchResolver) Provider(ctx context.Context) string {
 		return model.ProviderBrave
 	}
 	// Inferred default: SearXNG always wins when no explicit choice has
-	// been made â€?it's the zero-config baseline that always works in
+	// been made â€” it's the zero-config baseline that always works in
 	// the embedded compose stack.
 	return model.ProviderSearxng
 }

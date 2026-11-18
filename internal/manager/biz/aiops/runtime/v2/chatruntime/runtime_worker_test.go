@@ -55,7 +55,7 @@ func TestSpawnWorker_Sync(t *testing.T) {
 		t.Errorf("session_id = %q, want worker-* prefix", w.SessionID)
 	}
 
-	// chat_sessions audit row â€?assert version and ownership are preserved.
+	// chat_sessions audit row â€” assert version and ownership are preserved.
 	row, err := store.GetSession(context.Background(), w.SessionID)
 	if err != nil || row == nil {
 		t.Fatalf("worker chat_sessions row missing: %v", err)
@@ -372,7 +372,7 @@ func TestSpawnWorker_ClosesSession(t *testing.T) {
 			}
 			time.Sleep(20 * time.Millisecond)
 		}
-		t.Fatalf("closed_at still nil after async spawn â€?defer didn't fire")
+		t.Fatalf("closed_at still nil after async spawn â€” defer didn't fire")
 	})
 }
 
@@ -394,9 +394,9 @@ func TestSpawnWorker_UnknownAgent(t *testing.T) {
 // implicit coordinator-only strip.
 func TestFilterToolsForAgent(t *testing.T) {
 	bag := []basetool.BaseTool{
-		&fakeTool{name: "AgentTool", schema: `{"type":"object"}`},            // coordinator-only â€?always stripped
-		&fakeTool{name: "SendMessage", schema: `{"type":"object"}`},          // coordinator-only â€?always stripped
-		&fakeTool{name: "TaskStop", schema: `{"type":"object"}`},             // coordinator-only â€?always stripped
+		&fakeTool{name: "AgentTool", schema: `{"type":"object"}`},            // coordinator-only â€” always stripped
+		&fakeTool{name: "SendMessage", schema: `{"type":"object"}`},          // coordinator-only â€” always stripped
+		&fakeTool{name: "TaskStop", schema: `{"type":"object"}`},             // coordinator-only â€” always stripped
 		&fakeTool{name: "query_promql", schema: `{"type":"object"}`},         // whitelisted
 		&fakeTool{name: "query_logql", schema: `{"type":"object"}`},          // not whitelisted
 		&fakeTool{name: "host_restart_service", schema: `{"type":"object"}`}, // blacklisted
@@ -407,7 +407,7 @@ func TestFilterToolsForAgent(t *testing.T) {
 		Tools:           []string{"query_promql"},
 		DisallowedTools: []string{"host_restart_service", "*_process"},
 	}
-	// Worker path: isCoordinator=false â†?AgentTool/SendMessage/TaskStop stripped.
+	// Worker path: isCoordinator=false â†’ AgentTool/SendMessage/TaskStop stripped.
 	out := filterToolsForAgent(bag, ag, false)
 	names := make([]string, 0, len(out))
 	for _, t := range out {
@@ -418,7 +418,7 @@ func TestFilterToolsForAgent(t *testing.T) {
 		t.Errorf("worker filtered names = %v, want [query_promql]", names)
 	}
 
-	// Coordinator path: isCoordinator=true â†?coordinator-only tools
+	// Coordinator path: isCoordinator=true â†’ coordinator-only tools
 	// survive even when the persona's Tools whitelist doesn't include
 	// them. (The whitelist still gates non-control-plane tools.)
 	out = filterToolsForAgent(bag, ag, true)

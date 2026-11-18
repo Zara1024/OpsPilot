@@ -31,15 +31,15 @@ const (
 // as a whitelist when the agent dispatches tool calls; a nil pointer
 // means "no restriction".
 //
-// Worker / sub-agent audit columns (/ �?coordinator/
+// Worker / sub-agent audit columns (/ — coordinator/
 // worker multi-agent path). When this row represents a sub-agent run
 // spawned by the coordinator:
 //
-//	AgentID �?the persona name (frontmatter `name`) that ran the
+//	AgentID — the persona name (frontmatter `name`) that ran the
 //	                  worker. nil for a coordinator/user-driven session.
-//	ParentSessionID �?the coordinator session id that requested the
+//	ParentSessionID — the coordinator session id that requested the
 //	                  spawn. nil for top-level sessions.
-//	Background �?true when the worker was a fire-and-forget spawn
+//	Background — true when the worker was a fire-and-forget spawn
 //	                  (SpawnRequest.Background). Defaults to false so
 //	                  pre-existing rows are unambiguous post-migration.
 //
@@ -183,8 +183,9 @@ type Message struct {
 	AttachmentIDs []string     `gorm:"-" json:"-"`
 	ToolCallID    *string      `gorm:"size:64;column:tool_call_id"`
 	ToolName      *string      `gorm:"size:64;column:tool_name"`
-	// ReasoningContent 仅供模型协议回放，禁止通过消息 JSON 暴露给前端�?	ReasoningContent *string `gorm:"type:longtext;column:reasoning_content" json:"-"`
-	// Model is the LLM model id that produced this message �?only set on
+	// ReasoningContent 仅供模型协议回放，禁止通过消息 JSON 暴露给前端。
+	ReasoningContent *string `gorm:"type:longtext;column:reasoning_content" json:"-"`
+	// Model is the LLM model id that produced this message — only set on
 	// role=assistant rows. Lets the SPA show per-message provenance ("the
 	// answer above came from glm-4-plus; the answer below from opus") and
 	// keeps the audit trail honest when the default routing switches
@@ -198,7 +199,7 @@ type Message struct {
 	// ToolCalls is the set of chat_tool_calls rows attached to this
 	// message. Populated by SessionRepo.ListMessages so the agent's
 	// buildMessages can replay role=assistant turns with content=NULL
-	// but tool_calls populated �?without it the LLM history sends an
+	// but tool_calls populated — without it the LLM history sends an
 	// orphan role=tool message and strict providers (DeepSeek v4+)
 	// reject the request with "tool must follow tool_calls". Transient:
 	// `gorm:"-"` keeps it out of the chat_messages schema.
@@ -264,7 +265,8 @@ type ToolCall struct {
 	// LLMCallID is the call id the LLM assigned to this tool invocation
 	// (e.g. "call_00_j5VjpXHsPpCS0JXjCv2O5578"). Stored so history
 	// replay can emit role=assistant {content:null, tool_calls:[{id,...}]}
-	// and the subsequent role=tool {tool_call_id:...} stays paired �?	// strict providers (DeepSeek v4+) reject orphan tool messages with
+	// and the subsequent role=tool {tool_call_id:...} stays paired —
+	// strict providers (DeepSeek v4+) reject orphan tool messages with
 	// HTTP 400. NULL on rows written before this column existed; the
 	// replay path falls back to pairing by order for those.
 	LLMCallID *string `gorm:"size:64;column:llm_call_id"`

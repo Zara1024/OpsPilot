@@ -63,7 +63,7 @@ type InvestigationReader interface {
 	GetByIncident(ctx context.Context, incidentID uint64) (*alertmodel.InvestigationReport, error)
 }
 
-// InvestigationTrigger is the write-side seam �?POST endpoint always
+// InvestigationTrigger is the write-side seam — POST endpoint always
 // force-enqueues (kills any running worker on this incident, deletes
 // the prior report row, spawns fresh). Manual trigger semantics =
 // "give me a new investigation now", regardless of prior state.
@@ -74,7 +74,7 @@ type InvestigationTrigger interface {
 	// that flows through is opts.Locale (from Accept-Language) so a
 	// manual re-trigger returns a report in the operator's UI language.
 	// Implementations satisfy this by extending ForceEnqueue with the
-	// EnqueueOpts struct �?see biz/alert/investigator.Usecase.
+	// EnqueueOpts struct — see biz/alert/investigator.Usecase.
 	ForceEnqueueWith(ctx context.Context, incident *alertmodel.Incident, opts investigator.EnqueueOpts) error
 }
 
@@ -112,7 +112,7 @@ type Handler struct {
 	investigationsTrigger InvestigationTrigger
 	evidenceReader        investigator.EvidenceReader
 	// runtime knobs exposed as informational metadata via
-	// GET /v1/alerts/runtime-info �?kept on the handler so the SPA can
+	// GET /v1/alerts/runtime-info — kept on the handler so the SPA can
 	// surface "this rule evaluates every 5min" without the operator
 	// having to read the env. Default zero values yield 0 in the API,
 	// which the SPA treats as "unknown / not surfaced".
@@ -139,7 +139,7 @@ func (h *Handler) WithRuntime(evaluatorInterval, notifyCooldown time.Duration) *
 
 // WithInvestigations wires the read-only investigation reader used by
 // GET /v1/alerts/incidents/{id}/investigation. nil keeps the endpoint
-// returning 404 �?which is the correct "feature off" UX for
+// returning 404 — which is the correct "feature off" UX for
 // deployments without the investigator enabled.
 func (h *Handler) WithInvestigations(r InvestigationReader) *Handler {
 	h.investigations = r
@@ -263,7 +263,7 @@ type ruleReq struct {
 	Labels           map[string]string   `json:"labels,omitempty"`
 	RunbookURL       string              `json:"runbook_url,omitempty"`
 	NotifyChannelIDs []uint64            `json:"notify_channel_ids,omitempty"`
-	// 发送策�?(send-policy / dampening). Both zero = disabled. The
+	// 发送策略 (send-policy / dampening). Both zero = disabled. The
 	// biz layer rejects mixed (one zero, one >0) configurations with
 	// a 400 carrying a clear message.
 	NotifyWindowSeconds int `json:"notify_window_seconds,omitempty"`
@@ -316,7 +316,7 @@ func (h *Handler) listIncidents(w http.ResponseWriter, r *http.Request) {
 	}
 	// total = true unfiltered-by-pagination count, NOT len(items).
 	// Sidebar / Home badge polls with page_size=1 to cheaply read this
-	// number; len(items) would always be �?page_size and silently
+	// number; len(items) would always be ≤ page_size and silently
 	// under-report. Best-effort: a count failure shouldn't break the
 	// list, fall back to len(items).
 	total, cerr := h.incidents.CountIncidents(r.Context(), caller, filter)
@@ -350,8 +350,9 @@ func (h *Handler) getIncident(w http.ResponseWriter, r *http.Request) {
 //   - investigator not wired (h.investigations == nil)
 //   - no report yet for this incident (errs.ErrNotFound from the repo)
 //
-// The SPA distinguishes the two cases by reading the response body �?// nil-wired path returns {"status":"feature_disabled"} so the operator
-// sees a clear "投资分析未启�? badge instead of a misleading
+// The SPA distinguishes the two cases by reading the response body —
+// nil-wired path returns {"status":"feature_disabled"} so the operator
+// sees a clear "投资分析未启用" badge instead of a misleading
 // "尚未生成" / "investigating..." spinner.
 func (h *Handler) getIncidentInvestigation(w http.ResponseWriter, r *http.Request) {
 	caller, ok := callerFromRequest(r)
@@ -428,8 +429,9 @@ func (h *Handler) triggerIncidentInvestigation(w http.ResponseWriter, r *http.Re
 	// ForceEnqueue replaces any existing row (kills running worker if
 	// any), then spawns fresh. The SPA continues to GET the same
 	// incident's investigation endpoint and watches status transition
-	// pending �?running �?ready. Threads the operator's Accept-Language
-	// through so the regenerated report matches the current UI locale �?	// see [[feedback_ai_output_locale]]: AI 输出语言跟随用户 UI locale.
+	// pending → running → ready. Threads the operator's Accept-Language
+	// through so the regenerated report matches the current UI locale —
+	// see [[feedback_ai_output_locale]]: AI 输出语言跟随用户 UI locale.
 	opts := investigator.EnqueueOpts{Locale: localeFromRequest(r)}
 	if err := h.investigationsTrigger.ForceEnqueueWith(r.Context(), incident, opts); err != nil {
 		writeErr(w, fmt.Errorf("%w: %s", errs.ErrInvalid, err))
@@ -1009,7 +1011,7 @@ func errCode(err error) int {
 
 // localeFromRequest picks the operator's preferred locale from the
 // Accept-Language header (sent by the SPA from web/src/i18n/locale.ts).
-// Returns a primary subtag �?"en" or "zh" �?or "" when unset / unknown.
+// Returns a primary subtag — "en" or "zh" — or "" when unset / unknown.
 // The investigator's Config.DefaultLocale catches the empty case for
 // auto-fire / backfill (no request context). See
 // [[feedback_ai_output_locale]] for the convention.
@@ -1021,9 +1023,9 @@ func localeFromRequest(r *http.Request) string {
 	if raw == "" {
 		return ""
 	}
-	// Take the first language-tag; ignore q-values. "en-US,en;q=0.9" �?"en-US".
+	// Take the first language-tag; ignore q-values. "en-US,en;q=0.9" → "en-US".
 	first := strings.SplitN(raw, ",", 2)[0]
-	// Drop region: "en-US" �?"en".
+	// Drop region: "en-US" → "en".
 	primary := strings.ToLower(strings.SplitN(strings.TrimSpace(first), "-", 2)[0])
 	switch primary {
 	case "en", "zh":
@@ -1036,7 +1038,7 @@ func localeFromRequest(r *http.Request) string {
 // getRuntimeInfo exposes the alert pipeline's runtime cadence knobs so
 // the SPA can show operators "this rule evaluates every N minutes" without
 // the operator having to read env vars. Values come from env at startup
-// (ONGRID_ALERT_EVAL_INTERVAL / ONGRID_ALERT_COOLDOWN) �?they're per-
+// (ONGRID_ALERT_EVAL_INTERVAL / ONGRID_ALERT_COOLDOWN) — they're per-
 // deployment, not per-rule, so the SPA shows them as a global banner /
 // chip rather than per-rule editable fields.
 func (h *Handler) getRuntimeInfo(w http.ResponseWriter, r *http.Request) {

@@ -20,7 +20,7 @@ type SkillRunner interface {
 // matches the BaseTool parameter contract.
 //
 // SubprocessSkill carries its own raw JSON Schema (from skill.json's
-// "schema" field) so we forward it verbatim �?manifests should already
+// "schema" field) so we forward it verbatim — manifests should already
 // be in the function-calling shape. Otherwise we derive the schema from
 // the metadata's ParamSchema. Edge-scoped skills get an additional
 // required `device_id` integer; manager-scoped skills don't.
@@ -64,7 +64,7 @@ func buildSkillToolSchema(e skillcore.Executor) (json.RawMessage, error) {
 		if _, exists := props["edge_id"]; exists {
 			return nil, fmt.Errorf("skill %q: host schema must use device_id, not edge_id", meta.Key)
 		}
-		// Schema-level identifier is `device_id` �?matches @-mention chip
+		// Schema-level identifier is `device_id` — matches @-mention chip
 		// id and Prom label. Executor still resolves it to an edge_id for
 		// the tunnel call. `edge_id` lingered as a confusing alias before
 		// the device split landed; keeping it out of the schema entirely
@@ -123,7 +123,7 @@ func (r *Registry) newSkillExecutor(svc SkillRunner, key string, scope skillcore
 			if deviceID == 0 {
 				return ExecuteResult{}, fmt.Errorf("skill %q: device_id required", key)
 			}
-			// Resolve device_id �?current Edge through the verified binding.
+			// Resolve device_id → current Edge through the verified binding.
 			// Never reinterpret a Host ID as an Edge ID.
 			var resolveErr error
 			edgeID, resolveErr = NewDeviceResolver(r.devices, r.edges).ResolveEdgeID(ctx, deviceID)
@@ -170,7 +170,8 @@ func (r *Registry) newSkillExecutor(svc SkillRunner, key string, scope skillcore
 	}
 }
 
-// SetSkillRunner 在构建目录前注入 Skill 服务，所有入口使用相同适配器�?func (r *Registry) SetSkillRunner(runner SkillRunner) { r.skillRunner = runner }
+// SetSkillRunner 在构建目录前注入 Skill 服务，所有入口使用相同适配器。
+func (r *Registry) SetSkillRunner(runner SkillRunner) { r.skillRunner = runner }
 
 func (r *Registry) appendSafeSkillTools(out []basetool.BaseTool) []basetool.BaseTool {
 	if r.skillRunner == nil {
@@ -183,11 +184,13 @@ func (r *Registry) appendSafeSkillTools(out []basetool.BaseTool) []basetool.Base
 		}
 	}
 	for _, executor := range skillcore.AllByClass(skillcore.ClassSafe) {
-		// 展示目录的反向桥接不是新的工具来源，否则会递归适配�?		if _, exported := executor.(*baseToolSkillExecutor); exported {
+		// 展示目录的反向桥接不是新的工具来源，否则会递归适配。
+		if _, exported := executor.(*baseToolSkillExecutor); exported {
 			continue
 		}
 		meta := executor.Metadata()
-		// 内置 BaseTool 是同名能力的执行实现（如抓包查询），只保留一份�?		if seen[meta.Key] {
+		// 内置 BaseTool 是同名能力的执行实现（如抓包查询），只保留一份。
+		if seen[meta.Key] {
 			if _, external := executor.(*skillcore.SubprocessSkill); external {
 				r.log.Error("external skill conflicts with built-in tool; registration rejected", "skill", meta.Key)
 			}

@@ -177,7 +177,7 @@ func TestService_Graph_DispatchesToRuntime(t *testing.T) {
 			t.Errorf("event[%d] type = %q, want %q", i, evts[i].Type, want)
 		}
 	}
-	// Tool fields must round-trip �?Status and ToolCallID are the
+	// Tool fields must round-trip — Status and ToolCallID are the
 	// SSE handler's correlation keys.
 	if evts[1].Tool == nil || evts[1].Tool.ToolCallID != "tc1" {
 		t.Errorf("tool_start did not carry tool_call_id")
@@ -194,7 +194,8 @@ func TestService_Graph_DispatchesToRuntime(t *testing.T) {
 // against the misconfig where ONGRID_AGENT_KERNEL=graph but the
 // runtime fails to build. We must fall back to legacy; the test
 // confirms runtime is never called.
-// 运行时不可用时应返回稳定错误，不能隐式执行另一套循环�?func TestService_MissingRuntimeFailsExplicitly(t *testing.T) {
+// 运行时不可用时应返回稳定错误，不能隐式执行另一套循环。
+func TestService_MissingRuntimeFailsExplicitly(t *testing.T) {
 	store, sid := newSeededSessions(7)
 	svc := New(nil, store, nil, nil)
 	_, err := svc.PostMessage(context.Background(), Caller{UserID: 7}, sid, "hello")
@@ -204,7 +205,7 @@ func TestService_Graph_DispatchesToRuntime(t *testing.T) {
 }
 
 // TestService_Graph_Ownership respects the owner check in
-// the GetSession indirection �?non-owner gets ErrNotFound BEFORE the
+// the GetSession indirection — non-owner gets ErrNotFound BEFORE the
 // runtime is consulted.
 func TestService_Graph_Ownership(t *testing.T) {
 	store, sid := newSeededSessions(7)

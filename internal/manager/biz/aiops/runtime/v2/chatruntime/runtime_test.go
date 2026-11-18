@@ -216,11 +216,11 @@ func atoi(n int) string {
 }
 
 // TestRuntime_NewRuntime_RequiresDeps confirms NewRuntime fails fast
-// when ChatModel or Sessions is missing �?production wiring must not
+// when ChatModel or Sessions is missing — production wiring must not
 // silently drop a key dep.
 func TestRuntime_NewRuntime_RequiresDeps(t *testing.T) {
 	if _, err := NewRuntime(Config{}); err == nil {
-		t.Errorf("NewRuntime{} returned nil error �?expected dep check")
+		t.Errorf("NewRuntime{} returned nil error — expected dep check")
 	}
 	if _, err := NewRuntime(Config{Sessions: newMemSessions(nil)}); err == nil {
 		t.Errorf("NewRuntime sans ChatModel should error")
@@ -329,7 +329,7 @@ func TestRuntime_Handle_HostFollowUpFromHistory_ReachesModel(t *testing.T) {
 		question string
 		answer   string
 	}{
-		{name: "chinese", question: "哪个磁盘占比比较大？", answer: "设备 1 的根分区占用最�?},
+		{name: "chinese", question: "哪个磁盘占比比较大？", answer: "设备 1 的根分区占用最高"},
 		{name: "english", question: "Which disk is using the most space on this device?", answer: "The root filesystem on device 1 has the highest usage."},
 	}
 	for _, tt := range tests {
@@ -389,7 +389,7 @@ func TestRuntime_Handle_ConfirmedConfigDraft_AppliesWithoutLLM(t *testing.T) {
 		Content: "should not run",
 	})
 	apply := &captureApplyTool{
-		resp: `{"kind":"config_apply_result","domain":"alert_rule","action":"create","status":"applied","resource_id":42,"resource":{"name":"MySQL 连接使用率过高预�?,"type":"alert_rule"}}`,
+		resp: `{"kind":"config_apply_result","domain":"alert_rule","action":"create","status":"applied","resource_id":42,"resource":{"name":"MySQL 连接使用率过高预警","type":"alert_rule"}}`,
 	}
 	rt, err := NewRuntime(Config{
 		Sessions:  store,
@@ -401,7 +401,7 @@ func TestRuntime_Handle_ConfirmedConfigDraft_AppliesWithoutLLM(t *testing.T) {
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	payload := `{"action":"create","draft_id":"draft-1","rule":{"rule_key":"mysql_connection_usage_high","name":"MySQL 连接使用率过高预�?,"kind":"metric_raw","severity":"warning","spec":{"expr":"up > 0","for":"5m"}}}`
+	payload := `{"action":"create","draft_id":"draft-1","rule":{"rule_key":"mysql_connection_usage_high","name":"MySQL 连接使用率过高预警","kind":"metric_raw","severity":"warning","spec":{"expr":"up > 0","for":"5m"}}}`
 	userText := "确认创建这条告警规则\n" +
 		"domain: alert_rule\n" +
 		"action: create\n" +
@@ -484,19 +484,19 @@ func TestRuntime_Handle_ConfirmedConfigDraft_AppliesWithoutLLM(t *testing.T) {
 func TestRuntime_Handle_PlainOKAppliesLatestConfigDraftWithoutLLM(t *testing.T) {
 	sess := &model.Session{ID: "s1", UserID: 7}
 	store := newMemSessions(sess)
-	payload := `{"action":"create","draft_id":"draft-plain-ok","rule":{"rule_key":"mysql_slow_queries_surge","name":"MySQL 慢查询异常增�?,"kind":"metric_raw","severity":"warning","spec":{"expr":"rate(mysql_global_status_slow_queries[5m]) > 0.5","for":"5m"}}}`
+	payload := `{"action":"create","draft_id":"draft-plain-ok","rule":{"rule_key":"mysql_slow_queries_surge","name":"MySQL 慢查询异常增多","kind":"metric_raw","severity":"warning","spec":{"expr":"rate(mysql_global_status_slow_queries[5m]) > 0.5","for":"5m"}}}`
 	draftResult := `{"kind":"config_draft","domain":"alert_rule","action":"create","draft_hash":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","payload":` + payload + `}`
 	store.messages = append(store.messages,
-		&model.Message{ID: "m-user", SessionID: sess.ID, Role: model.RoleUser, Content: strPtr("创建 MySQL 慢查询告�?), CreatedAt: time.Now().Add(-3 * time.Minute)},
+		&model.Message{ID: "m-user", SessionID: sess.ID, Role: model.RoleUser, Content: strPtr("创建 MySQL 慢查询告警"), CreatedAt: time.Now().Add(-3 * time.Minute)},
 		&model.Message{ID: "m-tool", SessionID: sess.ID, Role: model.RoleTool, ToolName: strPtr("draft_config_change"), Content: strPtr(draftResult), CreatedAt: time.Now().Add(-2 * time.Minute)},
-		&model.Message{ID: "m-assistant", SessionID: sess.ID, Role: model.RoleAssistant, Content: strPtr("草稿已生成，确认后创建�?), CreatedAt: time.Now().Add(-time.Minute)},
+		&model.Message{ID: "m-assistant", SessionID: sess.ID, Role: model.RoleAssistant, Content: strPtr("草稿已生成，确认后创建。"), CreatedAt: time.Now().Add(-time.Minute)},
 	)
 	scripted := newScriptedChatModel(&schema.Message{
 		Role:    schema.Assistant,
 		Content: "should not run",
 	})
 	apply := &captureApplyTool{
-		resp: `{"kind":"config_apply_result","domain":"alert_rule","action":"create","status":"applied","resource_id":95,"resource":{"name":"MySQL 慢查询异常增�?,"type":"alert_rule"}}`,
+		resp: `{"kind":"config_apply_result","domain":"alert_rule","action":"create","status":"applied","resource_id":95,"resource":{"name":"MySQL 慢查询异常增多","type":"alert_rule"}}`,
 	}
 	rt, err := NewRuntime(Config{
 		Sessions:  store,
@@ -555,7 +555,7 @@ func TestLatestConfigDraftApplyArgs_StopsAtAppliedResult(t *testing.T) {
 	applyResult := `{"kind":"config_apply_result","domain":"alert_rule","action":"create","status":"applied","resource_id":95}`
 
 	args, err, ok := latestConfigDraftApplyArgs([]*model.Message{
-		{Role: model.RoleUser, Content: strPtr("创建旧告�?)},
+		{Role: model.RoleUser, Content: strPtr("创建旧告警")},
 		{Role: model.RoleTool, Content: strPtr(draftResult)},
 		{Role: model.RoleUser, Content: strPtr("ok")},
 		{Role: model.RoleTool, Content: strPtr(applyResult)},
@@ -574,11 +574,11 @@ func TestLatestConfigDraftApplyArgs_DoesNotCrossPreviousUserTurn(t *testing.T) {
 	draftResult := `{"kind":"config_draft","domain":"alert_rule","action":"create","draft_hash":"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","payload":` + payload + `}`
 
 	args, err, ok := latestConfigDraftApplyArgs([]*model.Message{
-		{Role: model.RoleUser, Content: strPtr("创建旧告�?)},
+		{Role: model.RoleUser, Content: strPtr("创建旧告警")},
 		{Role: model.RoleTool, Content: strPtr(draftResult)},
-		{Role: model.RoleAssistant, Content: strPtr("草稿已生成，确认后创建�?)},
-		{Role: model.RoleUser, Content: strPtr("先问另一个问�?)},
-		{Role: model.RoleAssistant, Content: strPtr("好的�?)},
+		{Role: model.RoleAssistant, Content: strPtr("草稿已生成，确认后创建。")},
+		{Role: model.RoleUser, Content: strPtr("先问另一个问题")},
+		{Role: model.RoleAssistant, Content: strPtr("好的。")},
 		{Role: model.RoleUser, Content: strPtr("ok")},
 	}, "ok")
 	if err != nil {
@@ -591,7 +591,7 @@ func TestLatestConfigDraftApplyArgs_DoesNotCrossPreviousUserTurn(t *testing.T) {
 
 // TestRuntime_ToolCount + ToolNames provides the per-spec visibility.
 // (a) ONGRID_AGENT_KERNEL=graph startup logs how many BaseTools are
-// bound �?this is the seam main.go logs against.
+// bound — this is the seam main.go logs against.
 func TestRuntime_ToolCountAndNames(t *testing.T) {
 	sess := &model.Session{ID: "s1", UserID: 7}
 	rt, err := NewRuntime(Config{
@@ -713,7 +713,7 @@ func TestConsecutiveFailedTool(t *testing.T) {
 			makeToolMsg("query_promql", true),
 		}
 		name, n := consecutiveFailedTool(hist, 2)
-		// trailing tool is query_promql with one fail �?below minN.
+		// trailing tool is query_promql with one fail — below minN.
 		if name != "" || n != 0 {
 			t.Errorf("got (%q, %d), want zero (different tool breaks the run)", name, n)
 		}
@@ -739,7 +739,7 @@ func TestConsecutiveFailedTool(t *testing.T) {
 			{Role: model.RoleAssistant, Content: strPtr("ok then")},
 		}
 		// The trailing message is assistant, so the tool block isn't
-		// the most-recent thing �?we should NOT report a stuck loop.
+		// the most-recent thing — we should NOT report a stuck loop.
 		name, n := consecutiveFailedTool(hist, 2)
 		if name != "" || n != 0 {
 			t.Errorf("got (%q, %d), want zero (non-tool role at tail)", name, n)
@@ -755,7 +755,7 @@ func TestConsecutiveFailedTool(t *testing.T) {
 }
 
 // TestCalcDynamicHints checks the high-level wiring of both heuristics
-// �?consecutive-failed-tool + iteration-cap.
+// — consecutive-failed-tool + iteration-cap.
 func TestCalcDynamicHints(t *testing.T) {
 	t.Parallel()
 	rt, err := NewRuntime(Config{
@@ -782,26 +782,26 @@ func TestCalcDynamicHints(t *testing.T) {
 		for _, h := range hints {
 			joined += h + "\n"
 		}
-		if !contains(joined, "query_logql") || (!contains(joined, "连续失败") && !contains(joined, "已重复调�?)) {
+		if !contains(joined, "query_logql") || (!contains(joined, "连续失败") && !contains(joined, "已重复调用")) {
 			t.Errorf("missing loop-protection hint: %q", joined)
 		}
 	})
 
 	t.Run("new_question_does_not_inherit_previous_turn_tool_loop_hint", func(t *testing.T) {
 		hist := []*model.Message{
-			{Role: model.RoleUser, Content: strPtr("检查主机磁�?)},
+			{Role: model.RoleUser, Content: strPtr("检查主机磁盘")},
 			makeToolMsg("host_bash", false),
 			makeToolMsg("host_bash", false),
 			makeToolMsg("host_bash", false),
-			{Role: model.RoleAssistant, Content: strPtr("已完成磁盘检�?)},
-			{Role: model.RoleUser, Content: strPtr("看看 docker images 有没有能够清理的�?)},
+			{Role: model.RoleAssistant, Content: strPtr("已完成磁盘检查")},
+			{Role: model.RoleUser, Content: strPtr("看看 docker images 有没有能够清理的？")},
 		}
 		hints := rt.calcDynamicHints(hist)
 		joined := ""
 		for _, h := range hints {
 			joined += h + "\n"
 		}
-		if contains(joined, "host_bash 已重复调�?) || contains(joined, "host_bash 已连续失�?) {
+		if contains(joined, "host_bash 已重复调用") || contains(joined, "host_bash 已连续失败") {
 			t.Errorf("independent question inherited prior tool loop hint: %q", joined)
 		}
 	})
@@ -821,25 +821,25 @@ func TestCalcDynamicHints(t *testing.T) {
 		// Last assistant said "让我..." but no tool message follows.
 		// Reproduces the d9fa4f42 session 17:00:36 trail-off.
 		hist := []*model.Message{
-			{Role: model.RoleUser, Content: strPtr("看一下磁�?)},
-			{Role: model.RoleAssistant, Content: strPtr("让我先查�?/data 目录的磁盘使用情�?)},
+			{Role: model.RoleUser, Content: strPtr("看一下磁盘")},
+			{Role: model.RoleAssistant, Content: strPtr("让我先查看 /data 目录的磁盘使用情况")},
 		}
 		hints := rt.calcDynamicHints(hist)
 		joined := ""
 		for _, h := range hints {
 			joined += h + "\n"
 		}
-		if !contains(joined, "没真�?tool_call") {
+		if !contains(joined, "没真发 tool_call") {
 			t.Errorf("missing unfollowed-promise hint: %q", joined)
 		}
 	})
 
 	t.Run("promise_followed_by_tool_no_hint", func(t *testing.T) {
-		// Same promise but tool ran �?no hint expected.
+		// Same promise but tool ran — no hint expected.
 		toolName := "host_du_summary"
 		hist := []*model.Message{
-			{Role: model.RoleUser, Content: strPtr("看一下磁�?)},
-			{Role: model.RoleAssistant, Content: strPtr("让我先查�?/data")},
+			{Role: model.RoleUser, Content: strPtr("看一下磁盘")},
+			{Role: model.RoleAssistant, Content: strPtr("让我先查看 /data")},
 			{Role: model.RoleTool, ToolName: &toolName, Content: strPtr(`{"subpaths":[]}`)},
 		}
 		hints := rt.calcDynamicHints(hist)
@@ -847,7 +847,7 @@ func TestCalcDynamicHints(t *testing.T) {
 		for _, h := range hints {
 			joined += h + "\n"
 		}
-		if contains(joined, "没真�?tool_call") {
+		if contains(joined, "没真发 tool_call") {
 			t.Errorf("hint should not fire when tool followed promise: %q", joined)
 		}
 	})
@@ -857,13 +857,13 @@ func TestCalcDynamicHints(t *testing.T) {
 			{Role: model.RoleUser, Content: strPtr("创建 CPU 告警")},
 			makeToolMsg("list_metric_catalog", false),
 			makeToolMsg("draft_config_change", false),
-			{Role: model.RoleAssistant, Content: strPtr("草稿已生�?)},
+			{Role: model.RoleAssistant, Content: strPtr("草稿已生成")},
 			{Role: model.RoleUser, Content: strPtr("ok")},
 			{Role: model.RoleAssistant, Content: strPtr("已确认并创建告警规则")},
 			{Role: model.RoleUser, Content: strPtr("创建 PostgreSQL 告警")},
 			makeToolMsg("list_metric_catalog", false),
 			makeToolMsg("draft_config_change", false),
-			{Role: model.RoleAssistant, Content: strPtr("草稿已生�?)},
+			{Role: model.RoleAssistant, Content: strPtr("草稿已生成")},
 			{Role: model.RoleUser, Content: strPtr("ok")},
 			{Role: model.RoleAssistant, Content: strPtr("已确认并创建告警规则")},
 			{Role: model.RoleUser, Content: strPtr("创建 Redis 告警：缓存命中率偏低时提醒我")},
@@ -873,7 +873,7 @@ func TestCalcDynamicHints(t *testing.T) {
 		for _, h := range hints {
 			joined += h + "\n"
 		}
-		if contains(joined, "已重复调�?) || contains(joined, "不要再调用同款工�?) {
+		if contains(joined, "已重复调用") || contains(joined, "不要再调用同款工具") {
 			t.Errorf("new alert request should not inherit old repeat-tool hint: %q", joined)
 		}
 	})
@@ -892,32 +892,32 @@ func TestCalcDynamicHints(t *testing.T) {
 		for _, h := range hints {
 			joined += h + "\n"
 		}
-		if !contains(joined, "query_logql") || !contains(joined, "已重复调�?) {
+		if !contains(joined, "query_logql") || !contains(joined, "已重复调用") {
 			t.Errorf("missing previous-turn repeat-tool hint: %q", joined)
 		}
 	})
 
 	t.Run("alert_draft_guard_block_then_create_request_emits_draft_retry_hint", func(t *testing.T) {
 		hist := []*model.Message{
-			{Role: model.RoleUser, Content: strPtr("�?MySQL 创建连接数超�?85% 的告�?)},
+			{Role: model.RoleUser, Content: strPtr("为 MySQL 创建连接数超过 85% 的告警")},
 			{Role: model.RoleAssistant, Content: strPtr(callbacks.AlertDraftGuardBlockedMessage)},
-			{Role: model.RoleUser, Content: strPtr("�?MySQL 创建一条告警，连接数达�?max_connections �?85% 且持�?5 分钟触发 Warning")},
+			{Role: model.RoleUser, Content: strPtr("为 MySQL 创建一条告警，连接数达到 max_connections 的 85% 且持续 5 分钟触发 Warning")},
 		}
 		hints := rt.calcDynamicHints(hist)
 		joined := ""
 		for _, h := range hints {
 			joined += h + "\n"
 		}
-		if !contains(joined, "draft_config_change") || !contains(joined, "不要要求用户重新发�?) {
+		if !contains(joined, "draft_config_change") || !contains(joined, "不要要求用户重新发送") {
 			t.Errorf("missing alert draft retry hint: %q", joined)
 		}
 	})
 
 	t.Run("alert_draft_guard_block_then_why_question_no_draft_retry_hint", func(t *testing.T) {
 		hist := []*model.Message{
-			{Role: model.RoleUser, Content: strPtr("�?MySQL 创建连接数超�?85% 的告�?)},
+			{Role: model.RoleUser, Content: strPtr("为 MySQL 创建连接数超过 85% 的告警")},
 			{Role: model.RoleAssistant, Content: strPtr(callbacks.AlertDraftGuardBlockedMessage)},
-			{Role: model.RoleUser, Content: strPtr("为什么要这样提示，不能直接创�?draft �?)},
+			{Role: model.RoleUser, Content: strPtr("为什么要这样提示，不能直接创建 draft 吗")},
 		}
 		hints := rt.calcDynamicHints(hist)
 		joined := ""
@@ -987,7 +987,8 @@ func (t *captureApplyTool) InvokableRun(_ context.Context, argsJSON string, _ ..
 // persisted under the synthetic id "query_promql|einoToolAdapter" while
 // an autoheal stub filled the real call_B slot. The assistant turn then
 // survives the completeness precheck (both real ids have a row), but the
-// orphan synthetic-id row used to be emitted bare in natural order �?// provider 400 "Messages with role 'tool' must be a response to a
+// orphan synthetic-id row used to be emitted bare in natural order →
+// provider 400 "Messages with role 'tool' must be a response to a
 // preceding message with 'tool_calls'". buildEinoHistory must drop it.
 func TestBuildEinoHistory_DropsOrphanToolMessage(t *testing.T) {
 	callA, callB := "call_00_aaa", "call_01_bbb"
@@ -1016,7 +1017,7 @@ func TestBuildEinoHistory_DropsOrphanToolMessage(t *testing.T) {
 	out := buildEinoHistory(rows)
 
 	// Every tool message must carry an id that the assistant actually
-	// emitted �?no orphan synthetic-id row survives.
+	// emitted — no orphan synthetic-id row survives.
 	valid := map[string]bool{callA: true, callB: true}
 	toolCount := 0
 	for k, msg := range out {
@@ -1051,7 +1052,7 @@ func TestBuildEinoHistory_DropsOrphanToolMessage(t *testing.T) {
 func TestBuildEinoHistory_SanitizesExpiredToolBudgetResult(t *testing.T) {
 	callID := "call_budget_1"
 	rows := []*model.Message{
-		{ID: "u0", Role: model.RoleUser, Content: strPtr("创建数据库连接告�?)},
+		{ID: "u0", Role: model.RoleUser, Content: strPtr("创建数据库连接告警")},
 		{
 			ID:      "asst-1",
 			Role:    model.RoleAssistant,

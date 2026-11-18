@@ -13,7 +13,7 @@ import (
 
 // DefaultRateLimit is the per-(tool, user) call budget in calls per
 // minute, applied by the default Limiter when no explicit rate is set.
-// �?RateLimitTool (per-user / per-tool QPS 限流).
+// — RateLimitTool (per-user / per-tool QPS 限流).
 //
 // Picked empirically: 10/min lets the LLM correlate aggressively
 // (correlate_incident burst-fires query_promql + query_logql) without
@@ -35,7 +35,7 @@ type Limiter interface {
 	// Allow returns true if the next call for (toolName, userID) is
 	// admissible. Implementations MAY block (e.g. WaitN-style); the
 	// default does not. user 0 falls under a shared "anonymous" bucket
-	// �?fine for in-process tests, locked down by upstream auth in prod.
+	// — fine for in-process tests, locked down by upstream auth in prod.
 	Allow(ctx context.Context, toolName string, userID uint64) bool
 }
 
@@ -78,7 +78,7 @@ func NewTokenBucketLimiter(ratePerMinute int) *TokenBucketLimiter {
 }
 
 // Allow checks the per-(tool, user) bucket and consumes a token if
-// available. Non-blocking �?the decorator turns a false return into
+// available. Non-blocking — the decorator turns a false return into
 // ErrRateLimited so the agent loop sees a fast failure rather than a
 // stalled tool call.
 func (l *TokenBucketLimiter) Allow(_ context.Context, toolName string, userID uint64) bool {
@@ -96,7 +96,9 @@ func (l *TokenBucketLimiter) Allow(_ context.Context, toolName string, userID ui
 }
 
 // RateLimitTool wraps inner so InvokableRun first consults the Limiter
-// keyed on (tool name, user id from InvokeOption). �?// RateLimitTool 装饰器层�?type RateLimitTool struct {
+// keyed on (tool name, user id from InvokeOption). —
+// RateLimitTool 装饰器层。
+type RateLimitTool struct {
 	inner   basetool.BaseTool
 	limiter Limiter
 }
@@ -111,7 +113,7 @@ func WithRateLimit(inner basetool.BaseTool, limiter Limiter) basetool.BaseTool {
 	return &RateLimitTool{inner: inner, limiter: limiter}
 }
 
-// Info passes through �?schema is invariant under rate limiting.
+// Info passes through — schema is invariant under rate limiting.
 func (r *RateLimitTool) Info(ctx context.Context) (*basetool.ToolInfo, error) {
 	return r.inner.Info(ctx)
 }

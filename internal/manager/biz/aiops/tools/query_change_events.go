@@ -12,7 +12,7 @@ import (
 	auditmodel "github.com/Zara1024/OpsPilot/internal/manager/model/audit"
 )
 
-// query_change_events.go �?HLD-013 Phase 2. Gives the RCA
+// query_change_events.go — HLD-013 Phase 2. Gives the RCA
 // investigator a "what changed near time T" signal, sourced from the
 // HLD-010 audit log. Patient-zero is often "someone changed a rule /
 // setting / device right before the symptom"; this exposes those
@@ -20,7 +20,7 @@ import (
 //
 // Scope honesty: the audit log only captures changes made THROUGH ongrid
 // (admin UI / API). External host changes (an SSH edit, an out-of-band
-// deploy, container churn from an orchestrator) are invisible here �?those
+// deploy, container churn from an orchestrator) are invisible here — those
 // need an edge-side change feed (future). The tool description says so, so
 // the LLM doesn't over-trust an empty result.
 
@@ -34,16 +34,16 @@ type AuditLister interface {
 // ToolNameQueryChangeEvents is the registered tool name.
 const ToolNameQueryChangeEvents = "query_change_events"
 
-// QueryChangeEventsDescription �?shown to the model.
-const QueryChangeEventsDescription = "查询 audit log 里某时间窗内的「变更事件」——谁通过 ongrid 改了什�? +
-	"（告警规�?/ 设备 / 设置·LLM key / 通知通道 / 仓库 / 技�?/ 用户）。RCA 溯源时回�? +
-	"「症状发生前后改了什么」，把变更当根因候选。只覆盖�?ongrid 产品发起的变更，" +
-	"不含主机上的外部改动（SSH 改文件、外部部署等 audit 看不到）�?
+// QueryChangeEventsDescription — shown to the model.
+const QueryChangeEventsDescription = "查询 audit log 里某时间窗内的「变更事件」——谁通过 ongrid 改了什么" +
+	"（告警规则 / 设备 / 设置·LLM key / 通知通道 / 仓库 / 技能 / 用户）。RCA 溯源时回答" +
+	"「症状发生前后改了什么」，把变更当根因候选。只覆盖经 ongrid 产品发起的变更，" +
+	"不含主机上的外部改动（SSH 改文件、外部部署等 audit 看不到）。"
 
-const queryChangeEventsWhenToUse = "RCA 溯源时查「告警时间附近有没有人改过配�?/ 规则 / 设置」——把变更�?0 号病人候选�? +
-	"典型：用 incident �?fired_at �?around_ts，看前后 ±30 分钟有没�?rule_update / setting_update / device_update�? +
-	"返回空也是有效发现（这段时间没有产品侧变更）�? +
-	"NOT for：主机上的外部变更（audit 看不到）/ 指标趋势（query_promql�? 日志（query_logql）�?
+const queryChangeEventsWhenToUse = "RCA 溯源时查「告警时间附近有没有人改过配置 / 规则 / 设置」——把变更当 0 号病人候选。" +
+	"典型：用 incident 的 fired_at 作 around_ts，看前后 ±30 分钟有没有 rule_update / setting_update / device_update。" +
+	"返回空也是有效发现（这段时间没有产品侧变更）。" +
+	"NOT for：主机上的外部变更（audit 看不到）/ 指标趋势（query_promql）/ 日志（query_logql）。"
 
 // QueryChangeEventsArgs is the typed arg schema. The window is centred on
 // around_ts (usually the incident's fired_at).
@@ -59,11 +59,11 @@ type QueryChangeEventsArgs struct {
 var QueryChangeEventsSchema = json.RawMessage(`{
   "type": "object",
   "properties": {
-    "around_ts": {"type": "string", "description": "可选锚点时�?RFC3339（通常�?incident �?fired_at）；省略时默认当前时间，围绕它取前后窗口�?},
-    "window_minutes": {"type": "integer", "minimum": 1, "maximum": 1440, "description": "半窗口分钟数（默�?30，即锚点前后�?30 分钟）�?},
-    "resource_type": {"type": "string", "description": "可选，缩小到某类资源：rule/device/setting/channel/repo/skill/user/llm/grafana�?},
+    "around_ts": {"type": "string", "description": "可选锚点时间 RFC3339（通常用 incident 的 fired_at）；省略时默认当前时间，围绕它取前后窗口。"},
+    "window_minutes": {"type": "integer", "minimum": 1, "maximum": 1440, "description": "半窗口分钟数（默认 30，即锚点前后各 30 分钟）。"},
+    "resource_type": {"type": "string", "description": "可选，缩小到某类资源：rule/device/setting/channel/repo/skill/user/llm/grafana。"},
     "action": {"type": "string", "description": "可选，缩小到某动作：rule_update/setting_update/device_update/repo_sync/..."},
-    "limit": {"type": "integer", "minimum": 1, "maximum": 200, "description": "返回条数上限（默�?50）�?}
+    "limit": {"type": "integer", "minimum": 1, "maximum": 200, "description": "返回条数上限（默认 50）。"}
   },
   "required": []
 }`)

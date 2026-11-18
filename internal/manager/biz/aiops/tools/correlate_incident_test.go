@@ -47,7 +47,7 @@ func TestCorrelateIncidentTool_BatchHappy_SkipsAll(t *testing.T) {
 				FirstFiredAt: now, LastFiredAt: now, LabelsJSON: "{}", AnnotationsJSON: "{}"},
 		},
 	}
-	// Pass nil for prom/log/trace â€?each bundle skips all 3 panels with reasons.
+	// Pass nil for prom/log/trace â€” each bundle skips all 3 panels with reasons.
 	tool := NewCorrelateIncidentTool(uc, nil, nil, nil, nil, nil, slog.Default())
 	out, err := tool.InvokableRun(context.Background(), `{"incident_ids":[1,2],"window_minutes":30}`)
 	if err != nil {
@@ -80,7 +80,7 @@ func TestCorrelateIncidentTool_BatchPartialSuccess(t *testing.T) {
 		incidentByID: map[uint64]*alertmodel.Incident{
 			1: {ID: 1, Title: "test", Rule: "cpu_pct", Severity: "warning",
 				FirstFiredAt: now, LastFiredAt: now, LabelsJSON: "{}", AnnotationsJSON: "{}"},
-			// 99 absent â†?not found.
+			// 99 absent â†’ not found.
 		},
 	}
 	tool := NewCorrelateIncidentTool(uc, nil, nil, nil, nil, nil, nil)

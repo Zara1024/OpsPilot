@@ -1,7 +1,7 @@
 // query_knowledge.go is the LLM-callable knowledge-base
 // search tool. The agent uses it to retrieve operator-curated docs +
 // repo-imported markdown / config when the user's question touches
-// "我们之前怎么处理 X" or "<service> 的部署文档说什�?. RAG-lite:
+// "我们之前怎么处理 X" or "<service> 的部署文档说什么". RAG-lite:
 // keyword search now, embeddings in Phase-2.
 package tools
 
@@ -22,19 +22,19 @@ const ToolNameQueryKnowledge = "query_knowledge"
 
 const queryKnowledgeDescription = "Semantic search over the operator's knowledge base (curated playbooks + synced git repos). " +
 	"Returns top-N matching docs with title / source / score / preview. Use natural-language queries " +
-	"�?full sentences embed better than keyword bags."
+	"— full sentences embed better than keyword bags."
 
-const queryKnowledgeWhenToUse = "**回答任何运维 / 故障排查 / 部署 / 配置 / 网络 / 系统类问题前都先调一次本工具**—�? +
-	"KB 是团队精选的中文 playbook（DNS / conntrack / MTU / eBPF / TLS / netshoot / netns 等）�? +
-	"比通用知识更贴近本系统的命令偏好和处置惯例�? +
-	"典型触发�?X 怎么排查' / 'Y 怎么部署' / 'Z 报错怎么处理' / '我们之前怎么�?W'�? +
-	"命中（top score �?0.6）就基于 playbook 步骤回答；未命中再走通用诊断或实时数据工具�? +
-	"**KB �?\"/\" 分隔的路径分目录**�?网络/DNS'�?网络/TLS'�?K8s/网络' 等）�? +
-	"先用 GET /v1/knowledge/paths 看现有目录，再用 path_prefix 收窄（例 '网络/' 拿所有网络类�?网络/DNS' �?DNS 一支）�? +
-	"或带 tags 数组进一步过滤（�?['dns','tls']，any-match 命中即可）�? +
-	"NOT for: 实时指标 / 告警 / 设备状态——那些用 query_promql / query_logql / get_host_summary�? +
+const queryKnowledgeWhenToUse = "**回答任何运维 / 故障排查 / 部署 / 配置 / 网络 / 系统类问题前都先调一次本工具**——" +
+	"KB 是团队精选的中文 playbook（DNS / conntrack / MTU / eBPF / TLS / netshoot / netns 等），" +
+	"比通用知识更贴近本系统的命令偏好和处置惯例。" +
+	"典型触发：'X 怎么排查' / 'Y 怎么部署' / 'Z 报错怎么处理' / '我们之前怎么做 W'。" +
+	"命中（top score ≥ 0.6）就基于 playbook 步骤回答；未命中再走通用诊断或实时数据工具。" +
+	"**KB 用 \"/\" 分隔的路径分目录**（'网络/DNS'、'网络/TLS'、'K8s/网络' 等）。" +
+	"先用 GET /v1/knowledge/paths 看现有目录，再用 path_prefix 收窄（例 '网络/' 拿所有网络类，'网络/DNS' 拿 DNS 一支）。" +
+	"或带 tags 数组进一步过滤（例 ['dns','tls']，any-match 命中即可）。" +
+	"NOT for: 实时指标 / 告警 / 设备状态——那些用 query_promql / query_logql / get_host_summary。" +
 	"NOT for conversational config requests that create alert rules; use draft_config_change/apply_config_change directly. Other config write requests are not supported in v1." +
-	"query 用自然语言整句（不必拆词）；同一主题同一会话只查一次�?
+	"query 用自然语言整句（不必拆词）；同一主题同一会话只查一次。"
 
 const queryKnowledgeSchema = `{
   "type": "object",
@@ -159,7 +159,7 @@ func (t *QueryKnowledgeTool) InvokableRun(ctx context.Context, argsJSON string, 
 		// under ~4k tokens. The LLM can re-ask for full content via
 		// a follow-up if needed (future doc-fetch tool).
 		if len(preview) > 800 {
-			preview = textutil.TruncateBytes(preview, 800) + "�?
+			preview = textutil.TruncateBytes(preview, 800) + "…"
 			out.Truncated = true
 		}
 		out.Items = append(out.Items, queryKnowledgeHit{

@@ -1,7 +1,7 @@
 // Package approval is the persistence entity for the human propose-confirm
-// inbox (HLD-017). It is a GENERAL approval primitive �?one row per
+// inbox (HLD-017). It is a GENERAL approval primitive — one row per
 // dangerous action awaiting a human decision, regardless of producer
-// (agent cloud-shell command, restart_service, a flow approval node �?.
+// (agent cloud-shell command, restart_service, a flow approval node …).
 //
 // Strictly additive: a brand-new `approvals` table + package. It does NOT
 // touch the existing chat_mutating_proposals table or any live path; an
@@ -34,7 +34,7 @@ type Approval struct {
 	// (e.g. a terraform plan diff summary).
 	Summary string `gorm:"type:text" json:"summary"`
 	// PayloadJSON is the opaque action spec the executor needs to run it
-	// (command, runner, credential ref, workdir �?. Producer-defined.
+	// (command, runner, credential ref, workdir …). Producer-defined.
 	PayloadJSON string `gorm:"type:text;not null" json:"payload"`
 
 	// Source records where the proposal came from for the UI: "agent"
@@ -86,4 +86,5 @@ const (
 	SourceFlow  = "flow"
 )
 
-// AgentWaitTimeout 与同步会话等待保持一致；工作流和异步安装审批不受此限制�?const AgentWaitTimeout = 30 * time.Minute
+// AgentWaitTimeout 与同步会话等待保持一致；工作流和异步安装审批不受此限制。
+const AgentWaitTimeout = 30 * time.Minute

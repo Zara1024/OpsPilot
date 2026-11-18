@@ -26,10 +26,11 @@ const GetHostLoadDescription = "Return current CPU percent, memory percent, and 
 // long-running edge calls cannot wedge the agent loop.
 const hostLoadCallTimeout = 60 * time.Second
 
-// host_load.go �?N+15 batch refactor (2026-05-07). The BaseTool
+// host_load.go — N+15 batch refactor (2026-05-07). The BaseTool
 // form of get_host_load now takes a `device_ids[]` array (1..16) and
 // fans out manager-side via runBatch, returning a per-id envelope with
-// success/error counts. Edge handler / wire types are untouched �?// every inner call still hits MethodGetHostLoad with the same single
+// success/error counts. Edge handler / wire types are untouched —
+// every inner call still hits MethodGetHostLoad with the same single
 // GetHostLoadRequest / GetHostLoadResponse pair.
 //
 // Why batch-first: the LLM was burning 5+ rounds doing "cpu on 5 nodes"
@@ -47,7 +48,8 @@ type GetHostLoadTool struct {
 }
 
 // NewGetHostLoadTool builds the BaseTool variant. log may be nil
-// (degrades to slog.Default()). devices is required for device_id �?// edge_id resolution; the current Host binding is required, with no numeric ID fallback.
+// (degrades to slog.Default()). devices is required for device_id →
+// edge_id resolution; the current Host binding is required, with no numeric ID fallback.
 func NewGetHostLoadTool(caller Caller, edges *edgebiz.Usecase, devices *devicebiz.Usecase, log *slog.Logger) *GetHostLoadTool {
 	if log == nil {
 		log = slog.Default()
@@ -82,7 +84,7 @@ type HostLoadBatchResponse struct {
 }
 
 // GetHostLoadBatchSchema is the JSON schema for the batched call.
-// Mirrors the host_files batch shape �?minItems=1, maxItems=16, with
+// Mirrors the host_files batch shape — minItems=1, maxItems=16, with
 // description nudging fleet-style usage.
 var GetHostLoadBatchSchema = json.RawMessage(`{
   "type": "object",
@@ -92,19 +94,19 @@ var GetHostLoadBatchSchema = json.RawMessage(`{
       "items": {"type": "integer", "minimum": 1},
       "minItems": 1,
       "maxItems": 16,
-      "description": "设备 id 列表，一次最�?16 个。fleet 视角问题�?哪台 cpu 最�?/'对比这几�?mem'）用此一次性拉，避免单设备多次调用�?
+      "description": "设备 id 列表，一次最多 16 个。fleet 视角问题（'哪台 cpu 最高'/'对比这几台 mem'）用此一次性拉，避免单设备多次调用。"
     }
   },
   "required": ["device_ids"]
 }`)
 
-// getHostLoadWhenToUse �?batch-first routing hint (N+15).
-const getHostLoadWhenToUse = "对一组设备一次性抓 cpu/mem/load 实时值�?*优先一次给多个 device_id** " +
-	"做横向对比（'哪台 cpu 最�?）；单设备调用是反模式（fleet 问题应该一次性给所�?id）�? +
-	"NOT for: 历史趋势（用 query_promql�? 进程清单（用 get_host_processes�? " +
-	"日志（用 query_logql�? 单设备深查（�?host_bash）�?
+// getHostLoadWhenToUse — batch-first routing hint (N+15).
+const getHostLoadWhenToUse = "对一组设备一次性抓 cpu/mem/load 实时值。**优先一次给多个 device_id** " +
+	"做横向对比（'哪台 cpu 最高'）；单设备调用是反模式（fleet 问题应该一次性给所有 id）。" +
+	"NOT for: 历史趋势（用 query_promql）/ 进程清单（用 get_host_processes）/ " +
+	"日志（用 query_logql）/ 单设备深查（用 host_bash）。"
 
-// Info �?pure metadata. Class=read because get_host_load only observes.
+// Info — pure metadata. Class=read because get_host_load only observes.
 func (t *GetHostLoadTool) Info(_ context.Context) (*basetool.ToolInfo, error) {
 	return &basetool.ToolInfo{
 		Name:        ToolNameGetHostLoad,
@@ -163,7 +165,7 @@ func (t *GetHostLoadTool) singleHostLoad(ctx context.Context, deviceID uint64) H
 // InvokableRun parses argsJSON, validates the batch, fans out via
 // runBatch, and re-emits a HostLoadBatchResponse. Per-id failures are
 // folded into the envelope (success_count / error_count), NOT returned
-// as the function-level error �?the LLM sees the full picture and
+// as the function-level error — the LLM sees the full picture and
 // decides whether to retry.
 func (t *GetHostLoadTool) InvokableRun(ctx context.Context, argsJSON string, _ ...basetool.InvokeOption) (string, error) {
 	if t.caller == nil {

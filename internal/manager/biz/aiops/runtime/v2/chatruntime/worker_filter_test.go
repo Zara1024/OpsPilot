@@ -42,7 +42,7 @@ func toolbagHas(tools []basetool.BaseTool, name string) bool {
 // and specialists (they can't be pre-listed in a persona whitelist). A viewer
 // still drops non-read dynamic tools. (We briefly excluded dynamic tools from
 // the coordinator to force delegation, but that made MCP unreachable with the
-// weak deployed model â€?see worker.go history note â€?so they're back.)
+// weak deployed model â€” see worker.go history note â€” so they're back.)
 func TestFilterToolsForAgentRole_DynamicReadTools(t *testing.T) {
 	bag := []basetool.BaseTool{
 		&originTool{name: "rank_hosts", class: "read", origin: basetool.OriginBuiltin},

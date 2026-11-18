@@ -15,8 +15,8 @@ import (
 
 // ToolNameQueryEdges is the stable wire name the LLM sees.
 //
-// Post-split (May 2026): the tool surfaces "devices" â€?the boxes being
-// monitored â€?but we keep the legacy `query_devices` name in the LLM
+// Post-split (May 2026): the tool surfaces "devices" â€” the boxes being
+// monitored â€” but we keep the legacy `query_devices` name in the LLM
 // prompt below; the underlying entity is the post-split Device. The
 // historical `query_edges` Go identifier is retained for source-level
 // stability but the prompt-facing name is updated so the LLM uses
@@ -116,7 +116,7 @@ func NewQueryEdgesTool(devices *devicebiz.Usecase, edges *edgebiz.Usecase, log *
 	return t
 }
 
-// queryEdgesWhenToUse â€?usually the FIRST tool in any incident triage
+// queryEdgesWhenToUse â€” usually the FIRST tool in any incident triage
 // chain. Reverse-guards against drilling into specific signals before
 // pinning the device id.
 const queryEdgesWhenToUse = "When the user wants the LIST of devices / hosts (filter by role / online / freshness / name substring / IP address), " +

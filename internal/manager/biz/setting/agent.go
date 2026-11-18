@@ -19,7 +19,7 @@ const (
 	maxAgentLLMTimeout     = 15 * time.Minute
 )
 
-// agent.go â€?typed accessor for CategoryAgent behaviour toggles. Mirrors the
+// agent.go â€” typed accessor for CategoryAgent behaviour toggles. Mirrors the
 // telemetry/websearch readers: a thin wrapper over the generic key/value
 // Service that bakes in the default so callers don't repeat the policy.
 
@@ -27,7 +27,7 @@ const (
 // Default is DISABLED (fail-safe): an absent row or a read error resolves to
 // false, so out-of-the-box the agent is read-only and an admin must explicitly
 // opt into writes. This matters because the gate now also unlocks host_bash's
-// unrestricted (cmdpolicy-bypass) mode â€?a permissive default would ship a full
+// unrestricted (cmdpolicy-bypass) mode â€” a permissive default would ship a full
 // root command channel by default. Only the literal "true" enables.
 func (s *Service) AgentWriteEnabled(ctx context.Context) bool {
 	v, found, err := s.Get(ctx, model.CategoryAgent, model.KeyAgentWriteEnabled)

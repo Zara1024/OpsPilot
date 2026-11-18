@@ -15,7 +15,7 @@ import (
 
 // host_files.go implements the three edge-scope filesystem
 // inspection BaseTools. Each tool unmarshals the LLM
-// argsJSON, resolves device_id â†?host edge_id via the edge_devices
+// argsJSON, resolves device_id â†’ host edge_id via the edge_devices
 // junction (devicebiz.EdgeDeviceRepo + EdgeDeviceRelationHost), forwards
 // the request through the frontier tunnel (Caller.Call), and returns the
 // edge-side JSON verbatim.
@@ -41,7 +41,7 @@ const hostFilesCallTimeout = tunnel.HostFilesCallTimeout
 const hostFilesMaxBatchPaths = 16
 
 // hostFilesDeviceResolver is the narrow interface the host_files
-// BaseTools need to translate device_id â†?host edge_id. Both the
+// BaseTools need to translate device_id â†’ host edge_id. Both the
 // shared DeviceResolver and a test fake satisfy it. Declared locally
 // so the test fakes can keep using LookupHostEdge as the seam name
 // while the production wiring goes through DeviceResolver.
@@ -123,12 +123,12 @@ const FindLargeFilesDescription = "Return the top-N largest files under one or m
 // rewriting the other.
 const findLargeFilesWhenToUse = "When the user asks 'find large files' / 'top N largest files' / " +
 	"'which files take up disk'. ALWAYS pass multiple related paths in one call (paths is an array, " +
-	"max 16) â€?sending paths one at a time wastes round-trips. Default scan starts from / with top_n=20. " +
+	"max 16) â€” sending paths one at a time wastes round-trips. Default scan starts from / with top_n=20. " +
 	"NOT for log content (use query_logql) or metric trends (use query_promql); " +
 	"those answer 'how full is the disk', this answers 'which files are filling it'."
 
 // FindLargeFilesSchema is the JSON Schema of the tool's argument object.
-// The `paths` array is the batch knob â€?minItems=1, maxItems=16; the LLM
+// The `paths` array is the batch knob â€” minItems=1, maxItems=16; the LLM
 // is nudged via description to send 5..8 related paths per call.
 var FindLargeFilesSchema = json.RawMessage(`{
   "type": "object",
@@ -139,7 +139,7 @@ var FindLargeFilesSchema = json.RawMessage(`{
       "items": {"type": "string"},
       "minItems": 1,
       "maxItems": 16,
-      "description": "Directories to scan, 1..16. ALWAYS batch 5..8 related paths per call instead of calling once per path â€?saves LLM round-trips. Example: [\"/var/log\",\"/var/cache\",\"/opt\"]."
+      "description": "Directories to scan, 1..16. ALWAYS batch 5..8 related paths per call instead of calling once per path â€” saves LLM round-trips. Example: [\"/var/log\",\"/var/cache\",\"/opt\"]."
     },
     "top_n": {"type": "integer", "default": 20, "minimum": 1, "maximum": 100, "description": "How many files to return per path; sorted by size descending."},
     "min_size_bytes": {"type": "integer", "default": 1048576, "description": "Lower bound on file size in bytes; default 1 MiB."},
@@ -171,7 +171,7 @@ type findLargeFilesResultEnvelope struct {
 
 // FindLargeFilesTool is the BaseTool-shape implementation of
 // find_large_files. Holds its dependencies on the struct (
-// æ”¹è¿›ç‚?#1) so it can be unit-tested without standing up the registry.
+// æ”¹è¿›ç‚¹ #1) so it can be unit-tested without standing up the registry.
 type FindLargeFilesTool struct {
 	caller   Caller
 	resolver hostFilesDeviceResolver
@@ -193,7 +193,7 @@ func NewFindLargeFilesTool(c Caller, e *edgebiz.Usecase, d *devicebiz.Usecase, l
 	}
 }
 
-// Info returns the tool metadata. Class="read" â€?find never mutates
+// Info returns the tool metadata. Class="read" â€” find never mutates
 // state; the sandbox only allows read of whitelisted paths anyway.
 func (t *FindLargeFilesTool) Info(_ context.Context) (*basetool.ToolInfo, error) {
 	return &basetool.ToolInfo{
@@ -205,12 +205,12 @@ func (t *FindLargeFilesTool) Info(_ context.Context) (*basetool.ToolInfo, error)
 	}, nil
 }
 
-// InvokableRun parses argsJSON, resolves device_id â†?edge_id, dispatches
+// InvokableRun parses argsJSON, resolves device_id â†’ edge_id, dispatches
 // the batched tunnel RPC, and re-emits the response wrapped in
 // findLargeFilesResultEnvelope so device_id + success/error counts are
 // echoed back to the LLM.
 //
-// opts are accepted but not consulted for routing â€?device_id comes
+// opts are accepted but not consulted for routing â€” device_id comes
 // from the LLM-supplied args, not from the per-call invoke context.
 // The decorator chain still consumes opts upstream (audit / ratelimit).
 func (t *FindLargeFilesTool) InvokableRun(ctx context.Context, argsJSON string, _ ...basetool.InvokeOption) (string, error) {
@@ -291,15 +291,15 @@ const ToolNameDuSummary = "host_du_summary"
 const DuSummaryDescription = "Return per-subdirectory disk usage under one or more paths on a specific device, sorted by size descending. Accepts a batch of paths in a single call."
 
 // duSummaryWhenToUse is the routing hint. The "drill down one level at
-// a time" guidance is the most important bit â€?without it the LLM
+// a time" guidance is the most important bit â€” without it the LLM
 // wastes tokens on wide trees.
 const duSummaryWhenToUse = "When the user asks 'which directory is growing' / 'disk usage breakdown' / 'du'. " +
-	"ALWAYS pass multiple related paths in one call (paths is an array, max 16) â€?calling once per path is " +
-	"the canonical anti-pattern. Drill down one level at a time with depth=1 â€?do NOT use depth>3 to grab " +
+	"ALWAYS pass multiple related paths in one call (paths is an array, max 16) â€” calling once per path is " +
+	"the canonical anti-pattern. Drill down one level at a time with depth=1 â€” do NOT use depth>3 to grab " +
 	"the whole tree (slow and the LLM can't make sense of it). NEVER call against /proc /sys (the scan never finishes). " +
 	"The response includes a `coverage` field showing what fraction of root-fs used capacity the scanned paths " +
 	"explain; if it carries a `hint` saying INCOMPLETE, you MUST re-call with broader paths (typically [\"/\"] at " +
-	"depth=1) before answering the user â€?do not finalize a recommendation while coverage is poor."
+	"depth=1) before answering the user â€” do not finalize a recommendation while coverage is poor."
 
 // DuSummarySchema is the JSON Schema of the tool's argument object.
 var DuSummarySchema = json.RawMessage(`{
@@ -506,7 +506,7 @@ func computeDuCoverage(reqPaths []string, results []tunnel.DuSummaryResultEntry,
 			"INCOMPLETE: your scanned paths only explain %.1f%% of root-fs usage (%s of %s used). "+
 				"The remaining %.1f%% is in directories you haven't scanned. "+
 				"Re-call host_du_summary with paths=[\"/\"] at depth=1 to find the dominant top-level directory, "+
-				"then drill down. Do not finalize an answer until coverage is â‰?0%% or you've explicitly "+
+				"then drill down. Do not finalize an answer until coverage is â‰¥80%% or you've explicitly "+
 				"identified where the unaccounted space lives.",
 			cov.ExplainedPct, cov.ScannedHuman, cov.FsUsedHuman, 100-cov.ExplainedPct,
 		)
@@ -514,7 +514,7 @@ func computeDuCoverage(reqPaths []string, results []tunnel.DuSummaryResultEntry,
 	return cov
 }
 
-// humanBytesSimple â€?tiny mirror of the edge's humanBytes so we don't
+// humanBytesSimple â€” tiny mirror of the edge's humanBytes so we don't
 // have to import the edge package into the manager. Binary prefix.
 func humanBytesSimple(n int64) string {
 	const unit = 1024
@@ -545,10 +545,10 @@ const StatFileDescription = "Return size / mtime / atime / mode / owner for one 
 
 // statFileWhenToUse is the routing hint. Single-point queries are the
 // cheapest, so we explicitly recommend it as the "confirm a hot path"
-// step after du_summary â€?and we strongly nudge passing several at once.
+// step after du_summary â€” and we strongly nudge passing several at once.
 const statFileWhenToUse = "When the user asks for size / mtime / mode / owner of specific files or directories. " +
-	"ALWAYS pass multiple paths in one call (paths is an array, max 16) â€?stat-ing one path at a time is " +
-	"the canonical anti-pattern. Cheapest of the host_files tools â€?use after du_summary surfaces several " +
+	"ALWAYS pass multiple paths in one call (paths is an array, max 16) â€” stat-ing one path at a time is " +
+	"the canonical anti-pattern. Cheapest of the host_files tools â€” use after du_summary surfaces several " +
 	"hot paths to confirm them in one shot. NOT for listing many files (use find_large_files)."
 
 // StatFileSchema is the JSON Schema of the tool's argument object.

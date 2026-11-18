@@ -28,7 +28,7 @@ func TestQueryPromQLTool_Info(t *testing.T) {
 		t.Errorf("Description empty")
 	}
 	if info.WhenToUse == "" {
-		t.Errorf("WhenToUse empty â€?requires it separated from Description")
+		t.Errorf("WhenToUse empty â€” requires it separated from Description")
 	}
 	if !strings.Contains(info.WhenToUse, "metric") {
 		t.Errorf("WhenToUse should mention metrics: %q", info.WhenToUse)

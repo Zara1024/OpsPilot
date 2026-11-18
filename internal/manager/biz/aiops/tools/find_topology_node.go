@@ -16,18 +16,18 @@ const (
 	ToolNameFindTopologyNode = "find_topology_node"
 
 	// findTopologyNodeMaxLimit caps how many rows the LLM can pull in
-	// one shot â€?anything more is noise that crowds out reasoning.
+	// one shot â€” anything more is noise that crowds out reasoning.
 	findTopologyNodeMaxLimit     = 50
 	findTopologyNodeDefaultLimit = 20
 	findTopologyNodeCallTimeout  = 60 * time.Second
 )
 
 const findTopologyNodeDescription = "Search the business topology by name substring (case-insensitive). " +
-	"Returns matching nodes with id, name, and type â€?call this when the user named a service / cluster / app and you need its node_id " +
+	"Returns matching nodes with id, name, and type â€” call this when the user named a service / cluster / app and you need its node_id " +
 	"to feed into expand_topology or to link in a reply."
 
 const findTopologyNodeWhenToUse = "Before expand_topology when you only have a human-given name. " +
-	"Example: user says 'what does loki-write depend on?' â€?call find_topology_node{name='loki-write'} to get its node_id, then expand_topology on that. " +
+	"Example: user says 'what does loki-write depend on?' â€” call find_topology_node{name='loki-write'} to get its node_id, then expand_topology on that. " +
 	"NOT for devices (use query_devices) and NOT for fuzzy guessing of what the user meant (let the LLM ask back)."
 
 var findTopologyNodeSchema = json.RawMessage(`{
@@ -146,7 +146,7 @@ func (t *FindTopologyNodeTool) InvokableRun(ctx context.Context, argsJSON string
 	if clamped {
 		out.Note = "limit clamped to 50"
 	} else if total > int64(len(hits)) {
-		out.Note = fmt.Sprintf("%d more results not returned â€?narrow the query or raise limit", total-int64(len(hits)))
+		out.Note = fmt.Sprintf("%d more results not returned â€” narrow the query or raise limit", total-int64(len(hits)))
 	}
 
 	body, err := json.Marshal(out)

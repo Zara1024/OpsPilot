@@ -32,7 +32,7 @@ func TestBashTool_Info(t *testing.T) {
 	if info.WhenToUse == "" {
 		t.Errorf("WhenToUse empty")
 	}
-	if !strings.Contains(info.WhenToUse, "inline approval card") && !strings.Contains(info.WhenToUse, "确认�?) {
+	if !strings.Contains(info.WhenToUse, "inline approval card") && !strings.Contains(info.WhenToUse, "确认卡") {
 		t.Errorf("WhenToUse should advertise mutating approval: %q", info.WhenToUse)
 	}
 	var schema map[string]any
@@ -113,7 +113,10 @@ func TestBashToolPropagatesSourceTruncation(t *testing.T) {
 	}
 }
 
-// Issue #337：写动作开关只解锁"生成提案"这一件事。分类器判定为读的命�?// 仍必须以只读模式下发，这样万一漏判，Edge �?cmdpolicy 会拒绝它，而不�?// 拿到 unrestricted 直接跑原始命令�?func TestBashTool_AdminWriteGateKeepsReadCommandOnReadOnlyPath(t *testing.T) {
+// Issue #337：写动作开关只解锁"生成提案"这一件事。分类器判定为读的命令
+// 仍必须以只读模式下发，这样万一漏判，Edge 的 cmdpolicy 会拒绝它，而不是
+// 拿到 unrestricted 直接跑原始命令。
+func TestBashTool_AdminWriteGateKeepsReadCommandOnReadOnlyPath(t *testing.T) {
 	fc := &fakeCaller{
 		respBody: mustMarshal(tunnel.BashExecResponse{Allowed: true, Stdout: "repo\ttag"}),
 	}
@@ -197,7 +200,9 @@ func TestBashTool_DockerCleanupCommandUsesApprovalInsteadOfDispatch(t *testing.T
 	}
 }
 
-// Issue #337：重定向与命令列表不能只看首命令名。这类语法必须进提案确认�?// 旧实现把它当成读命令直接下发，并在写动作开关打开时带�?Unrestricted�?func TestBashTool_RedirectAndCommandListUseApproval(t *testing.T) {
+// Issue #337：重定向与命令列表不能只看首命令名。这类语法必须进提案确认；
+// 旧实现把它当成读命令直接下发，并在写动作开关打开时带上 Unrestricted。
+func TestBashTool_RedirectAndCommandListUseApproval(t *testing.T) {
 	cases := []struct {
 		name string
 		cmd  string
@@ -236,7 +241,8 @@ func TestBashTool_DockerCleanupCommandUsesApprovalInsteadOfDispatch(t *testing.T
 }
 
 // 纯读的管道命令不应该被拖进审批。这里的下发结果由真实的 Edge 策略算出来，
-// 保证"判成�?的命令在只读模式下确实可执行，而不只是证明下发了只读模式�?func TestBashTool_ReadPipelineDispatchesReadOnly(t *testing.T) {
+// 保证"判成读"的命令在只读模式下确实可执行，而不只是证明下发了只读模式。
+func TestBashTool_ReadPipelineDispatchesReadOnly(t *testing.T) {
 	policy := cmdpolicy.DefaultReadOnly()
 	for _, cmd := range []string{"ps aux | grep ongrid", "df -h | head -5", "cat /etc/hosts", "ls -l /var/log | tail -5"} {
 		t.Run(cmd, func(t *testing.T) {
@@ -275,8 +281,10 @@ func TestBashTool_DockerCleanupCommandUsesApprovalInsteadOfDispatch(t *testing.T
 	}
 }
 
-// Edge 的解析器只接受简单命令与裸管道。写开关开启时，它拒绝的复合语法必�?// 生成审批提案——判成读等于把它们下发成注定被拒的调用。断言直接跑真实的
-// cmdpolicy，避免写死的 Allowed 响应只证明下发模式、证明不了可执行�?func TestBashTool_EdgeUnsupportedOperatorsRequireApproval(t *testing.T) {
+// Edge 的解析器只接受简单命令与裸管道。写开关开启时，它拒绝的复合语法必须
+// 生成审批提案——判成读等于把它们下发成注定被拒的调用。断言直接跑真实的
+// cmdpolicy，避免写死的 Allowed 响应只证明下发模式、证明不了可执行。
+func TestBashTool_EdgeUnsupportedOperatorsRequireApproval(t *testing.T) {
 	policy := cmdpolicy.DefaultReadOnly()
 	for _, cmd := range []string{
 		"df -h && free -m",
@@ -323,7 +331,9 @@ func TestBashTool_DockerCleanupCommandUsesApprovalInsteadOfDispatch(t *testing.T
 	}
 }
 
-// 换行是这类语法的特例：Edge 把它当空白，不报语法错，而是把两条命令粘成一�?// argv。所以分类器必须判成需要审批，否则模型看到�?成功"跑的其实是另一条命令�?func TestBashTool_NewlineSeparatedCommandsRequireApproval(t *testing.T) {
+// 换行是这类语法的特例：Edge 把它当空白，不报语法错，而是把两条命令粘成一条
+// argv。所以分类器必须判成需要审批，否则模型看到的"成功"跑的其实是另一条命令。
+func TestBashTool_NewlineSeparatedCommandsRequireApproval(t *testing.T) {
 	const cmd = "df -h\nfree -m"
 	segments, err := cmdpolicy.SplitPipes(cmd)
 	if err != nil {
@@ -342,7 +352,8 @@ func TestIsHostBashWriteCommand(t *testing.T) {
 		cmd  string
 		want bool
 	}{
-		// 首命令判断本来就覆盖�?		{"rm /tmp/a", true},
+		// 首命令判断本来就覆盖的
+		{"rm /tmp/a", true},
 		{"sudo rm /tmp/a", true},
 		{"/usr/bin/touch /tmp/a", true},
 		{"docker system prune -af", true},
@@ -350,27 +361,35 @@ func TestIsHostBashWriteCommand(t *testing.T) {
 		{"df -h", false},
 		{"docker images", false},
 		{"systemctl status ongrid-edge", false},
-		// 重定向：目标文件一定被�?		{"echo hi > /etc/hosts", true},
+		// 重定向：目标文件一定被改
+		{"echo hi > /etc/hosts", true},
 		{"echo hi >> /var/log/app.log", true},
 		{"cat f 2>/dev/null", true},
 		{"make target >&2", true},
-		// 命令列表 / 后台执行：每个段都要�?		{"ls; rm -f /tmp/x", true},
+		// 命令列表 / 后台执行：每个段都要判
+		{"ls; rm -f /tmp/x", true},
 		{"true && rm -f /tmp/x", true},
 		{"rm -f /tmp/x || true", true},
 		{"ls -l & rm /tmp/x", true},
-		// 管道里的写命�?		{"cat /etc/hosts | tee /tmp/copy", true},
+		// 管道里的写命令
+		{"cat /etc/hosts | tee /tmp/copy", true},
 		{"ps aux | head -5", false},
-		// 只读命令列表同样是问题：Edge 的解析器根本不接�?; && || &�?		// 按只读段逐段判断会把它们下发成注定被拒的调用，所以一律走审批�?		{"df -h && free -m", true},
+		// 只读命令列表同样是问题：Edge 的解析器根本不接受 ; && || &，
+		// 按只读段逐段判断会把它们下发成注定被拒的调用，所以一律走审批。
+		{"df -h && free -m", true},
 		{"df -h || free -m", true},
 		{"df -h; free -m", true},
 		{"df -h &", true},
 		{"sleep 5 &", true},
-		// 换行�?Edge 当成空白，会把两条命令粘成一�?argv，同样只能走审批�?		{"df -h\nfree -m", true},
-		// 输入重定向、参数展开、括号：Edge 一律判 forbidden�?		{"cat /etc/hostname < /tmp/f", true},
+		// 换行被 Edge 当成空白，会把两条命令粘成一条 argv，同样只能走审批。
+		{"df -h\nfree -m", true},
+		// 输入重定向、参数展开、括号：Edge 一律判 forbidden。
+		{"cat /etc/hostname < /tmp/f", true},
 		{"echo ${HOME}", true},
 		{"echo \"${HOME}\"", true},
 		{"diff <(sort /tmp/a) <(sort /tmp/b)", true},
-		// 命令替换：内容不可预�?		{"echo $(rm -f /tmp/y)", true},
+		// 命令替换：内容不可预测
+		{"echo $(rm -f /tmp/y)", true},
 		{"echo `rm -f /tmp/y`", true},
 		{"echo \"$(whoami)\"", true},
 		// 引号内是字面量，不能当成语法（否则读命令被无谓拖进审批）
@@ -380,14 +399,16 @@ func TestIsHostBashWriteCommand(t *testing.T) {
 		{`echo 'a && b'`, false},
 		{`echo "a; b"`, false},
 		{`echo "a < b"`, false},
-		// 前导赋值与 sudo 选项不能顶掉命令�?		{"LC_ALL=C rm -f /tmp/x", true},
+		// 前导赋值与 sudo 选项不能顶掉命令名
+		{"LC_ALL=C rm -f /tmp/x", true},
 		{"FOO=1 BAR=2 mv a b", true},
 		{"LC_ALL=C df -h", false},
 		{"sudo -u nginx rm -f /tmp/x", true},
 		{"sudo -n systemctl stop firewalld", true},
 		{"sudo -- rm -f /tmp/x", true},
 		{"sudo -u nginx df -h", false},
-		// 空输�?		{"", false},
+		// 空输入
+		{"", false},
 		{"   ", false},
 	}
 	for _, tc := range cases {
@@ -441,7 +462,7 @@ func TestBashTool_BatchHappy(t *testing.T) {
 }
 
 func TestBashTool_BatchPolicyRejectionFlowsThrough(t *testing.T) {
-	// Policy rejection is NOT a tool error �?Allowed=false + Reason in
+	// Policy rejection is NOT a tool error — Allowed=false + Reason in
 	// the per-device entry so the LLM can correct.
 	fc := &fakeCaller{
 		respBody: mustMarshal(tunnel.BashExecResponse{

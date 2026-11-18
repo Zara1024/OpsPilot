@@ -8,7 +8,7 @@
 // message_id). Strict providers (DeepSeek v4+) reject the request
 // with HTTP 400 "tool must follow tool_calls" when an assistant row
 // with Content=NULL is replayed as a bare {role:assistant,content:""}
-// â€?the following role=tool messages are then orphans.
+// â€” the following role=tool messages are then orphans.
 //
 // The fix is to hydrate Message.ToolCalls (done by SessionRepo) and
 // have the replay layer emit
@@ -24,7 +24,7 @@
 // args} triples buildMessages-style functions should emit. Two
 // callers: the legacy agent.buildMessages (returns llm.Message) and
 // the graph chatruntime.buildEinoHistory (returns schema.Message);
-// both consume the same (msgID â†?[]ResolvedToolCall) map.
+// both consume the same (msgID â†’ []ResolvedToolCall) map.
 package toolreplay
 
 import (
@@ -33,7 +33,7 @@ import (
 
 // ResolvedToolCall is one entry in the tool_calls slot of an assistant
 // message at replay time. ArgsJSON is the verbatim JSON the LLM
-// originally produced (chat_tool_calls.arguments_json) â€?emit as raw
+// originally produced (chat_tool_calls.arguments_json) â€” emit as raw
 // JSON, not re-marshalled, so float precision / key order match what
 // the provider would expect for repeat-content safety.
 type ResolvedToolCall struct {
@@ -46,12 +46,12 @@ type ResolvedToolCall struct {
 // the slice of tool calls the replay should emit. Three sources, in
 // priority order:
 //
-//  1. Message.ToolCalls[i].LLMCallID â€?populated by the repo from
+//  1. Message.ToolCalls[i].LLMCallID â€” populated by the repo from
 //     chat_tool_calls.llm_call_id (rows written post-fix).
 //  2. Pair-by-order with the following role=tool messages, using each
 //     tool row's stored tool_call_id (back-compat for pre-fix rows
 //     with NULL llm_call_id).
-//  3. Omit the assistant from the result map â€?caller drops the
+//  3. Omit the assistant from the result map â€” caller drops the
 //     assistant row + dependent tool rows so the LLM never sees
 //     orphans. This is the conservative MVP behavior, preserved as
 //     a safety net.
@@ -125,7 +125,7 @@ func Resolve(history []*aiopsmodel.Message) map[string][]ResolvedToolCall {
 
 // MarkDependentToolsForSkip flags the next n role=tool messages
 // (starting after assistantIdx) into skip so they don't appear
-// orphaned. Stops at the next user / assistant boundary â€?anything
+// orphaned. Stops at the next user / assistant boundary â€” anything
 // past that point belongs to a different turn. Callers consult skip
 // when iterating history; entries flagged are omitted from the
 // outgoing LLM message list.
@@ -150,7 +150,7 @@ func MarkDependentToolsForSkip(history []*aiopsmodel.Message, assistantIdx, n in
 //
 // Used to REORDER history at replay time: an assistant turn with
 // tool_calls must be immediately followed by tool responses paired by
-// tool_call_id, but persistence stores rows by created_at â€?and
+// tool_call_id, but persistence stores rows by created_at â€” and
 // long-running tools (notably AgentTool spawning a specialist sub-agent)
 // finish later than other intermediate turns, so the natural order
 // interleaves another assistant between the parent and its response.
@@ -180,7 +180,7 @@ func IndexToolMessagesByCallID(history []*aiopsmodel.Message) map[string]int {
 }
 
 // MarkAllFollowingToolsForSkip flags every consecutive role=tool
-// message after assistantIdx â€?used when the assistant row carries
+// message after assistantIdx â€” used when the assistant row carries
 // no usable signal at all (content=NULL AND no hydrated ToolCalls,
 // i.e. the polluted-data case where chat_tool_calls was never
 // written and the assistant is unreplayable). Stops at the next

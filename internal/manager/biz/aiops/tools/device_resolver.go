@@ -21,7 +21,7 @@ type DeviceResolver interface {
 
 // junctionDeviceResolver is the production implementation backed by
 // the device + edge usecases. Keep the struct unexported so callers
-// reach it via NewDeviceResolver â€?we may swap the underlying repo
+// reach it via NewDeviceResolver â€” we may swap the underlying repo
 // (e.g. add a cache) without touching call sites.
 type junctionDeviceResolver struct {
 	devices *devicebiz.Usecase

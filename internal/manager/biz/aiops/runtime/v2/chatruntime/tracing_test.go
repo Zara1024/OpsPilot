@@ -101,9 +101,9 @@ func TestAgentTracingRealGraphModelAndTool(t *testing.T) {
 func testAgentTracingRealGraphModelAndTool(t *testing.T, capture, large bool) {
 	recorder := recordAgentSpans(t)
 	handler := newTestTraceHandler(t)
-	userPrompt, modelOutput, basePrompt := "合成测试：检查设备状态并总结结果", "合成测试完成：设备状态正常�?, ""
+	userPrompt, modelOutput, basePrompt := "合成测试：检查设备状态并总结结果", "合成测试完成：设备状态正常。", ""
 	if large {
-		userPrompt = "合成测试：验证大正文截断与显�?
+		userPrompt = "合成测试：验证大正文截断与显示"
 		modelOutput = strings.Repeat("这是一段大型合成输出，用于验证正文预算与中文字符边界。😀\n", 4000)
 		basePrompt = strings.Repeat("private-system-instructions ", 10000)
 	}

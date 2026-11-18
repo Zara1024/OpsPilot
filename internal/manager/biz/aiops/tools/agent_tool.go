@@ -17,9 +17,9 @@ import (
 
 // WorkerSpawner is the narrow seam AgentTool / SendMessageTool / TaskStopTool
 // need from chatruntime.Runtime. Declared locally so tools/ does NOT import
-// chatruntime �?chatruntime already depends on tools/basetool, and an import
+// chatruntime — chatruntime already depends on tools/basetool, and an import
 // the other way would create a cycle. The concrete *chatruntime.Runtime
-// satisfies this interface structurally �?see chatruntime/runtime.go +
+// satisfies this interface structurally — see chatruntime/runtime.go +
 // chatruntime/worker.go for the actual signatures.
 //
 // The interface receives + returns a generic shape (WorkerHandle) instead of
@@ -37,7 +37,7 @@ type WorkerSpawner interface {
 	// SendToWorker continues a worker by appending a follow-up message.
 	SendToWorker(ctx context.Context, workerID, message string) error
 
-	// StopWorker cancels a running worker. Idempotent �?returns nil
+	// StopWorker cancels a running worker. Idempotent — returns nil
 	// even when the worker is already terminal.
 	StopWorker(ctx context.Context, workerID string) error
 
@@ -47,7 +47,7 @@ type WorkerSpawner interface {
 
 // SpawnWorkerRequest is the seam-side spawn shape. Mirrors
 // chatruntime.SpawnRequest field-for-field except that ParentEmit is
-// kept generic �?the tools package doesn't know about
+// kept generic — the tools package doesn't know about
 // chatruntime.Event, so the wiring shim translates between the two.
 type SpawnWorkerRequest struct {
 	ReasoningEffort string
@@ -62,7 +62,7 @@ type SpawnWorkerRequest struct {
 	Locale string
 	// Provider + Model carry the coordinator's resolved LLM choice
 	// down to the sub-agent. Without this, runWorker's g.Invoke threads
-	// no chatModelOpts �?the routing chat model falls back to its
+	// no chatModelOpts → the routing chat model falls back to its
 	// built-in default ("openai"), and installs without an OpenAI key
 	// see specialist sub-agents fail with `provider "openai" not
 	// configured`. Empty fields preserve the worker's own default
@@ -91,14 +91,15 @@ type WorkerHandle struct {
 // The tools package can't import chatruntime (cycle); this interface
 // stays narrow so the wiring site at cmd/main.go can shim
 // *chatruntime.AgentRegistry into it. Implementations only need to
-// answer "is this name registered" �?no Agent struct details cross the
+// answer "is this name registered" — no Agent struct details cross the
 // boundary.
 type SubagentRegistry interface {
 	HasAgent(name string) bool
 }
 
 // AgentTool spawns a worker. The LLM-facing name is
-// "AgentTool" (PascalCase) to align with claude-code's tool catalog �?// SOTA models have learned that name; switching to a snake_case label
+// "AgentTool" (PascalCase) to align with claude-code's tool catalog —
+// SOTA models have learned that name; switching to a snake_case label
 // would degrade tool selection quality. for details.
 type AgentTool struct {
 	spawner     WorkerSpawner
@@ -110,8 +111,8 @@ type AgentTool struct {
 	// sha256(subagent_type + "|" + prompt). When a coordinator
 	// re-dispatches with the same prompt within dedupeTTL we return
 	// the cached result instead of spawning again. This kills the
-	// "AgentTool �?host_bash×N �?AgentTool (same task)" loop weak
-	// coordinator models fall into �?see E2E eval D1 (5 redundant
+	// "AgentTool → host_bash×N → AgentTool (same task)" loop weak
+	// coordinator models fall into — see E2E eval D1 (5 redundant
 	// AgentTool calls to specialist-compute with near-identical
 	// briefs).
 	dedupe sync.Map // map[string]*dedupeEntry; writes and eviction hold dedupeMu
@@ -164,7 +165,7 @@ func (t *AgentTool) storeDedupeResult(key string, result agentToolResult) {
 	t.dedupe.Store(key, &dedupeEntry{result: &result, expiry: now.Add(dedupeTTL), order: t.dedupeOrder})
 }
 
-// NewAgentTool builds the tool. spawner MUST be non-nil �?the tool is
+// NewAgentTool builds the tool. spawner MUST be non-nil — the tool is
 // useless without a runtime to delegate to. registry MAY be nil; when
 // nil, subagent_type is forwarded verbatim and the runtime returns the
 // "agent not found" error.
@@ -188,15 +189,15 @@ func dedupeKey(sessionID, subagentType, prompt string) string {
 // AgentToolName is the wire name the LLM sees.
 const AgentToolName = "AgentTool"
 
-// agentToolWhenToUse �?coordinator-only tool; deliberately calls out
+// agentToolWhenToUse — coordinator-only tool; deliberately calls out
 // the "don't delegate trivia" guard rail.
 const agentToolWhenToUse = "Spawn a specialized worker for tasks the main agent shouldn't or can't do alone " +
 	"(deep root-cause investigation; SOP review of mutating proposals). " +
-	"Pass description (1-line task summary), subagent_type (one of the registered agent names �?see system " +
+	"Pass description (1-line task summary), subagent_type (one of the registered agent names — see system " +
 	"reminder for the catalog), prompt (full task brief; the worker can't see your context, so include " +
-	"every relevant detail). The call is SYNCHRONOUS �?blocks until the worker returns its final result, " +
+	"every relevant detail). The call is SYNCHRONOUS — blocks until the worker returns its final result, " +
 	"then writes the result into the response. " +
-	"DO NOT use AgentTool for tasks the main agent can do without delegation �?it's expensive."
+	"DO NOT use AgentTool for tasks the main agent can do without delegation — it's expensive."
 
 // agentToolSchema is the JSON Schema the LLM sees. Snake_case keys per
 // claude-code convention (description / subagent_type / prompt).
@@ -215,7 +216,7 @@ const agentToolSchema = `{
     },
     "subagent_type": {
       "type": "string",
-      "description": "Agent name to spawn �?one of the registered agent personas. The system reminder lists the available types."
+      "description": "Agent name to spawn — one of the registered agent personas. The system reminder lists the available types."
     },
     "prompt": {
       "type": "string",
@@ -226,7 +227,7 @@ const agentToolSchema = `{
 }`
 
 // agentToolArgs is the parsed argument shape. Snake_case keys.
-// Background field intentionally omitted �?see schema comment.
+// Background field intentionally omitted — see schema comment.
 type agentToolArgs struct {
 	Description  string `json:"description"`
 	SubagentType string `json:"subagent_type"`
@@ -257,7 +258,7 @@ type agentToolResult struct {
 	// the coordinator LLM doesn't loop back into inline tool probes
 	// after dispatch. Without it we observed coordinators re-invoking
 	// AgentTool 10+ times with near-identical prompts in the same
-	// turn �?see E2E eval D1 (122 tool calls in 240s).
+	// turn — see E2E eval D1 (122 tool calls in 240s).
 	Hint string `json:"hint,omitempty"`
 }
 
@@ -289,7 +290,7 @@ func (t *AgentTool) InvokableRun(ctx context.Context, argsJSON string, opts ...b
 	// Dedupe check: same (parent session, subagent_type, prompt) within dedupeTTL
 	// returns the prior result with an explicit "you already
 	// dispatched this" hint. The coordinator LLM doesn't observe
-	// this short-circuit �?the result message looks like a normal
+	// this short-circuit — the result message looks like a normal
 	// AgentTool reply with a stronger nudge to stop looping.
 	parentSession := basetool.SessionIDFromContext(ctx)
 	dKey := dedupeKey(parentSession, args.SubagentType, args.Prompt)
@@ -297,7 +298,7 @@ func (t *AgentTool) InvokableRun(ctx context.Context, argsJSON string, opts ...b
 	if v, ok := t.dedupe.Load(dKey); ok {
 		if entry, ok := v.(*dedupeEntry); ok && entry != nil && now.Before(entry.expiry) && entry.result != nil {
 			cached := *entry.result // copy so we can rewrite Hint
-			cached.Hint = "重复派活拦截：你刚刚�? " + dedupeTTL.String() + "）已经派�?" + args.SubagentType + " 跑同一份任务，结果�?result 字段。请整合已有证据；仅在需要验证该结论或补齐不同领域证据时再调用直接工具或不同专家，不要重复派同一任务�?
+			cached.Hint = "重复派活拦截：你刚刚（< " + dedupeTTL.String() + "）已经派过 " + args.SubagentType + " 跑同一份任务，结果在 result 字段。请整合已有证据；仅在需要验证该结论或补齐不同领域证据时再调用直接工具或不同专家，不要重复派同一任务。"
 			body, mErr := json.Marshal(cached)
 			if mErr != nil {
 				return "", fmt.Errorf("AgentTool: marshal cached: %w", mErr)
@@ -313,7 +314,7 @@ func (t *AgentTool) InvokableRun(ctx context.Context, argsJSON string, opts ...b
 	}
 
 	// Always synchronous. The Background flag in SpawnWorkerRequest
-	// stays false �?see schema comment for why we don't expose async
+	// stays false — see schema comment for why we don't expose async
 	// to the coordinator anymore.
 	w, err := t.spawner.SpawnWorker(ctx, SpawnWorkerRequest{
 		AgentName:       args.SubagentType,
@@ -335,13 +336,13 @@ func (t *AgentTool) InvokableRun(ctx context.Context, argsJSON string, opts ...b
 		Err:    w.Err,
 	}
 	if res.Err != "" {
-		res.Hint = "Specialist " + args.SubagentType + " 已返回错误。向用户说明该证据缺口；如有必要，可改用直接工具或不同专家验证，不要重复派同一份任务�?
+		res.Hint = "Specialist " + args.SubagentType + " 已返回错误。向用户说明该证据缺口；如有必要，可改用直接工具或不同专家验证，不要重复派同一份任务。"
 	} else {
-		res.Hint = "Specialist " + args.SubagentType + " 已返回证据（�?result 字段）。默认助理负责整合并答复；只在需要验证该结论或补齐不同领域证据时继续调用工具，不要重复派同一份任务�?
+		res.Hint = "Specialist " + args.SubagentType + " 已返回证据（见 result 字段）。默认助理负责整合并答复；只在需要验证该结论或补齐不同领域证据时继续调用工具，不要重复派同一份任务。"
 	}
 	// Store the fresh result for future dedupe lookups. We
 	// intentionally store the un-hinted form so a cache-hit gets the
-	// "你已经派�? hint while a fresh call gets the regular hint.
+	// "你已经派过" hint while a fresh call gets the regular hint.
 	storeRes := res
 	storeRes.Hint = ""
 	t.storeDedupeResult(dKey, storeRes)

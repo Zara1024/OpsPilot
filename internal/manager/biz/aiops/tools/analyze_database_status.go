@@ -741,7 +741,7 @@ func (r databaseStatusRunner) analyzeSource(ctx context.Context, src databaseMet
 		row.Findings = append(row.Findings, DatabaseStatusFinding{
 			Severity:  "critical",
 			Code:      "no_recent_samples",
-			Title:     "当前没有数据库指标序�?,
+			Title:     "当前没有数据库指标序列",
 			Value:     row.SampleCount5m,
 			Threshold: "> 0",
 			PromQL:    activeSeriesExpr,
@@ -822,7 +822,7 @@ func (r databaseStatusRunner) attachHealth(row *DatabaseStatusSource) {
 		row.Findings = append(row.Findings, DatabaseStatusFinding{
 			Severity: "warning",
 			Code:     "source_starting",
-			Title:    "采集源正在启�?,
+			Title:    "采集源正在启动",
 		})
 	case "stopped", "disabled":
 		row.Findings = append(row.Findings, DatabaseStatusFinding{
@@ -835,7 +835,7 @@ func (r databaseStatusRunner) attachHealth(row *DatabaseStatusSource) {
 		row.Findings = append(row.Findings, DatabaseStatusFinding{
 			Severity: "critical",
 			Code:     "source_failed",
-			Title:    "采集源异�?,
+			Title:    "采集源异常",
 			Message:  row.LastError,
 		})
 	}
@@ -1267,7 +1267,7 @@ func (r databaseStatusRunner) analyzeDatabaseObjectInventory(ctx context.Context
 			Severity: "info",
 			Code:     "database_object_inventory_missing",
 			Title:    "未采集数据库对象清单指标",
-			Message:  "当前 exporter 指标不能直接回答�?�?集合/key 数量；查�?capabilities �?object_inventory �?missing_metrics�?,
+			Message:  "当前 exporter 指标不能直接回答库/表/集合/key 数量；查看 capabilities 中 object_inventory 的 missing_metrics。",
 		})
 	}
 }
@@ -1294,7 +1294,7 @@ func (r databaseStatusRunner) analyzeMySQL(ctx context.Context, selector string,
 	r.checkThreshold(ctx, selector, discovered, row, numericCheck{
 		MetricKey: "connection_usage_pct",
 		Code:      "mysql_connection_pressure",
-		Title:     "MySQL 连接使用率偏�?,
+		Title:     "MySQL 连接使用率偏高",
 		Expr:      fmt.Sprintf("100 * max(mysql_global_status_threads_connected{%s}) / clamp_min(max(mysql_global_variables_max_connections{%s}), 1)", selector, selector),
 		Required:  []string{"mysql_global_status_threads_connected", "mysql_global_variables_max_connections"},
 		WarnAbove: floatPtr(75),
@@ -1304,7 +1304,7 @@ func (r databaseStatusRunner) analyzeMySQL(ctx context.Context, selector string,
 	r.checkThreshold(ctx, selector, discovered, row, numericCheck{
 		MetricKey: "slow_queries_per_second",
 		Code:      "mysql_slow_queries",
-		Title:     "MySQL 慢查询增�?,
+		Title:     "MySQL 慢查询增长",
 		Expr:      fmt.Sprintf("sum(rate(mysql_global_status_slow_queries{%s}[5m]))", selector),
 		Required:  []string{"mysql_global_status_slow_queries"},
 		WarnAbove: floatPtr(0.1),
@@ -1343,7 +1343,7 @@ func (r databaseStatusRunner) analyzeMySQL(ctx context.Context, selector string,
 	r.checkThreshold(ctx, selector, discovered, row, numericCheck{
 		MetricKey: "tmp_disk_tables_15m",
 		Code:      "mysql_tmp_disk_tables",
-		Title:     "MySQL 磁盘临时表增长偏�?,
+		Title:     "MySQL 磁盘临时表增长偏多",
 		Expr:      fmt.Sprintf("sum(increase(mysql_global_status_created_tmp_disk_tables{%s}[15m]))", selector),
 		Required:  []string{"mysql_global_status_created_tmp_disk_tables"},
 		WarnAbove: floatPtr(100),
@@ -1385,7 +1385,7 @@ func (r databaseStatusRunner) analyzeMySQL(ctx context.Context, selector string,
 	r.checkThreshold(ctx, selector, discovered, row, numericCheck{
 		MetricKey: "open_files_usage_pct",
 		Code:      "mysql_open_files_pressure",
-		Title:     "MySQL open files 使用率偏�?,
+		Title:     "MySQL open files 使用率偏高",
 		Expr:      fmt.Sprintf("100 * max(mysql_global_status_open_files{%s}) / clamp_min(max(mysql_global_variables_open_files_limit{%s}), 1)", selector, selector),
 		Required:  []string{"mysql_global_status_open_files", "mysql_global_variables_open_files_limit"},
 		WarnAbove: floatPtr(75),
@@ -1507,7 +1507,7 @@ func (r databaseStatusRunner) analyzePostgreSQL(ctx context.Context, selector st
 	r.checkThreshold(ctx, selector, discovered, row, numericCheck{
 		MetricKey: "connection_usage_pct",
 		Code:      "postgresql_connection_pressure",
-		Title:     "PostgreSQL 连接使用率偏�?,
+		Title:     "PostgreSQL 连接使用率偏高",
 		Expr:      fmt.Sprintf("100 * sum(pg_stat_activity_count{%s}) / clamp_min(max(pg_settings_max_connections{%s}), 1)", selector, selector),
 		Required:  []string{"pg_stat_activity_count", "pg_settings_max_connections"},
 		WarnAbove: floatPtr(75),
@@ -1583,7 +1583,7 @@ func (r databaseStatusRunner) analyzePostgreSQL(ctx context.Context, selector st
 	r.checkThreshold(ctx, selector, discovered, row, numericCheck{
 		MetricKey: "exporter_last_scrape_error",
 		Code:      "postgresql_exporter_scrape_error",
-		Title:     "PostgreSQL exporter 最近一�?scrape 失败",
+		Title:     "PostgreSQL exporter 最近一次 scrape 失败",
 		Expr:      fmt.Sprintf("max(pg_exporter_last_scrape_error{%s})", selector),
 		Required:  []string{"pg_exporter_last_scrape_error"},
 		WarnAbove: floatPtr(0),
@@ -1593,7 +1593,7 @@ func (r databaseStatusRunner) analyzePostgreSQL(ctx context.Context, selector st
 	r.checkThreshold(ctx, selector, discovered, row, numericCheck{
 		MetricKey: "max_tx_duration_seconds",
 		Code:      "postgresql_long_transaction",
-		Title:     "PostgreSQL 存在长事�?,
+		Title:     "PostgreSQL 存在长事务",
 		Expr:      fmt.Sprintf("max(pg_stat_activity_max_tx_duration{%s})", selector),
 		Required:  []string{"pg_stat_activity_max_tx_duration"},
 		WarnAbove: floatPtr(300),
@@ -1701,7 +1701,7 @@ func (r databaseStatusRunner) analyzeRedis(ctx context.Context, selector string,
 	r.checkThreshold(ctx, selector, discovered, row, numericCheck{
 		MetricKey: "exporter_last_scrape_error",
 		Code:      "redis_exporter_scrape_error",
-		Title:     "Redis exporter 最近一�?scrape 失败",
+		Title:     "Redis exporter 最近一次 scrape 失败",
 		Expr:      fmt.Sprintf("max(redis_exporter_last_scrape_error{%s})", selector),
 		Required:  []string{"redis_exporter_last_scrape_error"},
 		WarnAbove: floatPtr(0),
@@ -1730,7 +1730,7 @@ func (r databaseStatusRunner) analyzeRedis(ctx context.Context, selector string,
 	r.checkThreshold(ctx, selector, discovered, row, numericCheck{
 		MetricKey: "latest_fork_seconds",
 		Code:      "redis_fork_slow",
-		Title:     "Redis 最近一�?fork 耗时偏高",
+		Title:     "Redis 最近一次 fork 耗时偏高",
 		Expr:      fmt.Sprintf("max(redis_latest_fork_seconds{%s})", selector),
 		Required:  []string{"redis_latest_fork_seconds"},
 		WarnAbove: floatPtr(1),
@@ -1794,7 +1794,7 @@ func (r databaseStatusRunner) checkRedisMemory(ctx context.Context, selector str
 		row.Findings = append(row.Findings, DatabaseStatusFinding{
 			Severity:  "critical",
 			Code:      "redis_memory_pressure",
-			Title:     "Redis 内存使用率偏�?,
+			Title:     "Redis 内存使用率偏高",
 			Value:     ratio,
 			Threshold: "> 90%",
 			PromQL:    expr,
@@ -1803,7 +1803,7 @@ func (r databaseStatusRunner) checkRedisMemory(ctx context.Context, selector str
 		row.Findings = append(row.Findings, DatabaseStatusFinding{
 			Severity:  "warning",
 			Code:      "redis_memory_pressure",
-			Title:     "Redis 内存使用率偏�?,
+			Title:     "Redis 内存使用率偏高",
 			Value:     ratio,
 			Threshold: "> 80%",
 			PromQL:    expr,
@@ -1852,7 +1852,7 @@ func (r databaseStatusRunner) checkRedisMemoryFragmentation(ctx context.Context,
 		row.Findings = append(row.Findings, DatabaseStatusFinding{
 			Severity:  "critical",
 			Code:      "redis_memory_fragmentation",
-			Title:     "Redis 内存碎片率偏�?,
+			Title:     "Redis 内存碎片率偏高",
 			Value:     ratio,
 			Threshold: "> 2",
 			PromQL:    expr,
@@ -1861,7 +1861,7 @@ func (r databaseStatusRunner) checkRedisMemoryFragmentation(ctx context.Context,
 		row.Findings = append(row.Findings, DatabaseStatusFinding{
 			Severity:  "warning",
 			Code:      "redis_memory_fragmentation",
-			Title:     "Redis 内存碎片率偏�?,
+			Title:     "Redis 内存碎片率偏高",
 			Value:     ratio,
 			Threshold: "> 1.5",
 			PromQL:    expr,
@@ -1941,15 +1941,15 @@ func (r databaseStatusRunner) analyzeMongoDB(ctx context.Context, selector strin
 		row.Findings = append(row.Findings, DatabaseStatusFinding{
 			Severity: "info",
 			Code:     "mongodb_limited_metrics",
-			Title:    "MongoDB 仅暴露基础连通性指�?,
-			Message:  "当前 source 未暴�?MongoDB serverStatus 连接数、操作计数、asserts 或内存指标；本工具只能判�?exporter/up 与采集链路�?,
+			Title:    "MongoDB 仅暴露基础连通性指标",
+			Message:  "当前 source 未暴露 MongoDB serverStatus 连接数、操作计数、asserts 或内存指标；本工具只能判断 exporter/up 与采集链路。",
 		})
 	}
 	r.checkFirstThreshold(ctx, selector, discovered, row, []numericCheck{
 		{
 			MetricKey: "connections_current",
 			Code:      "mongodb_connections_current",
-			Title:     "MongoDB 当前连接数偏�?,
+			Title:     "MongoDB 当前连接数偏高",
 			Expr:      fmt.Sprintf("max(mongodb_ss_connections{%s,conn_type=\"current\"})", selector),
 			Required:  []string{"mongodb_ss_connections"},
 			WarnAbove: floatPtr(500),
@@ -1959,7 +1959,7 @@ func (r databaseStatusRunner) analyzeMongoDB(ctx context.Context, selector strin
 		{
 			MetricKey: "connections_current",
 			Code:      "mongodb_connections_current",
-			Title:     "MongoDB 当前连接数偏�?,
+			Title:     "MongoDB 当前连接数偏高",
 			Expr:      fmt.Sprintf("max(mongodb_connections{%s,state=\"current\"})", selector),
 			Required:  []string{"mongodb_connections"},
 			WarnAbove: floatPtr(500),
@@ -1971,7 +1971,7 @@ func (r databaseStatusRunner) analyzeMongoDB(ctx context.Context, selector strin
 		{
 			MetricKey: "connections_available",
 			Code:      "mongodb_connections_available",
-			Title:     "MongoDB 可用连接�?,
+			Title:     "MongoDB 可用连接数",
 			Expr:      fmt.Sprintf("max(mongodb_ss_connections{%s,conn_type=\"available\"})", selector),
 			Required:  []string{"mongodb_ss_connections"},
 			Unit:      "connections",
@@ -1979,7 +1979,7 @@ func (r databaseStatusRunner) analyzeMongoDB(ctx context.Context, selector strin
 		{
 			MetricKey: "connections_available",
 			Code:      "mongodb_connections_available",
-			Title:     "MongoDB 可用连接�?,
+			Title:     "MongoDB 可用连接数",
 			Expr:      fmt.Sprintf("max(mongodb_connections{%s,state=\"available\"})", selector),
 			Required:  []string{"mongodb_connections"},
 			Unit:      "connections",
@@ -2072,7 +2072,7 @@ func (r databaseStatusRunner) analyzeMongoDB(ctx context.Context, selector strin
 	r.checkThreshold(ctx, selector, discovered, row, numericCheck{
 		MetricKey: "connection_rate_limit_rejected_15m",
 		Code:      "mongodb_connection_rate_limit_rejected",
-		Title:     "MongoDB connection establishment 被限流拒�?,
+		Title:     "MongoDB connection establishment 被限流拒绝",
 		Expr:      fmt.Sprintf("sum(increase(mongodb_ss_connections_establishmentRateLimit_rejected{%s}[15m]))", selector),
 		Required:  []string{"mongodb_ss_connections_establishmentRateLimit_rejected"},
 		WarnAbove: floatPtr(0),
@@ -2101,7 +2101,7 @@ func (r databaseStatusRunner) analyzeMongoDB(ctx context.Context, selector strin
 	r.checkThreshold(ctx, selector, discovered, row, numericCheck{
 		MetricKey: "wiredtiger_cache_usage_pct",
 		Code:      "mongodb_wiredtiger_cache_pressure",
-		Title:     "MongoDB WiredTiger cache 使用率偏�?,
+		Title:     "MongoDB WiredTiger cache 使用率偏高",
 		Expr:      fmt.Sprintf("100 * max(mongodb_ss_wt_cache_bytes_currently_in_the_cache{%s}) / clamp_min(max(mongodb_ss_wt_cache_maximum_bytes_configured{%s}), 1)", selector, selector),
 		Required:  []string{"mongodb_ss_wt_cache_bytes_currently_in_the_cache", "mongodb_ss_wt_cache_maximum_bytes_configured"},
 		WarnAbove: floatPtr(80),
@@ -2258,7 +2258,7 @@ func (r databaseStatusRunner) checkFirstUp(ctx context.Context, metrics []string
 			row.Findings = append(row.Findings, DatabaseStatusFinding{
 				Severity:  "critical",
 				Code:      metric + "_down",
-				Title:     metric + " �?0",
+				Title:     metric + " 为 0",
 				Value:     v,
 				Threshold: "> 0",
 				PromQL:    expr,

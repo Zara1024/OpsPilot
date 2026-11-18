@@ -13,7 +13,7 @@ import (
 // NoopLimiter, prometheus.DefaultRegisterer) so a minimal Wrap call
 // still produces a well-behaved tool.
 //
-// ASCII diagram �?these are the inputs to the standard
+// ASCII diagram — these are the inputs to the standard
 // decorator stack.
 type Deps struct {
 	// Timeout is an optional per-call ceiling. Non-positive adds no deadline.
@@ -31,10 +31,10 @@ type Deps struct {
 
 	// ReviewSpawner is the chatruntime seam ReviewGate uses to spawn
 	// the reviewer worker for mutating tools that are not covered by a
-	// deterministic approval policy. Nil �?ReviewGate is NOT installed;
+	// deterministic approval policy. Nil → ReviewGate is NOT installed;
 	// mutating tools (Class="write"|"destructive") will run unguarded.
 	// cmd/main.go MUST wire this when the deployment includes the
-	// reviewer agent persona �?otherwise SOP gating is silently disabled.
+	// reviewer agent persona — otherwise SOP gating is silently disabled.
 	ReviewSpawner ReviewSpawner
 
 	// ReviewSink writes chat_mutating_proposals rows. Nil-safe.
@@ -55,15 +55,15 @@ type Deps struct {
 
 // Wrap returns inner wrapped by the standard decorator stack:
 //
-//	tenant_bind �?schema_validation �?review_gate �?human_approval �?timeout �?audit �?ratelimit �?metric
+//	tenant_bind → schema_validation → review_gate → human_approval → timeout → audit → ratelimit → metric
 //
 // Reading top-down (ASCII flow + SOP gating):
 // a request hits tenant_bind first (it's the outermost wrapper),
 // which resolves the tenant from ctx, then descends through
 // review_gate (gates mutating tools by deterministic policy or by
-// spawning a reviewer worker �?PR-7), timeout (bound the inner call),
+// spawning a reviewer worker — PR-7), timeout (bound the inner call),
 // audit (write start row), ratelimit (refuse after audit), and
-// finally metric �?which observes the actual inner tool execution
+// finally metric — which observes the actual inner tool execution
 // time without timeout/audit/ratelimit overhead in the histogram.
 //
 // Why this order:
@@ -79,14 +79,14 @@ type Deps struct {
 //     (default 60s) for the reviewer round-trip; once approve fires,
 //     the inner tool runs under an explicitly configured timeout, if any.
 //   - review_gate OUTSIDE audit because a rejected proposal has no
-//     execution to audit �?chat_tool_calls is the **execution** log,
+//     execution to audit — chat_tool_calls is the **execution** log,
 //     chat_mutating_proposals is the **decision** log. Putting
 //     review_gate inside audit would emit a synthetic execution row
 //     for every reject, polluting the execution table.
 //   - review_gate is a no-op for read-class tools (Info().Class !=
 //     "write"|"destructive"), so applying it unconditionally costs
 //     one Info() call per non-mutating invoke; we accept that for
-//     the documentability win �?a single chain order is easier to
+//     the documentability win — a single chain order is easier to
 //     reason about than per-tool conditional wrapping.
 //   - timeout outside audit so an audit-pending row is still written
 //     when the call times out (otherwise we lose the timeout
@@ -99,7 +99,7 @@ type Deps struct {
 //   - metric innermost so its histogram tracks the inner tool's
 //     latency, not the decorator overhead.
 //
-// Any of these can be flipped if the SLO story changes �?the order is
+// Any of these can be flipped if the SLO story changes — the order is
 // documented here so it's reviewable as a single decision rather than
 // scattered across construction sites.
 func Wrap(inner basetool.BaseTool, deps Deps) basetool.BaseTool {
@@ -125,7 +125,8 @@ func Wrap(inner basetool.BaseTool, deps Deps) basetool.BaseTool {
 			Timeout:       deps.ReviewerTimeout,
 		})
 	}
-	// 参数错误必须在创建审批或 reviewer 任务之前返回�?	tool = basetool.WithValidation(tool)
+	// 参数错误必须在创建审批或 reviewer 任务之前返回。
+	tool = basetool.WithValidation(tool)
 	tool = WithTenantBind(tool)
 	return tool
 }

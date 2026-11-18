@@ -14,8 +14,8 @@ import (
 // metricCollectors bundles the Prom collectors registered by the metric
 // decorator. Allocated lazily per Registerer so multiple Wrap() calls
 // against the same registerer share collectors (avoiding
-// "already registered" panics in tests). �?MetricTool
-// (�?ongrid_tool_invocations_total).
+// "already registered" panics in tests). — MetricTool
+// (记 ongrid_tool_invocations_total).
 type metricCollectors struct {
 	invocations *prometheus.CounterVec
 	duration    *prometheus.HistogramVec
@@ -28,7 +28,7 @@ var (
 
 // getMetricCollectors returns (and lazily creates / registers) the
 // collectors for reg. Identical pattern to internal/pkg/llm/metrics.go's
-// registerOrExisting �?we treat AlreadyRegisteredError as "reuse the
+// registerOrExisting — we treat AlreadyRegisteredError as "reuse the
 // existing collector" so multiple decorator chains over the same
 // registry don't panic.
 func getMetricCollectors(reg prometheus.Registerer) *metricCollectors {
@@ -77,7 +77,9 @@ func regOrExist(reg prometheus.Registerer, c prometheus.Collector) prometheus.Co
 }
 
 // MetricTool wraps inner so each invocation increments a Prom counter
-// and observes a duration histogram. �?MetricTool 装饰�?// 层。Cardinality red line: labels are {name, result} only �?// never user_id / tenant / device_id.
+// and observes a duration histogram. — MetricTool 装饰器
+// 层。Cardinality red line: labels are {name, result} only —
+// never user_id / tenant / device_id.
 type MetricTool struct {
 	inner      basetool.BaseTool
 	collectors *metricCollectors
@@ -93,7 +95,7 @@ func WithMetric(inner basetool.BaseTool, reg prometheus.Registerer) basetool.Bas
 	}
 }
 
-// Info passes through �?collectors don't affect schema.
+// Info passes through — collectors don't affect schema.
 func (m *MetricTool) Info(ctx context.Context) (*basetool.ToolInfo, error) {
 	return m.inner.Info(ctx)
 }

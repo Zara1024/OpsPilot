@@ -27,7 +27,7 @@ func TestRuntime_DraftBudgetPreservesConfirmation(t *testing.T) {
 			store := newMemSessions(sess)
 			const hash = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 			const payload = `{"action":"create","draft_id":"pending-first","rule":{"name":"CPU high","kind":"metric_raw","scope_type":"host","spec":{"expr":"up == 0"}}}`
-			draft := &pendingDraftTool{captureApplyTool: captureApplyTool{resp: `{"kind":"config_draft","domain":"alert_rule","action":"create","summary":"CPU high","scope":{"type":"host","label":"主机�?},"draft_hash":"` + hash + `","payload":` + payload + `}`}}
+			draft := &pendingDraftTool{captureApplyTool: captureApplyTool{resp: `{"kind":"config_draft","domain":"alert_rule","action":"create","summary":"CPU high","scope":{"type":"host","label":"主机级"},"draft_hash":"` + hash + `","payload":` + payload + `}`}}
 			apply := &captureApplyTool{resp: `{"kind":"config_apply_result","status":"applied","resource_id":95}`}
 			scripted := newScriptedChatModel(
 				&schema.Message{Role: schema.Assistant, ToolCalls: []schema.ToolCall{{ID: "first", Type: "function", Function: schema.FunctionCall{Name: "draft_config_change", Arguments: `{}`}}}},
@@ -43,7 +43,7 @@ func TestRuntime_DraftBudgetPreservesConfirmation(t *testing.T) {
 				t.Fatalf("reply=%+v err=%v", reply, err)
 			}
 			content := *reply.Message.Content
-			for _, want := range []string{"CPU high", "主机�?, "尚未应用", "确认", "后续消息"} {
+			for _, want := range []string{"CPU high", "主机级", "尚未应用", "确认", "后续消息"} {
 				if !strings.Contains(content, want) {
 					t.Fatalf("reply missing %q: %s", want, content)
 				}

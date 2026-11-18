@@ -118,7 +118,7 @@ type expandTopologyResult struct {
 	Hits   []expandTopologyHit `json:"reachable"`
 	// Note tells the LLM about silent fallbacks (depth clamped, no
 	// propagating edges found, etc.) without falling back to error
-	// shape â€?the tool's output is structurally always valid.
+	// shape â€” the tool's output is structurally always valid.
 	Note string `json:"note,omitempty"`
 }
 
@@ -185,7 +185,7 @@ func (t *ExpandTopologyTool) InvokableRun(ctx context.Context, argsJSON string, 
 	callCtx, cancel := context.WithTimeout(ctx, expandTopologyCallTimeout)
 	defer cancel()
 
-	// Resolve start node â€?device_id path needs Device.NodeID populated
+	// Resolve start node â€” device_id path needs Device.NodeID populated
 	// (PR-2 backfill takes care of legacy rows; new registers fill it
 	// via NodeMirror).
 	startID := in.NodeID
@@ -198,7 +198,7 @@ func (t *ExpandTopologyTool) InvokableRun(ctx context.Context, argsJSON string, 
 			return "", fmt.Errorf("expand_topology: resolve device %d: %w", in.DeviceID, err)
 		}
 		if dev.NodeID == nil {
-			return "", fmt.Errorf("expand_topology: device %d has no linked topology node (node_id is NULL â€?topology.Migrate will backfill on next boot)", in.DeviceID)
+			return "", fmt.Errorf("expand_topology: device %d has no linked topology node (node_id is NULL â€” topology.Migrate will backfill on next boot)", in.DeviceID)
 		}
 		startID = *dev.NodeID
 	}
@@ -208,7 +208,7 @@ func (t *ExpandTopologyTool) InvokableRun(ctx context.Context, argsJSON string, 
 		return "", fmt.Errorf("expand_topology: get center node %d: %w", startID, err)
 	}
 
-	// Pull every registered relation type once, into a name â†?metadata
+	// Pull every registered relation type once, into a name â†’ metadata
 	// map. We need direction + propagates_failure per hop; loading
 	// 6-ish rows is cheaper than re-fetching per edge.
 	rts, err := t.topology.ListRelationTypes(callCtx)
@@ -220,7 +220,7 @@ func (t *ExpandTopologyTool) InvokableRun(ctx context.Context, argsJSON string, 
 		typeMeta[rt.Name] = rt
 	}
 
-	// Pull all relations once. For tenant-scale (â‰?0k relations per
+	// Pull all relations once. For tenant-scale (â‰¤10k relations per
 	// working assumption) this is cheaper than N+1 per-node
 	// lookups and keeps the BFS in-memory.
 	allRel, _, err := t.topology.ListRelations(callCtx, topologybiz.RelationListFilter{Limit: 10000})
@@ -228,7 +228,7 @@ func (t *ExpandTopologyTool) InvokableRun(ctx context.Context, argsJSON string, 
 		return "", fmt.Errorf("expand_topology: list relations: %w", err)
 	}
 
-	// BFS. Track (node_id â†?first-reach metadata) so we don't re-visit
+	// BFS. Track (node_id â†’ first-reach metadata) so we don't re-visit
 	// a node with a worse path.
 	type visit struct {
 		hops         int
@@ -303,7 +303,7 @@ func (t *ExpandTopologyTool) InvokableRun(ctx context.Context, argsJSON string, 
 		}
 		n := nodes[id]
 		if n == nil {
-			continue // shouldn't happen â€?relation pointed to nothing
+			continue // shouldn't happen â€” relation pointed to nothing
 		}
 		viaName := ""
 		if v.via != 0 {
@@ -343,7 +343,7 @@ func (t *ExpandTopologyTool) InvokableRun(ctx context.Context, argsJSON string, 
 		result.Note = "depth clamped to max=5"
 	}
 	if len(hits) == 0 && onlyPropagating {
-		result.Note = "no propagating relations reachable â€?try only_propagating=false to include observation / annotation edges"
+		result.Note = "no propagating relations reachable â€” try only_propagating=false to include observation / annotation edges"
 	}
 	body, err := json.Marshal(result)
 	if err != nil {
@@ -359,7 +359,7 @@ func (t *ExpandTopologyTool) fetchNodesByIDs(ctx context.Context, ids []uint64) 
 	for _, id := range ids {
 		n, err := t.topology.GetNode(ctx, id)
 		if err != nil {
-			// Skip missing â€?a stale relation pointing at a deleted
+			// Skip missing â€” a stale relation pointing at a deleted
 			// node shouldn't make the whole tool fail.
 			continue
 		}
@@ -369,7 +369,7 @@ func (t *ExpandTopologyTool) fetchNodesByIDs(ctx context.Context, ids []uint64) 
 }
 
 func sortHitsByHopsThenName(hits []expandTopologyHit) {
-	// Simple insertion sort â€?len(hits) is typically <50.
+	// Simple insertion sort â€” len(hits) is typically <50.
 	for i := 1; i < len(hits); i++ {
 		for j := i; j > 0; j-- {
 			a := hits[j-1]

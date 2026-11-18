@@ -517,7 +517,7 @@ func sanitizeLLMProbeDetail(detail, apiKey string) string {
 		return detail
 	}
 	runes := []rune(detail)
-	return string(runes[:maxLLMProbeDetailRunes]) + "â€?
+	return string(runes[:maxLLMProbeDetailRunes]) + "â€¦"
 }
 
 func containsAny(s string, needles ...string) bool {

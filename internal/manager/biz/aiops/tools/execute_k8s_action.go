@@ -22,7 +22,7 @@ import (
 const ToolNameExecuteK8sAction = "execute_k8s_action"
 
 const ExecuteK8sActionDescription = "Execute a small, audited Kubernetes write through the cluster controller edge. " +
-	"MUTATING â€?real writes require a successful dry-run preflight and kernel-specific approval before dispatch; the default legacy kernel always asks for human confirmation."
+	"MUTATING â€” real writes require a successful dry-run preflight and kernel-specific approval before dispatch; the default legacy kernel always asks for human confirmation."
 
 var ExecuteK8sActionSchema = json.RawMessage(`{
   "type": "object",

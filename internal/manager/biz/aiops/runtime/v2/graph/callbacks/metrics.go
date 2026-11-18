@@ -52,7 +52,8 @@ func getMetricsCollectors(reg prometheus.Registerer) *metricsCollectors {
 	if mc, ok := metricsRegMap[reg]; ok {
 		return mc
 	}
-	// Help string MUST match tools/decorators/metric.go byte-for-byte �?	// Prom panics on AlreadyRegistered if descriptors differ on Help.
+	// Help string MUST match tools/decorators/metric.go byte-for-byte —
+	// Prom panics on AlreadyRegistered if descriptors differ on Help.
 	// Both layers observe the same counter from different vantage points
 	// (dual-observation contract), so they MUST share desc.
 	tinv := prometheus.NewCounterVec(
@@ -111,11 +112,11 @@ func regOrExist(reg prometheus.Registerer, c prometheus.Collector) prometheus.Co
 
 // MetricsHandler observes tool + chat-model invocations from the
 // graph's perspective. Note: the PR-3 decorator chain already records
-// ongrid_tool_invocations_total at the per-call seam �?this handler
+// ongrid_tool_invocations_total at the per-call seam — this handler
 // re-uses the SAME collector via the registry-keyed cache so we never
 // double-register, and the counter increments are best-effort
 // duplicates (acceptable : "callback 视角 + 装饰器视
-// �?双观�?OK"). Tests assert exactly one increment per call when
+// 角 双观察 OK"). Tests assert exactly one increment per call when
 // the decorator chain is bypassed (the unit test calls the handler
 // directly).
 type MetricsHandler struct {
@@ -289,7 +290,7 @@ func isDeadlineErr(err error) bool {
 // isMaxIterations reports whether err looks like the eino runtime's
 // "graph reached max steps" error. eino does not export a typed error
 // for this, so we string-match the standard message it produces. The
-// match is loose on purpose �?the metric's `max_iterations` bucket is
+// match is loose on purpose — the metric's `max_iterations` bucket is
 // a hint, not authoritative.
 func isMaxIterations(err error) bool {
 	if err == nil {

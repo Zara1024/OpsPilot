@@ -157,7 +157,7 @@ func TestReviewGate_WriteClassApprove(t *testing.T) {
 	if !strings.Contains(spawner.gotPrompt, "write") {
 		t.Errorf("prompt missing class: %q", spawner.gotPrompt)
 	}
-	// Audit row sequence: insert â†?UpdateDecision(approve) â†?MarkExecuted.
+	// Audit row sequence: insert â†’ UpdateDecision(approve) â†’ MarkExecuted.
 	if len(sink.inserts) != 1 {
 		t.Errorf("expected 1 insert, got %d", len(sink.inserts))
 	}
@@ -396,7 +396,7 @@ func TestReviewGate_TimeoutBoundsReviewer(t *testing.T) {
 }
 
 // =====================================================================
-// parseReviewerDecision â€?exercise the line-scan parser independently
+// parseReviewerDecision â€” exercise the line-scan parser independently
 // =====================================================================
 
 func TestParseReviewerDecision_VariousShapes(t *testing.T) {
@@ -417,7 +417,7 @@ func TestParseReviewerDecision_VariousShapes(t *testing.T) {
 		},
 		{
 			name:     "markdown bold approve (reviewer.md format)",
-			input:    "**Decision: approve**\n\n**Gates**\n- âœ?SOP found\n",
+			input:    "**Decision: approve**\n\n**Gates**\n- âœ“ SOP found\n",
 			decision: "approve",
 		},
 		{
@@ -431,7 +431,7 @@ func TestParseReviewerDecision_VariousShapes(t *testing.T) {
 			decision: "approve",
 		},
 		{
-			name:     "no marker â†?undecided",
+			name:     "no marker â†’ undecided",
 			input:    "I'm not sure. Something is wrong.",
 			decision: "",
 		},
@@ -441,12 +441,12 @@ func TestParseReviewerDecision_VariousShapes(t *testing.T) {
 			decision: "",
 		},
 		{
-			name:     "decision: pending â†?keep scanning, none found â†?undecided",
+			name:     "decision: pending â†’ keep scanning, none found â†’ undecided",
 			input:    "Decision: pending\nWill think more.",
 			decision: "",
 		},
 		{
-			name:     "decision: pending then approve â†?second wins",
+			name:     "decision: pending then approve â†’ second wins",
 			input:    "Decision: pending\nMore thinking...\nDecision: approve\nLooks ok.",
 			decision: "approve",
 		},
@@ -473,7 +473,7 @@ func TestParseReviewerDecision_ExtractsReason(t *testing.T) {
 }
 
 // =====================================================================
-// chain.Wrap integration â€?ReviewGate is in the chain only when
+// chain.Wrap integration â€” ReviewGate is in the chain only when
 // ReviewSpawner is wired
 // =====================================================================
 

@@ -286,7 +286,7 @@ func TestDraftAlertRuleConfigAllowsWarningValidationWithDraftHash(t *testing.T) 
 
 	got, err := manager.DraftAlertRuleConfig(context.Background(), aiopstools.ConfigCaller{}, aiopstools.AlertRuleConfigArgs{
 		Action:      "create",
-		RequestText: "如果 CPU 持续偏高就告�?,
+		RequestText: "如果 CPU 持续偏高就告警",
 		Rule: aiopstools.AlertRuleConfigInput{
 			RuleKey:  "cpu_high",
 			Kind:     "metric_raw",
@@ -322,7 +322,7 @@ func TestDraftAlertRuleConfigIncludesScopeConfirmation(t *testing.T) {
 
 	got, err := manager.DraftAlertRuleConfig(context.Background(), aiopstools.ConfigCaller{}, aiopstools.AlertRuleConfigArgs{
 		Action:      "create",
-		RequestText: "创建 PostgreSQL 连接使用率过高告�?,
+		RequestText: "创建 PostgreSQL 连接使用率过高告警",
 		Rule: aiopstools.AlertRuleConfigInput{
 			RuleKey:  "pg_connection_usage_high",
 			Kind:     "metric_raw",
@@ -339,7 +339,7 @@ func TestDraftAlertRuleConfigIncludesScopeConfirmation(t *testing.T) {
 	if got.Kind != aiopstools.ConfigResultKindDraft {
 		t.Fatalf("Kind = %q, want draft", got.Kind)
 	}
-	if got.Scope == nil || got.Scope.Type != "host" || got.Scope.Label != "主机�? {
+	if got.Scope == nil || got.Scope.Type != "host" || got.Scope.Label != "主机级" {
 		t.Fatalf("Scope = %#v, want host scope summary", got.Scope)
 	}
 	if !strings.Contains(got.ConfirmationPrompt, "当前告警范围：主机级") || !strings.Contains(got.ConfirmationPrompt, "改成全局") {
@@ -357,7 +357,7 @@ func TestValidateAlertRuleDraftWarnsForGlobalHostScopedRule(t *testing.T) {
 		Spec: map[string]interface{}{
 			"expr": `100 * (1 - avg by (device_id) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 80`,
 		},
-	}, "创建 CPU 使用率过高告�?, &PreviewResult{
+	}, "创建 CPU 使用率过高告警", &PreviewResult{
 		FireCount: 1,
 		Samples: []PreviewSample{{
 			Labels: map[string]string{"device_id": "2"},
@@ -380,7 +380,7 @@ func TestValidateAlertRuleDraftWarnsForGlobalDatabaseRuleWithDeviceID(t *testing
 		Spec: map[string]interface{}{
 			"expr": `100 * sum by (device_id, ongrid_source) (pg_stat_database_numbackends) / max by (device_id, ongrid_source) (pg_settings_max_connections) > 85`,
 		},
-	}, "创建 PostgreSQL 连接使用率过高告�?, &PreviewResult{
+	}, "创建 PostgreSQL 连接使用率过高告警", &PreviewResult{
 		FireCount: 1,
 		Samples: []PreviewSample{{
 			Labels: map[string]string{"device_id": "2", "ongrid_source": "db:postgres"},

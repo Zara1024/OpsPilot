@@ -17,7 +17,7 @@ import (
 const ToolNameGetTopology = "get_topology"
 
 // GetTopologyDescription pushes the model toward this tool when the
-// question is about the deployment as a whole â€?version, fleet size,
+// question is about the deployment as a whole â€” version, fleet size,
 // which observability backends are wired in.
 const GetTopologyDescription = "Return high-level deployment topology: manager version, separate Host counts and Edge installation counts, configured Prom/Loki/Tempo URLs, channel count, enabled rule count. " +
 	"Use this for questions like 'how big is the fleet' or 'is loki configured'."
@@ -32,7 +32,7 @@ var GetTopologySchema = json.RawMessage(`{
 }`)
 
 // TopologyInfo bundles the deployment-level facts that don't live in
-// any one biz package â€?version (build-time ldflag), configured backend
+// any one biz package â€” version (build-time ldflag), configured backend
 // URLs (cmd/main.go reads from cfg), and a channel-count callback so
 // the alert repo doesn't need to be threaded through the Registry.
 //
@@ -63,7 +63,7 @@ type GetTopologyTool struct {
 }
 
 // NewGetTopologyTool builds the BaseTool variant. alertUC and edges may
-// be nil â€?the tool degrades to whatever it can populate. topology is a
+// be nil â€” the tool degrades to whatever it can populate. topology is a
 // value type so callers pass the resolved deployment-level facts at
 // construction time (mirrors Registry.SetTopologyInfo).
 func NewGetTopologyTool(edges *edgebiz.Usecase, alertUC AlertUsecase, topology TopologyInfo, log *slog.Logger) *GetTopologyTool {
@@ -78,7 +78,7 @@ func (t *GetTopologyTool) WithDevices(devices *devicebiz.Usecase) *GetTopologyTo
 	return t
 }
 
-// getTopologyWhenToUse â€?reverse-guard against using this for per-host or
+// getTopologyWhenToUse â€” reverse-guard against using this for per-host or
 // per-incident questions.
 const getTopologyWhenToUse = "When the user asks 'how big is the fleet', 'is loki configured', " +
 	"'what version of manager is this', or any cluster-wide deployment fact. " +

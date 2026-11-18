@@ -18,7 +18,7 @@ import (
 )
 
 // newTestRepo opens an in-memory SQLite DB and applies this package's Migrate.
-// No users table is created �?the old hand-written SQL migration declared a FK
+// No users table is created — the old hand-written SQL migration declared a FK
 // chat_sessions.user_id -> users.id, but the gorm-tagged model does not carry
 // that FK reference (arch-lint forbids manager -> iam, so we can't share the
 // model anyway). UserID is therefore treated as a loose audit column at the
@@ -283,7 +283,7 @@ func TestListByParent(t *testing.T) {
 		t.Errorf("unknown parent: want empty non-nil slice, got %v", none)
 	}
 
-	// Empty parentID short-circuits �?never matches the standalone row
+	// Empty parentID short-circuits — never matches the standalone row
 	// (whose ParentSessionID is nil, not empty string).
 	empty, err := repo.ListByParent(ctx, "")
 	if err != nil {
@@ -315,5 +315,61 @@ func TestListSessionsHidesInternalWork(t *testing.T) {
 	}
 	if len(list) != 1 || list[0].ID != userSession.ID {
 		t.Errorf("ListSessions = %+v, want only user session %q", list, userSession.ID)
+	}
+}
+
+func TestToolResultHydrationScopesSessionAndReusedCallID(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+	base := time.Now().UTC().Add(-time.Hour)
+	callID, name := "reused-call", "query_promql"
+	var firstSession string
+	for sessionIndex := 0; sessionIndex < 2; sessionIndex++ {
+		session := &model.Session{UserID: uint64(sessionIndex + 1)}
+		if err := repo.CreateSession(ctx, session); err != nil {
+			t.Fatal(err)
+		}
+		if sessionIndex == 0 {
+			firstSession = session.ID
+		}
+		for turn := 0; turn < 2; turn++ {
+			at := base.Add(time.Duration(turn*10+sessionIndex) * time.Second)
+			assistant := &model.Message{SessionID: session.ID, Role: model.RoleAssistant, CreatedAt: at}
+			if err := repo.AppendMessage(ctx, assistant); err != nil {
+				t.Fatal(err)
+			}
+			status := model.StatusSuccess
+			if turn == 1 {
+				status = model.StatusError
+			}
+			result := `{"result":[]}`
+			tc := &model.ToolCall{MessageID: assistant.ID, ToolName: name, LLMCallID: &callID, ArgumentsJSON: `{}`, Status: status, ResultJSON: &result, StartedAt: at, CreatedAt: at}
+			if err := repo.CreateToolCall(ctx, tc); err != nil {
+				t.Fatal(err)
+			}
+			message := &model.Message{SessionID: session.ID, Role: model.RoleTool, ToolCallID: &callID, ToolName: &name, Content: &result, CreatedAt: at.Add(time.Second)}
+			if err := repo.AppendMessage(ctx, message); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	rows, err := repo.ListMessages(ctx, firstSession, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range []string{model.StatusSuccess, model.StatusError} {
+		got := rows[i*2+1].ToolExecution
+		if got == nil || got.Status != want || got.MessageID != rows[i*2].ID {
+			t.Fatalf("turn %d hydrated %+v", i, got)
+		}
+	}
+	// 不要求同一页包含对应 assistant 消息。
+	resultOnly := []*model.Message{rows[3]}
+	resultOnly[0].ToolExecution = nil
+	if err := repo.hydrateToolResults(ctx, resultOnly); err != nil {
+		t.Fatal(err)
+	}
+	if resultOnly[0].ToolExecution == nil || resultOnly[0].ToolExecution.Status != model.StatusError {
+		t.Fatal("missing execution for result-only page")
 	}
 }

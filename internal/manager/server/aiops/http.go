@@ -64,7 +64,8 @@ type attachmentService interface {
 	GetAttachment(ctx context.Context, caller svc.Caller, sessionID, attachmentID string) (*model.Attachment, error)
 }
 
-// MentionSearcher is the narrow biz contract for @-mention search. Optional ‚Ä?// when nil the /v1/aiops/mentions/search route is registered but always
+// MentionSearcher is the narrow biz contract for @-mention search. Optional ‚Äî
+// when nil the /v1/aiops/mentions/search route is registered but always
 // returns an empty list (the SPA still gets a 200, the popover just sits
 // idle).
 type MentionSearcher interface {
@@ -73,14 +74,14 @@ type MentionSearcher interface {
 
 // ModelCatalog is the narrow read surface used by /v1/aiops/models. Returns
 // the configured-provider catalog plus the default (provider, model) pair.
-// Optional ‚Ä?when nil the endpoint still installs but returns an empty
+// Optional ‚Äî when nil the endpoint still installs but returns an empty
 // catalog so the SPA hides the model selector.
 type ModelCatalog interface {
 	Providers() []llm.ProviderInfo
 	Default() (string, string)
 }
 
-// AgentLister is the narrow read surface used by /v1/agents ‚Ä?exposes
+// AgentLister is the narrow read surface used by /v1/agents ‚Äî exposes
 // the agent personas the chatruntime AgentRegistry has loaded so the
 // SPA can render the Agents inventory page + the Side Panel agent
 // switcher. Optional: when nil the endpoint installs but returns an
@@ -131,7 +132,8 @@ func (h *Handler) SetMentionSearcher(m MentionSearcher) { h.mentions = m }
 func (h *Handler) SetModelCatalog(c ModelCatalog) { h.catalog = c }
 
 // SetLLMClient wires the LLM client used by /v1/aiops/query-translate
-// (the natural-language ‚Ü?LogQL/TraceQL/PromQL helper). Optional ‚Ä?// when nil the endpoint returns 503 and the SPA hides the ‚ú?button.
+// (the natural-language ‚Üí LogQL/TraceQL/PromQL helper). Optional ‚Äî
+// when nil the endpoint returns 503 and the SPA hides the ‚ú® button.
 func (h *Handler) SetLLMClient(c llm.Client) { h.llmClient = c }
 
 // SetAgentLister wires the chatruntime AgentRegistry post-construction
@@ -177,7 +179,7 @@ func (h *Handler) Register(r chi.Router) {
 	r.Post("/v1/operations/{id}/actions/{action}", h.executeOperationAction)
 	// Generic delete: works on any non-builtin / non-default chatprotocol.
 	// Disk-source agents (loaded from agents/*.md) get session-scoped
-	// removal ‚Ä?the in-memory registry drops them, but the .md file
+	// removal ‚Äî the in-memory registry drops them, but the .md file
 	// stays and they re-appear on restart. User-source agents go
 	// through the userAgents service (DB row removal).
 	r.Delete("/v1/agents/{name}", h.deleteAgent)
@@ -324,7 +326,7 @@ type createSessionReq struct {
 	// agent-timeline panel can list this session under the incident.
 	RelatedIncidentID *uint64 `json:"related_incident_id,omitempty"`
 	// AgentID pins the session to a chatruntime persona. The Side Panel
-	// agent picker + Agents page "‰ΩøÁî®Ê≠§Âä©Áê? button send this. Empty =
+	// agent picker + Agents page "‰ΩøÁî®Ê≠§Âä©ÁêÜ" button send this. Empty =
 	// global coordinator default.
 	AgentID string `json:"agent_id,omitempty"`
 }
@@ -469,7 +471,7 @@ type messageDTO struct {
 	Attachments []model.Attachment `json:"attachments,omitempty"`
 	ToolCallID  string             `json:"tool_call_id,omitempty"`
 	ToolName    string             `json:"tool_name,omitempty"`
-	// Model carries the LLM model id that produced the message ‚Ä?only
+	// Model carries the LLM model id that produced the message ‚Äî only
 	// populated for role=assistant rows where the routing layer recorded
 	// it. Older rows return "" so the SPA can fall back to "default".
 	Model     string    `json:"model,omitempty"`
@@ -784,11 +786,11 @@ func (h *Handler) postMessage(w http.ResponseWriter, r *http.Request) {
 //
 // Frame types:
 //
-//	assistant   ‚Ä?one assistant turn was persisted
-//	tool_start  ‚Ä?a tool_call row was persisted in pending state
-//	tool_end    ‚Ä?the tool finished (status: success|error|timeout)
-//	done        ‚Ä?final Reply (terminal success)
-//	error       ‚Ä?terminal failure (run aborted)
+//	assistant   ‚Äî one assistant turn was persisted
+//	tool_start  ‚Äî a tool_call row was persisted in pending state
+//	tool_end    ‚Äî the tool finished (status: success|error|timeout)
+//	done        ‚Äî final Reply (terminal success)
+//	error       ‚Äî terminal failure (run aborted)
 //
 // On error after streaming has started we still emit an `error` frame
 // rather than changing the status code, since the response headers have
@@ -827,7 +829,7 @@ func (h *Handler) postMessageStream(w http.ResponseWriter, r *http.Request) {
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		// No streaming support ‚Ä?fall back to blocking JSON. This keeps
+		// No streaming support ‚Äî fall back to blocking JSON. This keeps
 		// dev environments behind buffering proxies usable.
 		reply, err := h.svc.PostMessageWithOpts(r.Context(), caller, id, req.Content, opts)
 		if err != nil {
@@ -1033,7 +1035,7 @@ func (h *Handler) listMessages(w http.ResponseWriter, r *http.Request) {
 // close path is still available via the service layer for callers that
 // want to preserve audit history, but the UI DELETE is the destructive
 // kind users expect.
-// stopSession backs POST /v1/chat/sessions/{id}/stop ‚Ä?interrupts the
+// stopSession backs POST /v1/chat/sessions/{id}/stop ‚Äî interrupts the
 // session's in-flight turn (the SPA calls this on Esc). Idempotent: returns
 // {"stopped": false} when no turn was running.
 func (h *Handler) stopSession(w http.ResponseWriter, r *http.Request) {
@@ -1197,7 +1199,7 @@ func (h *Handler) listMutatingProposals(w http.ResponseWriter, r *http.Request) 
 }
 
 // searchMentions backs GET /v1/aiops/mentions/search?q=&type=&limit=
-// ‚Ä?used by the SPA chat input's @-popover. Auth-gated by the caller-
+// ‚Äî used by the SPA chat input's @-popover. Auth-gated by the caller-
 // in-context check so anonymous probes get 401, matching the rest of
 // the aiops surface.
 func (h *Handler) searchMentions(w http.ResponseWriter, r *http.Request) {
@@ -1235,7 +1237,7 @@ func (h *Handler) searchMentions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
-// listModels backs GET /v1/aiops/models ‚Ä?returns the configured-
+// listModels backs GET /v1/aiops/models ‚Äî returns the configured-
 // provider catalog and the default (provider, model) pair so the SPA
 // can render the per-message model selector. An empty catalog hides
 // the selector entirely (no LLM configured / single-provider mode).
@@ -1516,7 +1518,7 @@ func errCode(err error) string {
 
 // agentDTO is the Side-Panel-friendly view of a chatruntime persona.
 // Trimmed down from chatruntime.Agent (which carries fields the SPA
-// doesn't need to render ‚Ä?Background / OmitClaudeMd / Metadata yaml).
+// doesn't need to render ‚Äî Background / OmitClaudeMd / Metadata yaml).
 type agentDTO struct {
 	Name             string   `json:"name"`
 	Description      string   `json:"description"`
@@ -1700,7 +1702,7 @@ func (h *Handler) deleteUserAgent(w http.ResponseWriter, r *http.Request) {
 // deleteAgent is the generic delete: works on any non-builtin agent
 // regardless of Source. For source=user we also clear the DB row;
 // for source=disk we just remove from the live registry (the .md
-// file remains and reloads on restart ‚Ä?this is intentional, the
+// file remains and reloads on restart ‚Äî this is intentional, the
 // SPA delete is session-scoped). Source=builtin and the special
 // "default" persona reject with ErrInvalid.
 func (h *Handler) deleteAgent(w http.ResponseWriter, r *http.Request) {
@@ -1746,7 +1748,7 @@ func (h *Handler) deleteAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Disk-source (or empty): drop from live registry only. Session-
-	// scoped ‚Ä?comes back on restart.
+	// scoped ‚Äî comes back on restart.
 	h.agents.Remove(name)
 	w.WriteHeader(http.StatusNoContent)
 }

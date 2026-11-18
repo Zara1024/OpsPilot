@@ -14,14 +14,14 @@ import (
 )
 
 // toolMemo is a per-run cache of identical (read-tool, args) calls. The
-// graph �?and therefore the wrapped tool set �?is rebuilt per request, so
+// graph — and therefore the wrapped tool set — is rebuilt per request, so
 // one memo per WrapBaseTools call is naturally scoped to a single ReAct
 // run. Within that run an identical call (same tool, byte-identical args,
 // seconds apart) cannot yield new information and is almost always a ReAct
 // loop artifact; returning the prior result skips re-executing an expensive
 // tool (SSH probe, PromQL, LLM-backed query_translate) and keeps an
 // identical-call loop from burning the iteration budget on real work. Only
-// Class=="read" tools are memoized �?write/destructive tools never touch
+// Class=="read" tools are memoized — write/destructive tools never touch
 // this path, so the review/mutation flow is unaffected.
 type toolMemo struct {
 	mu     sync.Mutex
@@ -62,7 +62,7 @@ func (t *toolMemo) bump(name string) {
 
 // maxToolCallsPerRun caps how many times any one tool may EXECUTE within a
 // single agent run. Identical-arg repeats are served from the memo and don't
-// count; this catches the other failure mode �?the model calling the same
+// count; this catches the other failure mode — the model calling the same
 // tool many times with slightly different args (e.g. query_promql across a
 // dozen metrics, query_alert_rules over and over) without converging. Past
 // the cap the tool returns a "synthesize now" directive instead of running,
@@ -78,7 +78,7 @@ func toolBudgetExceeded(name string, n int) string {
 		"status":      "call_budget_exceeded",
 		"tool":        name,
 		"calls":       n,
-		"instruction": fmt.Sprintf("You have already called %q %d times this turn �?that is the per-tool limit. Do NOT call it again. Answer the user from the results you already gathered; if they're insufficient, state specifically what is missing and ask the user.", name, n),
+		"instruction": fmt.Sprintf("You have already called %q %d times this turn — that is the per-tool limit. Do NOT call it again. Answer the user from the results you already gathered; if they're insufficient, state specifically what is missing and ask the user.", name, n),
 	})
 	return string(b)
 }
@@ -90,11 +90,12 @@ func toolBudgetExceeded(name string, n int) string {
 // thin: Info is a 1-1 field copy and InvokableRun forwards the args
 // JSON verbatim.
 //
-// graph 执行�?ToolsNode 接收的是 eino
-// tool.BaseTool；本 adapter 是仓库自�?BaseTool �?eino 之间唯一胶水点�?//
+// graph 执行层 ToolsNode 接收的是 eino
+// tool.BaseTool；本 adapter 是仓库自家 BaseTool 与 eino 之间唯一胶水点。
+//
 // Per-call options (tenant / user / device id) ride on
 // `basetool.InvokeOption` slots; eino's `tool.Option` system carries an
-// impl-specific bag for them �?see WithInvokeOpts. If the caller does
+// impl-specific bag for them — see WithInvokeOpts. If the caller does
 // not pass any impl-specific options the inner tool runs with its
 // decorator-resolved defaults (the typical path).
 func WrapBaseTool(t basetool.BaseTool) einotool.InvokableTool {
@@ -131,7 +132,7 @@ func WithInvokeOpts(opts ...basetool.InvokeOption) einotool.Option {
 }
 
 // einoToolAdapter wraps a basetool.BaseTool to satisfy eino's
-// InvokableTool interface. The struct is intentionally trivial �?all
+// InvokableTool interface. The struct is intentionally trivial — all
 // real behaviour (tenant/audit/timeout/ratelimit/metric) lives in the
 // PR-3 decorator chain wrapped *around* the inner tool *before* it
 // reaches this adapter.
@@ -162,8 +163,9 @@ func (a *einoToolAdapter) resolveInfo(ctx context.Context) {
 // Info returns the eino schema.ToolInfo for this tool. WhenToUse from
 // our extended ToolInfo is appended to the description (with a
 // "When to use:" prefix) so the LLM sees both halves through the
-// standard schema field. �?Tool �?description vs
-// when_to_use 拆分�?func (a *einoToolAdapter) Info(ctx context.Context) (*schema.ToolInfo, error) {
+// standard schema field. — Tool 层 description vs
+// when_to_use 拆分。
+func (a *einoToolAdapter) Info(ctx context.Context) (*schema.ToolInfo, error) {
 	if a == nil || a.inner == nil {
 		return nil, fmt.Errorf("graph: tool adapter has nil inner tool")
 	}
@@ -191,7 +193,7 @@ func (a *einoToolAdapter) resolveInfo(ctx context.Context) {
 		// into eino's jsonschema.Schema. PR-3's basetool.ToolInfo carries
 		// the schema as raw JSON; eino's ParamsOneOf wants a typed
 		// *jsonschema.Schema, so we deserialize. A failure here means the
-		// upstream tool produced invalid JSON Schema �?bubble it as an
+		// upstream tool produced invalid JSON Schema — bubble it as an
 		// error so the graph build refuses to compile.
 		js := &jsonschema.Schema{}
 		if err := json.Unmarshal(info.Parameters, js); err != nil {
@@ -209,7 +211,7 @@ func (a *einoToolAdapter) resolveInfo(ctx context.Context) {
 // **Tool errors are converted to a JSON envelope, never returned as a
 // Go error.** Eino's ToolsNode treats Go-level errors as graph-fatal
 // (terminates the whole invoke + SSE stream); ongrid's invariant is
-// "tool failures are facts the LLM can recover from" �?the LLM should
+// "tool failures are facts the LLM can recover from" — the LLM should
 // see the error text as a tool result and decide to retry / switch /
 // ask the user, NOT have the conversation aborted. We mirror what the
 // legacy agent.go for-loop did: marshal err into a result-shaped JSON
@@ -269,7 +271,7 @@ func (a *einoToolAdapter) InvokableRun(ctx context.Context, argumentsInJSON stri
 		}
 		return string(envelope), nil
 	}
-	// Cache successful read-tool results only �?a failed call stays
+	// Cache successful read-tool results only — a failed call stays
 	// retryable (a transient error shouldn't be pinned for the whole run).
 	if memoKey != "" {
 		a.memo.put(memoKey, out)

@@ -13,7 +13,7 @@ import (
 	knowledgebiz "github.com/Zara1024/OpsPilot/internal/manager/biz/knowledge"
 )
 
-// codeKnowledge satisfies BOTH KnowledgeSearcher and CodeBrowser â€?i.e. the
+// codeKnowledge satisfies BOTH KnowledgeSearcher and CodeBrowser â€” i.e. the
 // real *knowledge.Usecase shape. The code tools register only when the wired
 // knowledge service type-asserts to CodeBrowser.
 type codeKnowledge struct{}
@@ -38,7 +38,7 @@ func (searchOnlyKnowledge) Search(context.Context, string, knowledgebiz.SearchOp
 	return nil, nil
 }
 
-// TestBuildBaseTools_CodeToolsGatedOnCodeBrowser â€?HLD-012. When the knowledge
+// TestBuildBaseTools_CodeToolsGatedOnCodeBrowser â€” HLD-012. When the knowledge
 // service implements CodeBrowser, the three read-code tools register; when it's
 // search-only, they don't (no half-wired state). Guards the "registered in the
 // bag" half of the regression (the coordinator-roster half is in cmd/ongrid).

@@ -35,7 +35,7 @@ type IncidentEventRow struct {
 
 const incidentDetailCallTimeout = 60 * time.Second
 
-// get_incident_detail.go �?N+15 batch refactor. The BaseTool
+// get_incident_detail.go — N+15 batch refactor. The BaseTool
 // form of get_incident_detail now takes `incident_ids[]` (1..16). Each
 // inner call is a pure DB read (alertUC.GetIncident + ListEvents) so
 // fan-out is essentially free; the LLM commonly correlates 3-5
@@ -85,17 +85,17 @@ var GetIncidentDetailBatchSchema = json.RawMessage(`{
       "items": {"type": "integer", "minimum": 1},
       "minItems": 1,
       "maxItems": 16,
-      "description": "告警 id 列表，一次最�?16 个。LLM 经常同时关联多个 alert，一次拉一组比逐个调省 4-8 轮�?
+      "description": "告警 id 列表，一次最多 16 个。LLM 经常同时关联多个 alert，一次拉一组比逐个调省 4-8 轮。"
     }
   },
   "required": ["incident_ids"]
 }`)
 
-// getIncidentDetailWhenToUse �?batch-first routing hint (N+15).
-const getIncidentDetailWhenToUse = "一次给多个 incident_id 拿全量行 + 时间线（firing �?ack �?resolve / notification_sent / failed）�? +
-	"LLM 经常关联多个 alert，一次拉一组比逐个调省 4-8 轮�? +
-	"NOT for: �?incidents（用 query_incidents�? 关联诊断（用 correlate_incident�? " +
-	"ad-hoc metric/log 查询（用 query_promql / query_logql）�?
+// getIncidentDetailWhenToUse — batch-first routing hint (N+15).
+const getIncidentDetailWhenToUse = "一次给多个 incident_id 拿全量行 + 时间线（firing → ack → resolve / notification_sent / failed）。" +
+	"LLM 经常关联多个 alert，一次拉一组比逐个调省 4-8 轮。" +
+	"NOT for: 列 incidents（用 query_incidents）/ 关联诊断（用 correlate_incident）/ " +
+	"ad-hoc metric/log 查询（用 query_promql / query_logql）。"
 
 // Info returns metadata. Class=read.
 func (t *GetIncidentDetailTool) Info(_ context.Context) (*basetool.ToolInfo, error) {

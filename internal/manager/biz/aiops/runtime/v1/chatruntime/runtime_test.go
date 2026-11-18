@@ -177,11 +177,11 @@ func atoi(n int) string {
 }
 
 // TestRuntime_NewRuntime_RequiresDeps confirms NewRuntime fails fast
-// when ChatModel or Sessions is missing �?production wiring must not
+// when ChatModel or Sessions is missing — production wiring must not
 // silently drop a key dep.
 func TestRuntime_NewRuntime_RequiresDeps(t *testing.T) {
 	if _, err := NewRuntime(Config{}); err == nil {
-		t.Errorf("NewRuntime{} returned nil error �?expected dep check")
+		t.Errorf("NewRuntime{} returned nil error — expected dep check")
 	}
 	if _, err := NewRuntime(Config{Sessions: newMemSessions(nil)}); err == nil {
 		t.Errorf("NewRuntime sans ChatModel should error")
@@ -286,7 +286,7 @@ func TestRuntime_Handle_HappyPath_FinalReply(t *testing.T) {
 
 // TestRuntime_ToolCount + ToolNames provides the per-spec visibility.
 // (a) ONGRID_AGENT_KERNEL=graph startup logs how many BaseTools are
-// bound �?this is the seam main.go logs against.
+// bound — this is the seam main.go logs against.
 func TestRuntime_ToolCountAndNames(t *testing.T) {
 	sess := &model.Session{ID: "s1", UserID: 7}
 	rt, err := NewRuntime(Config{
@@ -375,7 +375,7 @@ func TestConsecutiveFailedTool(t *testing.T) {
 			makeToolMsg("query_promql", true),
 		}
 		name, n := consecutiveFailedTool(hist, 2)
-		// trailing tool is query_promql with one fail �?below minN.
+		// trailing tool is query_promql with one fail — below minN.
 		if name != "" || n != 0 {
 			t.Errorf("got (%q, %d), want zero (different tool breaks the run)", name, n)
 		}
@@ -401,7 +401,7 @@ func TestConsecutiveFailedTool(t *testing.T) {
 			{Role: model.RoleAssistant, Content: strPtr("ok then")},
 		}
 		// The trailing message is assistant, so the tool block isn't
-		// the most-recent thing �?we should NOT report a stuck loop.
+		// the most-recent thing — we should NOT report a stuck loop.
 		name, n := consecutiveFailedTool(hist, 2)
 		if name != "" || n != 0 {
 			t.Errorf("got (%q, %d), want zero (non-tool role at tail)", name, n)
@@ -417,7 +417,7 @@ func TestConsecutiveFailedTool(t *testing.T) {
 }
 
 // TestCalcDynamicHints checks the high-level wiring of both heuristics
-// �?consecutive-failed-tool + iteration-cap.
+// — consecutive-failed-tool + iteration-cap.
 func TestCalcDynamicHints(t *testing.T) {
 	t.Parallel()
 	rt, err := NewRuntime(Config{
@@ -458,7 +458,7 @@ func TestCalcDynamicHints(t *testing.T) {
 		for _, h := range hints {
 			joined += h + "\n"
 		}
-		if !contains(joined, "已经 25 �?) {
+		if !contains(joined, "已经 25 轮") {
 			t.Errorf("missing iteration hint: %q", joined)
 		}
 	})
@@ -478,25 +478,25 @@ func TestCalcDynamicHints(t *testing.T) {
 		// Last assistant said "让我..." but no tool message follows.
 		// Reproduces the d9fa4f42 session 17:00:36 trail-off.
 		hist := []*model.Message{
-			{Role: model.RoleUser, Content: strPtr("看一下磁�?)},
-			{Role: model.RoleAssistant, Content: strPtr("让我先查�?/data 目录的磁盘使用情�?)},
+			{Role: model.RoleUser, Content: strPtr("看一下磁盘")},
+			{Role: model.RoleAssistant, Content: strPtr("让我先查看 /data 目录的磁盘使用情况")},
 		}
 		hints := rt.calcDynamicHints(hist)
 		joined := ""
 		for _, h := range hints {
 			joined += h + "\n"
 		}
-		if !contains(joined, "没真�?tool_call") {
+		if !contains(joined, "没真发 tool_call") {
 			t.Errorf("missing unfollowed-promise hint: %q", joined)
 		}
 	})
 
 	t.Run("promise_followed_by_tool_no_hint", func(t *testing.T) {
-		// Same promise but tool ran �?no hint expected.
+		// Same promise but tool ran — no hint expected.
 		toolName := "host_du_summary"
 		hist := []*model.Message{
-			{Role: model.RoleUser, Content: strPtr("看一下磁�?)},
-			{Role: model.RoleAssistant, Content: strPtr("让我先查�?/data")},
+			{Role: model.RoleUser, Content: strPtr("看一下磁盘")},
+			{Role: model.RoleAssistant, Content: strPtr("让我先查看 /data")},
 			{Role: model.RoleTool, ToolName: &toolName, Content: strPtr(`{"subpaths":[]}`)},
 		}
 		hints := rt.calcDynamicHints(hist)
@@ -504,7 +504,7 @@ func TestCalcDynamicHints(t *testing.T) {
 		for _, h := range hints {
 			joined += h + "\n"
 		}
-		if contains(joined, "没真�?tool_call") {
+		if contains(joined, "没真发 tool_call") {
 			t.Errorf("hint should not fire when tool followed promise: %q", joined)
 		}
 	})

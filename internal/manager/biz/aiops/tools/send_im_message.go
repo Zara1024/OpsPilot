@@ -60,22 +60,22 @@ func NewSendNotificationTool(s NotificationSender, log *slog.Logger) *SendNotifi
 var sendNotificationSchema = json.RawMessage(`{
   "type": "object",
   "properties": {
-    "channel": { "type": "string", "description": "目标通知渠道名——设置→通知中配置的飞书 / 钉钉 / Slack / Telegram 等渠道名称；不是双向 IM 机器人�? },
-    "text": { "type": "string", "description": "要发送的正文（纯文本，可带换行）�? },
-    "title": { "type": "string", "description": "可选标�?/ 主题�? }
+    "channel": { "type": "string", "description": "目标通知渠道名——设置→通知中配置的飞书 / 钉钉 / Slack / Telegram 等渠道名称；不是双向 IM 机器人。" },
+    "text": { "type": "string", "description": "要发送的正文（纯文本，可带换行）。" },
+    "title": { "type": "string", "description": "可选标题 / 主题。" }
   },
   "required": ["channel", "text"]
 }`)
 
-const sendNotificationWhenToUse = "用户要把某个结论 / 通知主动推送到飞书、钉钉等群里时用（比如\"把这段诊断发到运维群\"）�? +
-	"channel 传“设置→通知”中配置的通知渠道名；它不是双�?IM 机器人�?
+const sendNotificationWhenToUse = "用户要把某个结论 / 通知主动推送到飞书、钉钉等群里时用（比如\"把这段诊断发到运维群\"）。" +
+	"channel 传“设置→通知”中配置的通知渠道名；它不是双向 IM 机器人。"
 
-// Info �?Class=write: it sends a real message (side-effecting, viewers can't
+// Info — Class=write: it sends a real message (side-effecting, viewers can't
 // use it) but it is not destructive.
 func (t *SendNotificationTool) Info(_ context.Context) (*basetool.ToolInfo, error) {
 	return &basetool.ToolInfo{
 		Name:        ToolNameSendNotification,
-		Description: "Send a message through a configured notification channel (Feishu / DingTalk / Slack / Telegram / WeCom). Pass the channel name from Settings �?Notifications; this does not target a two-way IM bot.",
+		Description: "Send a message through a configured notification channel (Feishu / DingTalk / Slack / Telegram / WeCom). Pass the channel name from Settings → Notifications; this does not target a two-way IM bot.",
 		WhenToUse:   sendNotificationWhenToUse,
 		Parameters:  sendNotificationSchema,
 		Class:       "write",
@@ -107,7 +107,7 @@ func NewSendIMMessageTool(s IMMessageSender, log *slog.Logger) *SendIMMessageToo
 var sendIMMessageSchema = json.RawMessage(`{
   "type": "object",
   "properties": {
-    "im_app_id": { "type": "integer", "description": "Configured IM app ID from Settings �?IM." },
+    "im_app_id": { "type": "integer", "description": "Configured IM app ID from Settings → IM." },
     "group_id": { "type": "string", "description": "Target platform group/conversation ID. Examples: Feishu open_chat_id, Telegram chat_id, or Slack channel ID." },
     "text": { "type": "string", "description": "Message body. Markdown support follows the selected IM provider." }
   },
@@ -188,7 +188,7 @@ func (t *SendNotificationTool) InvokableRun(ctx context.Context, argsJSON string
 			names = append(names, c.Name)
 		}
 		if len(names) == 0 {
-			return "", fmt.Errorf("send_notification: no notification channels configured. Add one under Settings �?Notifications first")
+			return "", fmt.Errorf("send_notification: no notification channels configured. Add one under Settings → Notifications first")
 		}
 		return "", fmt.Errorf("send_notification: channel %q not found. Available channels: %s", in.Channel, strings.Join(names, ", "))
 	}

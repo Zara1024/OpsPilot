@@ -83,7 +83,7 @@ func (r *UserAgentRepo) Update(ctx context.Context, name string, ua *model.UserA
 
 // Delete removes the persona row by name. Returns ErrNotFound when no
 // row matches. Sessions linked to a deleted agent (Session.AgentID)
-// fall back to the global default at run time â€?see runtime.go::Handle.
+// fall back to the global default at run time â€” see runtime.go::Handle.
 func (r *UserAgentRepo) Delete(ctx context.Context, name string) error {
 	res := r.db.WithContext(ctx).Where("name = ?", name).Delete(&model.UserAgent{})
 	if res.Error != nil {

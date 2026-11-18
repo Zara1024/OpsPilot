@@ -1,9 +1,9 @@
-// Package llm â€?multi-provider routing.
+// Package llm â€” multi-provider routing.
 //
 // The MultiClient dispatches Chat requests to one of N pre-built sub-
 // clients keyed by ChatReq.Provider. This is the implementation of the
 // per-message provider/model selector. Sub-clients are themselves
-// *openaiClient instances â€?every
+// *openaiClient instances â€” every
 // supported provider exposes an OpenAI-compatible chat completions API
 // (Anthropic via its OpenAI-compatible endpoint at
 // api.anthropic.com/v1, Zhipu at open.bigmodel.cn/api/paas/v4, Gemini at
@@ -36,7 +36,7 @@ type ProviderConfig struct {
 	TLSInsecure            bool
 	ID                     string   // stable provider id, e.g. "openai" or "minimax"
 	Label                  string   // display name
-	APIKey                 string   // empty â†?provider not configured (skipped at build)
+	APIKey                 string   // empty â†’ provider not configured (skipped at build)
 	Model                  string   // default model
 	BaseURL                string   // optional base URL override
 	Models                 []string // closed-set of allowed models for the UI selector
@@ -71,14 +71,14 @@ type ProvidersResolver interface {
 // does not block hot paths).
 type MultiClient struct {
 	discovery *ReasoningDiscovery
-	// Static provider set â€?built at construction. Used as the seed and
+	// Static provider set â€” built at construction. Used as the seed and
 	// as the fallback when no resolver is wired.
 	staticSubs  map[string]Client
 	staticInfos []ProviderInfo
 	staticDefID string
 	fallback    Client
 
-	// Dynamic provider set â€?repopulated from the resolver every resolveTTL.
+	// Dynamic provider set â€” repopulated from the resolver every resolveTTL.
 	// A successful empty result remains authoritative; nil/error uses the
 	// static set for backwards-compatible soft failure.
 	resolver   ProvidersResolver

@@ -1,4 +1,4 @@
-// code_source.go �?HLD-012 Phase 1. Three read-only tools that let
+// code_source.go — HLD-012 Phase 1. Three read-only tools that let
 // the Agent read the SOURCE CODE of registered git repos (the on-disk clone
 // Repos-sync already keeps), so an alert/log's file:line / function / error
 // string can be correlated to the actual code. Thin wrappers: all the path
@@ -25,13 +25,13 @@ type CodeBrowser interface {
 	GrepSource(ctx context.Context, ref, pattern, pathGlob string, max int, revision string) (*knowledgebiz.GrepResult, error)
 }
 
-const codeSourceWhenToUse = "运维/故障分析时把告警或日志里的代码线索关联到源码,�?*逻辑探查**:起点可以�?stack trace �?" +
-	"`pkg/foo/bar.go:123`、panic/报错串、函数或类型�?或用户用自然语言描述的某段行为�? +
-	"典型流程:grep_source 按符�?报错串定�?�?read_source 读那�?命中 file:line 就读它附�? �?" +
-	"**顺着调用链迭代追**:对读到的代码里它调用的函数、引用的类型、走的报错分�?继续 grep_source 找定义�? +
-	"read_source 跟进,逐层把「输入怎么流到这里、为什么会走到这个分支」理�?再下结论—�?*别只读一处就�?*�? +
-	"不熟悉仓库时�?list_repo_sources 看结构。前�?目标仓库已在「代码仓库」注册并 sync �?repo 入参用仓�?URL 子串�?id)�? +
-	"区别�?host_bash(读在线主机文�?——这里读的是控制面上仓库的源�?代码事实/为什么这么写)�?
+const codeSourceWhenToUse = "运维/故障分析时把告警或日志里的代码线索关联到源码,做**逻辑探查**:起点可以是 stack trace 的 " +
+	"`pkg/foo/bar.go:123`、panic/报错串、函数或类型名,或用户用自然语言描述的某段行为。" +
+	"典型流程:grep_source 按符号/报错串定位 → read_source 读那段(命中 file:line 就读它附近) → " +
+	"**顺着调用链迭代追**:对读到的代码里它调用的函数、引用的类型、走的报错分支,继续 grep_source 找定义、" +
+	"read_source 跟进,逐层把「输入怎么流到这里、为什么会走到这个分支」理清,再下结论——**别只读一处就停**。" +
+	"不熟悉仓库时先 list_repo_sources 看结构。前提:目标仓库已在「代码仓库」注册并 sync 过(repo 入参用仓库 URL 子串或 id)。" +
+	"区别于 host_bash(读在线主机文件)——这里读的是控制面上仓库的源码(代码事实/为什么这么写)。"
 
 // ===================== list_repo_sources =====================
 

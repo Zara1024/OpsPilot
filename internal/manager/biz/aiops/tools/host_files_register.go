@@ -13,7 +13,7 @@ import (
 // provided ToolBag. Returns the same bag for caller-side chaining; the
 // bag is left untouched on the early return.
 //
-// Wiring contract â€?when called from PR-7's BuildBaseTools (or any
+// Wiring contract â€” when called from PR-7's BuildBaseTools (or any
 // future BaseTool registry helper), the caller passes the same
 // dependency triple it would pass to a Tool struct in registry.go
 // (caller + edges + devices). All three MUST be non-nil; if any is
@@ -22,7 +22,7 @@ import (
 // are both online (matches the gating pattern in NewRegistry's
 // promQuery / logQuery / alertUC checks).
 //
-// â€?when the bag is in deferring mode, host_files lands
+// â€” when the bag is in deferring mode, host_files lands
 // in the "specialty" tier (per tierByName) so its schema is redacted
 // by default. Below threshold it stays in core alongside everything
 // else.

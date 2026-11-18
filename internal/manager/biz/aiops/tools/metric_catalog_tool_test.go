@@ -99,7 +99,7 @@ func TestListMetricCatalogTool_RanksDatabaseMetricsFromNaturalLanguage(t *testin
 	}
 	tool := NewListMetricCatalogTool(pq, slog.Default())
 
-	out, err := tool.InvokableRun(context.Background(), `{"query":"MySQL 连接使用率超�?80%","max_metrics":2}`)
+	out, err := tool.InvokableRun(context.Background(), `{"query":"MySQL 连接使用率超过 80%","max_metrics":2}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestListMetricCatalogTool_ReturnsFilesystemMountpointSamples(t *testing.T) 
 	}
 	tool := NewListMetricCatalogTool(pq, slog.Default())
 
-	out, err := tool.InvokableRun(context.Background(), `{"query":"磁盘根分区可用空�?,"prefixes":["node_"],"max_metrics":10}`)
+	out, err := tool.InvokableRun(context.Background(), `{"query":"磁盘根分区可用空间","prefixes":["node_"],"max_metrics":10}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestListMetricCatalogTool_NormalizesMetricRegexForPrometheusFullMatch(t *te
 	}
 	tool := NewListMetricCatalogTool(pq, slog.Default())
 
-	out, err := tool.InvokableRun(context.Background(), `{"query":"根分区可用空�?,"prefixes":["node_"],"metric_regex":"node_filesystem_avail|node_filesystem_size","max_metrics":10}`)
+	out, err := tool.InvokableRun(context.Background(), `{"query":"根分区可用空间","prefixes":["node_"],"metric_regex":"node_filesystem_avail|node_filesystem_size","max_metrics":10}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestListMetricCatalogTool_ReturnsDatabaseDimensionSamples(t *testing.T) {
 	}
 	tool := NewListMetricCatalogTool(pq, slog.Default())
 
-	out, err := tool.InvokableRun(context.Background(), `{"query":"MongoDB 当前连接 可用连接 全局锁队�?,"prefixes":["mongodb_"],"max_metrics":10}`)
+	out, err := tool.InvokableRun(context.Background(), `{"query":"MongoDB 当前连接 可用连接 全局锁队列","prefixes":["mongodb_"],"max_metrics":10}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -318,7 +318,7 @@ func TestListMetricCatalogTool_RanksPostgresNumBackendsForConnections(t *testing
 	}
 	tool := NewListMetricCatalogTool(pq, slog.Default())
 
-	out, err := tool.InvokableRun(context.Background(), `{"query":"PostgreSQL 活动连接�?max_connections","prefixes":["pg_"],"max_metrics":2}`)
+	out, err := tool.InvokableRun(context.Background(), `{"query":"PostgreSQL 活动连接数 max_connections","prefixes":["pg_"],"max_metrics":2}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -351,7 +351,7 @@ func TestListMetricCatalogTool_RanksPostgresCacheHitPairTogether(t *testing.T) {
 	}
 	tool := NewListMetricCatalogTool(pq, slog.Default())
 
-	out, err := tool.InvokableRun(context.Background(), `{"query":"PostgreSQL 缓存命中�?cache hit ratio","prefixes":["pg_"],"max_metrics":2}`)
+	out, err := tool.InvokableRun(context.Background(), `{"query":"PostgreSQL 缓存命中率 cache hit ratio","prefixes":["pg_"],"max_metrics":2}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -370,7 +370,7 @@ func TestListMetricCatalogTool_RanksPostgresCacheHitPairTogether(t *testing.T) {
 }
 
 func TestMetricCatalogQueryAliasesIncludeMongoConnectionParts(t *testing.T) {
-	aliases := metricCatalogQueryAliases("MongoDB 连接使用率超�?80%")
+	aliases := metricCatalogQueryAliases("MongoDB 连接使用率超过 80%")
 	for _, want := range []string{"mongodb_", "current", "available", "conn_type"} {
 		if !containsName(aliases, want) {
 			t.Fatalf("aliases = %#v, want %q", aliases, want)

@@ -159,7 +159,7 @@ func TestEvidenceReadAndPromptLimitsRemainExplicit(t *testing.T) {
 	}
 	r := &evidenceReaderFake{}
 	for i := 0; i < MaxEvidenceCalls; i++ {
-		r.records.Calls = append(r.records.Calls, evidenceCall("call", "query_logql", "success", `{"records":[{"message":"`+strings.Repeat("ä¸?, 500)+`"}]}`))
+		r.records.Calls = append(r.records.Calls, evidenceCall("call", "query_logql", "success", `{"records":[{"message":"`+strings.Repeat("ä¸­", 500)+`"}]}`))
 	}
 	set := (&Usecase{}).WithEvidenceReader(r).collectEvidence(context.Background(), "root")
 	if len(set.Prompt) > maxEvidencePromptBytes || !utf8.ValidString(set.Prompt) || len(set.Issues) == 0 {
@@ -211,7 +211,7 @@ func TestEvidenceOversizedJSONDoesNotExposeCredentials(t *testing.T) {
 		t.Run(field, func(t *testing.T) {
 			call := evidenceCall("call", "query_logql", "success", `{"records":[]}`)
 			call.ArgumentsJSON = `{"query":"{device_id=\"42\"} |= \"OOM\""}`
-			raw := `{"password":"dummy-sensitive-value","pass\u0077ord":"dummy-sensitive-value","nested":"{\"api_key\":\"dummy-sensitive-value\"}","token":"dummy-sensitive-value` + strings.Repeat("ä¸?, MaxEvidenceResultBytes) + `"}`
+			raw := `{"password":"dummy-sensitive-value","pass\u0077ord":"dummy-sensitive-value","nested":"{\"api_key\":\"dummy-sensitive-value\"}","token":"dummy-sensitive-value` + strings.Repeat("ä¸­", MaxEvidenceResultBytes) + `"}`
 			// Match the SQL reader: original byte count plus an already clipped prefix.
 			prefix := clipEvidence(raw, MaxEvidenceResultBytes)
 			if field == "arguments" {

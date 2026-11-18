@@ -16,7 +16,7 @@ import (
 // run on the same goroutine for a given graph iteration (persistence
 // is registered before SSE in NewDefaultHandlers and eino preserves
 // registration order on OnEnd), so a plain string with atomic Load/
-// Store is sufficient �?no race between writer and reader within an
+// Store is sufficient — no race between writer and reader within an
 // iteration.
 //
 // Frontend ChatThread used to dedupe by a synthetic assistant-iter-N
@@ -44,10 +44,10 @@ func (r *assistantIDRelay) load() string {
 }
 
 // Deps bundles every dependency the default callback chain needs.
-// Each handler treats nil dependencies as "skip me" �?pass partial
+// Each handler treats nil dependencies as "skip me" — pass partial
 // Deps to wire only some handlers (e.g. tests that only want metrics).
 //
-// Reference: Callback �?+ 主参考图 callback �?
+// Reference: Callback 链 + 主参考图 callback 链.
 type Deps struct {
 	// Persistence wiring (chat_messages / chat_tool_calls writes).
 	Persistence PersistenceDeps
@@ -68,8 +68,8 @@ type Deps struct {
 }
 
 // NewDefaultHandlers builds the default ordered callback chain for an
-// agent graph run. Order is incidental �?eino does not document a
-// guaranteed handler ordering �?but the slice is stable across calls
+// agent graph run. Order is incidental — eino does not document a
+// guaranteed handler ordering — but the slice is stable across calls
 // so tests can assert positional indices.
 //
 // Handlers with nil dependencies are skipped, so passing a partial

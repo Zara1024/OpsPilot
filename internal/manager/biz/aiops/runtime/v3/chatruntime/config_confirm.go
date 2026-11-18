@@ -34,11 +34,11 @@ func (rt *Runtime) tryApplyConfirmedConfigDraft(ctx context.Context, req *Reques
 		}
 	}
 	if parseErr != nil {
-		return rt.persistAndEmitDirectAssistant(ctx, sess.ID, emit, fmt.Sprintf("确认应用失败�?s", parseErr.Error())), true
+		return rt.persistAndEmitDirectAssistant(ctx, sess.ID, emit, fmt.Sprintf("确认应用失败：%s", parseErr.Error())), true
 	}
 	tool, err := findToolByName(ctx, rt.toolBagSnapshot(), applyConfigChangeToolName)
 	if err != nil {
-		return rt.persistAndEmitDirectAssistant(ctx, sess.ID, emit, fmt.Sprintf("确认应用失败�?s", err.Error())), true
+		return rt.persistAndEmitDirectAssistant(ctx, sess.ID, emit, fmt.Sprintf("确认应用失败：%s", err.Error())), true
 	}
 
 	callID := "direct_" + uuid.NewString()
@@ -73,7 +73,7 @@ func (rt *Runtime) tryApplyConfirmedConfigDraft(ctx context.Context, req *Reques
 		Error:      errText,
 	}})
 	if runErr != nil {
-		return rt.persistAndEmitDirectAssistant(ctx, sess.ID, emit, fmt.Sprintf("确认应用失败�?s", runErr.Error())), true
+		return rt.persistAndEmitDirectAssistant(ctx, sess.ID, emit, fmt.Sprintf("确认应用失败：%s", runErr.Error())), true
 	}
 	return rt.persistAndEmitDirectAssistant(ctx, sess.ID, emit, formatConfigApplyResultMessage(result)), true
 }
@@ -137,7 +137,7 @@ func parseConfirmedConfigDraftApplyArgs(text string) (string, error, bool) {
 	}
 	b, err := json.Marshal(args)
 	if err != nil {
-		return "", fmt.Errorf("构�?apply_config_change 参数失败: %w", err), true
+		return "", fmt.Errorf("构造 apply_config_change 参数失败: %w", err), true
 	}
 	return string(b), nil, true
 }
@@ -234,7 +234,7 @@ func configDraftApplyArgsFromToolResult(result string, confirmationText string) 
 	}
 	b, err := json.Marshal(args)
 	if err != nil {
-		return "", fmt.Errorf("构�?apply_config_change 参数失败: %w", err), true
+		return "", fmt.Errorf("构造 apply_config_change 参数失败: %w", err), true
 	}
 	return string(b), nil, true
 }
@@ -255,20 +255,20 @@ func isConfigApplyResult(result string) bool {
 
 func looksLikeConfigDraftConfirmation(text string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(text))
-	normalized = strings.Trim(normalized, " \t\r\n�?!�?�?)
+	normalized = strings.Trim(normalized, " \t\r\n。.!！?？")
 	if normalized == "" || len([]rune(normalized)) > 40 {
 		return false
 	}
 	if strings.Contains(normalized, "取消") ||
 		strings.Contains(normalized, "不要") ||
-		strings.Contains(normalized, "�?) ||
+		strings.Contains(normalized, "别") ||
 		strings.Contains(normalized, "no") ||
 		strings.Contains(normalized, "cancel") {
 		return false
 	}
 	switch normalized {
 	case "ok", "okay", "yes", "y", "confirm", "confirmed", "approve", "approved", "apply",
-		"�?, "好的", "可以", "�?, "�?, "�?, "确认", "确认创建", "确认应用", "应用", "创建", "同意", "通过":
+		"好", "好的", "可以", "行", "嗯", "是", "确认", "确认创建", "确认应用", "应用", "创建", "同意", "通过":
 		return true
 	default:
 		return (strings.Contains(normalized, "确认") || strings.Contains(normalized, "同意")) &&
@@ -344,7 +344,7 @@ func extractBalancedJSONObject(text string) ([]byte, error) {
 			}
 		}
 	}
-	return nil, fmt.Errorf("确认消息 payload JSON 不完�?)
+	return nil, fmt.Errorf("确认消息 payload JSON 不完整")
 }
 
 func validateRawJSONObject(raw []byte) (json.RawMessage, error) {
@@ -371,7 +371,7 @@ func findToolByName(ctx context.Context, tools []basetool.BaseTool, name string)
 			return tool, nil
 		}
 	}
-	return nil, fmt.Errorf("%s 未配�?, name)
+	return nil, fmt.Errorf("%s 未配置", name)
 }
 
 func formatConfigApplyResultMessage(result string) string {
@@ -386,7 +386,7 @@ func formatConfigApplyResultMessage(result string) string {
 		Message string `json:"message"`
 	}
 	if err := json.Unmarshal([]byte(result), &resp); err != nil {
-		return "已确认并应用配置变更�?
+		return "已确认并应用配置变更。"
 	}
 	name := strings.TrimSpace(resp.Resource.Name)
 	if name == "" {
@@ -397,7 +397,7 @@ func formatConfigApplyResultMessage(result string) string {
 		status = "applied"
 	}
 	if resp.ResourceID > 0 {
-		return fmt.Sprintf("已确认并创建告警规则�?s（ID: %d，状�? %s）�?, name, resp.ResourceID, status)
+		return fmt.Sprintf("已确认并创建告警规则：%s（ID: %d，状态: %s）。", name, resp.ResourceID, status)
 	}
-	return fmt.Sprintf("已确认并创建告警规则�?s（状�? %s）�?, name, status)
+	return fmt.Sprintf("已确认并创建告警规则：%s（状态: %s）。", name, status)
 }

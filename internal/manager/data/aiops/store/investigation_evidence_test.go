@@ -89,7 +89,7 @@ func TestInvestigationEvidenceBoundsRowsAndUnicodePayloads(t *testing.T) {
 	for i := 0; i < investigator.MaxEvidenceCalls+1; i++ {
 		addEvidenceCall(t, r, "root", fmt.Sprintf("call-%03d", i), `{}`, now)
 	}
-	large := `{"password":"dummy-sensitive-value","records":["` + strings.Repeat("ä¸?, investigator.MaxEvidenceResultBytes) + `"]}`
+	large := `{"password":"dummy-sensitive-value","records":["` + strings.Repeat("ä¸­", investigator.MaxEvidenceResultBytes) + `"]}`
 	if err := r.db.Model(&model.ToolCall{}).Where("id = ?", "call-000").Updates(map[string]any{
 		"result_json": large, "arguments_json": large, "error": large,
 	}).Error; err != nil {

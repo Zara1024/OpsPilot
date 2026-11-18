@@ -24,10 +24,10 @@ const GetProcessListDescription = "Return the top-N processes on the selected ho
 // rationale as hostLoadCallTimeout.
 const processListCallTimeout = 60 * time.Second
 
-// host_processes.go �?N+15 batch refactor. The BaseTool form
+// host_processes.go — N+15 batch refactor. The BaseTool form
 // of get_process_list now takes a `device_ids[]` array and fans out
 // manager-side. top_n / sort_by are SHARED across all ids (one knob
-// applied per device) �?the typical use case is "top 10 cpu procs on
+// applied per device) — the typical use case is "top 10 cpu procs on
 // each of these 5 nodes" and asking for per-id top_n would clutter the
 // schema for negligible benefit. Edge handler is unchanged.
 
@@ -40,7 +40,7 @@ type GetProcessListTool struct {
 }
 
 // NewGetProcessListTool builds the BaseTool variant. devices is required
-// for device_id �?edge_id resolution.
+// for device_id → edge_id resolution.
 func NewGetProcessListTool(caller Caller, edges *edgebiz.Usecase, devices *devicebiz.Usecase, log *slog.Logger) *GetProcessListTool {
 	if log == nil {
 		log = slog.Default()
@@ -84,28 +84,28 @@ var GetProcessListBatchSchema = json.RawMessage(`{
       "items": {"type": "integer", "minimum": 1},
       "minItems": 1,
       "maxItems": 16,
-      "description": "设备 id 列表，一次最�?16 个。fleet 视角看进程对比应该一次性给所�?id�?
+      "description": "设备 id 列表，一次最多 16 个。fleet 视角看进程对比应该一次性给所有 id。"
     },
     "top_n": {
       "type": "integer",
       "minimum": 1,
       "maximum": 100,
-      "description": "每台设备返回 top-N 进程（默�?10）�?
+      "description": "每台设备返回 top-N 进程（默认 10）。"
     },
     "sort_by": {
       "type": "string",
       "enum": ["cpu", "mem"],
-      "description": "排序依据：cpu �?mem（默�?cpu）�?
+      "description": "排序依据：cpu 或 mem（默认 cpu）。"
     }
   },
   "required": ["device_ids"]
 }`)
 
-// getProcessListWhenToUse �?batch-first routing hint (N+15).
-const getProcessListWhenToUse = "对一组设备一次拉 top N 进程�?fleet 比对（typical 5-10 device 一次）�? +
-	"top_n / sort_by 对所�?device 共享（一个口子调一次）�? +
-	"NOT for: 单设备深查（直接 host_bash 'ps aux' 更灵活）/ 历史进程数据 / 日志（用 query_logql�? " +
-	"指标趋势（用 query_promql）�?
+// getProcessListWhenToUse — batch-first routing hint (N+15).
+const getProcessListWhenToUse = "对一组设备一次拉 top N 进程做 fleet 比对（typical 5-10 device 一次）。" +
+	"top_n / sort_by 对所有 device 共享（一个口子调一次）。" +
+	"NOT for: 单设备深查（直接 host_bash 'ps aux' 更灵活）/ 历史进程数据 / 日志（用 query_logql）/ " +
+	"指标趋势（用 query_promql）。"
 
 // Info returns metadata. Class=read.
 func (t *GetProcessListTool) Info(_ context.Context) (*basetool.ToolInfo, error) {

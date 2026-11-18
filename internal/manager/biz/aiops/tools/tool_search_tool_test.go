@@ -209,8 +209,8 @@ func TestToolSearch_MaxResultsClamp(t *testing.T) {
 		{"default-cap", `{"query":"file"}`, 5},                     // default 5
 		{"explicit-2", `{"query":"file","max_results":2}`, 2},      // explicit
 		{"clamp-high", `{"query":"file","max_results":99}`, 20},    // clamped to 20
-		{"clamp-zero", `{"query":"file","max_results":0}`, 5},      // 0 â†?default 5
-		{"clamp-negative", `{"query":"file","max_results":-3}`, 5}, // negative â†?default 5
+		{"clamp-zero", `{"query":"file","max_results":0}`, 5},      // 0 â†’ default 5
+		{"clamp-negative", `{"query":"file","max_results":-3}`, 5}, // negative â†’ default 5
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -253,7 +253,7 @@ func TestToolSearch_InfoReadClass(t *testing.T) {
 	if info.Class != "read" {
 		t.Errorf("Class = %s, want read", info.Class)
 	}
-	// The schema must declare a `query` parameter (string) â€?we check
+	// The schema must declare a `query` parameter (string) â€” we check
 	// minimally so prompt-engineering tweaks to the description don't
 	// break the test.
 	var schema map[string]any

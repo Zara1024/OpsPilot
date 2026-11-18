@@ -20,7 +20,7 @@ import (
 // button. Returns nil iff the URL is reachable, the auth header (if
 // supplied) is accepted, and Loki returns 200/2xx.
 //
-// The 5s deadline is intentionally tight â€?operators expect the probe
+// The 5s deadline is intentionally tight â€” operators expect the probe
 // to either succeed quickly or fail with a clear "timed out" message;
 // no point waiting for slow networks here when the real ingest path
 // has its own retry budget.
@@ -142,7 +142,7 @@ func (p *TempoReadinessProbe) Probe(ctx context.Context) error {
 // surface tangible confirmation.
 //
 // Implementation note: we deliberately re-issue the upstream HTTP call
-// here rather than going through the skill registry â€?the registry
+// here rather than going through the skill registry â€” the registry
 // path adds the agent-loop audit pipeline + JSON envelope that we
 // don't want for an admin probe. The provider URLs / keys are read
 // from the same WebSearchResolver the skill uses. A successful probe

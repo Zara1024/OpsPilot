@@ -68,9 +68,9 @@ func NewFindOutlierHostsTool(promQuery PromQuerier, devices hostRankDevices, log
 	return &FindOutlierHostsTool{promQuery: promQuery, devices: devices, log: log}
 }
 
-// findOutlierHostsWhenToUse â€?anomaly-detection pivot. Reverse-guards
+// findOutlierHostsWhenToUse â€” anomaly-detection pivot. Reverse-guards
 // against confusing this with simple ranking.
-const findOutlierHostsWhenToUse = "When the user asks who's an OUTLIER on cpu / mem / disk â€?i.e. who's deviating " +
+const findOutlierHostsWhenToUse = "When the user asks who's an OUTLIER on cpu / mem / disk â€” i.e. who's deviating " +
 	"more than N sigma from the fleet baseline. " +
 	"NOT for a top-N ranking by raw value (use rank_hosts). " +
 	"NOT for deviation on free-form metrics (use query_promql with stddev). " +
@@ -102,7 +102,7 @@ func (t *FindOutlierHostsTool) InvokableRun(ctx context.Context, argsJSON string
 	}
 	// Whitelist cpu/mem/disk explicitly. rankMetricExpr also accepts
 	// load/composite (for rank_hosts), but z-score outlier detection on
-	// those is not in scope â€?fail fast with a clear message instead of
+	// those is not in scope â€” fail fast with a clear message instead of
 	// relying on rankMetricExpr's ok-bool.
 	switch in.Metric {
 	case "cpu", "mem", "disk":

@@ -21,7 +21,8 @@ type Setting struct {
 	Category string `gorm:"size:32;not null;uniqueIndex:idx_settings_cat_key,priority:1"`
 	Key      string `gorm:"size:128;not null;uniqueIndex:idx_settings_cat_key,priority:2"`
 	// MySQL 拒绝 TEXT 列的 DEFAULT 值；Go 零值已经是 ""，业务层 Set 总是
-	// 显式写入，schema 不必声明默认�?	Value     string    `gorm:"type:text;not null"`
+	// 显式写入，schema 不必声明默认。
+	Value     string    `gorm:"type:text;not null"`
 	Sensitive bool      `gorm:"not null;default:false"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime"`
 	CreatedAt time.Time `gorm:"autoCreateTime"`
@@ -40,7 +41,7 @@ const (
 	CategoryLoki      = "loki"      // external Loki / VictoriaLogs URL + auth
 	CategoryTempo     = "tempo"     // external Tempo OTLP HTTP endpoint + auth
 	CategoryWebSearch = "websearch" // built-in web_search skill: Tavily key + future provider knobs
-	CategoryAgent     = "agent"     // AI agent behaviour toggles (write-action gate, �?
+	CategoryAgent     = "agent"     // AI agent behaviour toggles (write-action gate, …)
 	CategoryPlatform  = "platform"  // platform-wide infrastructure behaviour toggles
 )
 
@@ -91,7 +92,7 @@ const (
 // (CategoryGit + KeyGitGitHubToken removed HTTPS git
 // auth will return via the credential.helper-backed table in P3;
 // SSH lives in ssh_identities. Any pre-existing `git.github_token`
-// row in system_settings is now dead data �?safe to leave or DELETE
+// row in system_settings is now dead data — safe to leave or DELETE
 // out-of-band; nothing reads it.)
 
 // Well-known keys under CategoryLLM. The Resolver in pkg/llm reads exactly
@@ -152,7 +153,7 @@ const (
 	// Custom = a generic OpenAI-compatible endpoint (Ollama / vLLM /
 	// OpenRouter / LM Studio / Together / Groq / any self-hosted gateway).
 	// Unlike the named providers it has no default endpoint, so base_url is
-	// required �?the resolver skips it until one is supplied.
+	// required — the resolver skips it until one is supplied.
 	KeyCustomAPIKey       = "custom_api_key" // sensitive
 	KeyCustomBaseURL      = "custom_base_url"
 	KeyCustomTLSInsecure  = "custom_tls_insecure"
@@ -160,7 +161,7 @@ const (
 	KeyCustomDefaultModel = "custom_default_model"
 
 	// KeyLLMDefaultProvider stores the cluster-wide default provider id.
-	// Empty �?first provider (alphabetical) is used.
+	// Empty → first provider (alphabetical) is used.
 	KeyLLMDefaultProvider = "default_provider"
 )
 
@@ -195,7 +196,7 @@ const (
 //
 // SAToken is the bearer credential we mint at bootstrap for the embedded
 // Grafana. APIKey is the operator-pasted equivalent for an external
-// Grafana �?semantically identical (both feed the Authorization: Bearer
+// Grafana — semantically identical (both feed the Authorization: Bearer
 // header), exposed as a separate UI field because customers who run their
 // own Grafana usually don't have admin access to mint a fresh SA token,
 // and pasting an existing API key is the path of least resistance.
@@ -205,8 +206,8 @@ const (
 // SPA pass it on every call.
 const (
 	KeyGrafanaRootURL     = "root_url"
-	KeyGrafanaSAToken     = "sa_token" // sensitive �?Grafana service-account token
-	KeyGrafanaAPIKey      = "api_key"  // sensitive �?alternative bearer for external Grafana
+	KeyGrafanaSAToken     = "sa_token" // sensitive — Grafana service-account token
+	KeyGrafanaAPIKey      = "api_key"  // sensitive — alternative bearer for external Grafana
 	KeyGrafanaOrgID       = "org_id"
 	KeyGrafanaTLSInsecure = "tls_insecure"
 )
@@ -256,8 +257,8 @@ const (
 	KeyWebSearchTotalTimeout     = "total_timeout_seconds"
 	KeyWebSearchProvider         = "provider"       // "searxng" | "tavily" | "brave"
 	KeySearxngURL                = "searxng_url"    // e.g. http://searxng:8080 (default)
-	KeyTavilyAPIKey              = "tavily_api_key" // sensitive �?Tavily Search API key
-	KeyBraveAPIKey               = "brave_api_key"  // sensitive �?Brave Search API key
+	KeyTavilyAPIKey              = "tavily_api_key" // sensitive — Tavily Search API key
+	KeyBraveAPIKey               = "brave_api_key"  // sensitive — Brave Search API key
 )
 
 // WebSearch provider names, exported as constants so callers don't pass
@@ -275,5 +276,5 @@ const (
 const DefaultSearxngURL = "http://searxng:8080"
 
 // Note: server/setting/http.go's default-mask policy treats any *_api_key,
-// *_secret, *_token, *_password suffix as sensitive �?bearer_token /
+// *_secret, *_token, *_password suffix as sensitive — bearer_token /
 // basic_password / sa_token all match automatically, no allowlist needed.

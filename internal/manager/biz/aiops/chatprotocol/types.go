@@ -1,4 +1,5 @@
-// Package chatprotocol 定义聊天入口共享的请求、回复和事件，不包含 Agent 执行逻辑�?package chatprotocol
+// Package chatprotocol 定义聊天入口共享的请求、回复和事件，不包含 Agent 执行逻辑。
+package chatprotocol
 
 import (
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/aiops"
@@ -22,7 +23,7 @@ type EventType string
 const (
 	// EventAssistant fires after every assistant turn is persisted. For
 	// tool-calling turns Content is empty but PendingToolCalls is non-zero
-	// �?the UI should render placeholders for that many tool calls.
+	// — the UI should render placeholders for that many tool calls.
 	EventAssistant EventType = "assistant"
 	// EventToolStart fires after a tool_call row is persisted as pending,
 	// before the tool actually runs.
@@ -66,7 +67,7 @@ type ApprovalPendingEvent struct {
 }
 
 // TaskNotificationEvent carries the task_notification payload.
-// Mirrors the chatruntime.TaskNotification shape �?translation happens
+// Mirrors the chatruntime.TaskNotification shape — translation happens
 // in service/aiops/service.go::translateRuntimeEvent. The fields are
 // kept exported so the http SSE renderer can copy them into JSON
 // without reaching into chatruntime.
@@ -119,13 +120,13 @@ type Mention struct {
 	Label string
 }
 
-// RunOptions bundles per-call overrides �?provider/model selection,
+// RunOptions bundles per-call overrides — provider/model selection,
 // mentions to inline, etc. Empty fields fall back to the agent's
 // configured defaults. Pass &RunOptions{} to keep behaviour identical
 // to the no-options Run.
 //
 // WebSearchEnabled toggles whether the agent exposes the manager-scoped
-// `web_search` skill to the LLM on this turn. Default false �?the
+// `web_search` skill to the LLM on this turn. Default false — the
 // model will not gratuitously search the public web on every metric
 // question. When the user clicks the SPA's globe toggle the SPA
 // flips this to true, which makes the tool visible to the model AND

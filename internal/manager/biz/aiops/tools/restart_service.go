@@ -16,16 +16,17 @@ import (
 
 // restart_service.go is the manager-side BaseTool that pairs
 // with internal/edgeagent/restart_service/handlers.go. It is the FIRST
-// mutating-class BaseTool in ongrid (Class="write" â€?// blast-radius taxonomy and SOP double-sign), and the proof
+// mutating-class BaseTool in ongrid (Class="write" â€”
+// blast-radius taxonomy and SOP double-sign), and the proof
 // that the ReviewGate decorator (decorators/review_gate.go) intercepts
 // mutating tool calls correctly: the LLM emits a restart_service call
-// â†?ReviewGate sees Class=="write" â†?spawns the reviewer worker
-// (agents/reviewer.md) â†?only on "Decision: approve" does this BaseTool
+// â†’ ReviewGate sees Class=="write" â†’ spawns the reviewer worker
+// (agents/reviewer.md) â†’ only on "Decision: approve" does this BaseTool
 // dispatch to the edge.
 //
 // Why Class="write" and not "destructive": "destructive" is reserved
 // for irreversible operations (rm, drop table, reboot). A service
-// restart is reversible â€?`systemctl start` brings it back. The
+// restart is reversible â€” `systemctl start` brings it back. The
 // blast radius is "single device" (matrix). The
 // ReviewGate decorator treats both classes the same (intercepts both),
 // so the choice is documentation-only here, but it sets a precedent
@@ -51,7 +52,8 @@ import (
 // The whitelist of allowed services is duplicated here AND in the edge
 // sandbox (defense in depth). When the manager rejects, the LLM gets a
 // fast clean error without burning a tunnel round-trip; when the edge
-// rejects, the manager's reviewer would have approved a stale config â€?// both paths exist on purpose.
+// rejects, the manager's reviewer would have approved a stale config â€”
+// both paths exist on purpose.
 
 // ToolNameRestartService is the stable wire name the LLM sees. Equal
 // to the skill key in internal/skill/builtin/restart_service so audit
@@ -61,7 +63,7 @@ const ToolNameRestartService = "host_restart_service"
 // RestartServiceDescription is the one-line "what does this tool do"
 // blurb the LLM reads when picking tools.
 const RestartServiceDescription = "Restart an allow-listed systemd service on a device. " +
-	"MUTATING â€?calls trigger a reviewer worker for SOP gating before execution."
+	"MUTATING â€” calls trigger a reviewer worker for SOP gating before execution."
 
 // restartServiceWhenToUse is the routing hint shown in the system
 // prompt under a "When to use" header. kept distinct
@@ -70,13 +72,13 @@ const RestartServiceDescription = "Restart an allow-listed systemd service on a 
 //
 // The "DO NOT propose restart" rule is the most important bit: a
 // runaway agent shouldn't suggest restart-as-a-fix; the user should
-// ask first. The reviewer is the second line of defense â€?explicit
+// ask first. The reviewer is the second line of defense â€” explicit
 // guidance here is the first.
 const restartServiceWhenToUse = "Use ONLY when the user explicitly asks to restart one of the allow-listed " +
 	"services (nginx / redis / prometheus / loki / tempo / grafana / mysql / ongrid). " +
-	"DO NOT proactively suggest restart â€?diagnose first with query_logql / get_host_summary. " +
+	"DO NOT proactively suggest restart â€” diagnose first with query_logql / get_host_summary. " +
 	"This tool is MUTATING: the call spawns a reviewer worker (SOP gating); " +
-	"on reject, do NOT retry â€?convey the reviewer's reason to the user verbatim and let them decide."
+	"on reject, do NOT retry â€” convey the reviewer's reason to the user verbatim and let them decide."
 
 // RestartServiceSchema is the JSON Schema of the tool's argument
 // object. The allow-list is enforced both by the schema's `enum` (so
@@ -142,13 +144,14 @@ type restartServiceResultEnvelope struct {
 
 // RestartServiceTool is the BaseTool-shape implementation of
 // restart_service. Holds dependencies on the struct (
-// æ”¹è¿›ç‚?#1) so it can be unit-tested without standing up the registry.
+// æ”¹è¿›ç‚¹ #1) so it can be unit-tested without standing up the registry.
 //
 // Composition note: this tool does NOT itself spawn the reviewer
 // worker. The ReviewGate decorator (decorators/review_gate.go) wraps
 // this tool and is responsible for the spawn. RestartServiceTool only
 // runs on the **approved** path; if you reach InvokableRun, the
-// reviewer has already said yes (or the wrap is misconfigured â€?// production wiring in Registry.BuildBaseTools makes the wrap
+// reviewer has already said yes (or the wrap is misconfigured â€”
+// production wiring in Registry.BuildBaseTools makes the wrap
 // mandatory for Class="write"|"destructive" tools).
 type RestartServiceTool struct {
 	caller   Caller
@@ -169,7 +172,7 @@ func NewRestartServiceTool(c Caller, e *edgebiz.Usecase, d *devicebiz.Usecase, l
 	}
 }
 
-// Info returns the tool metadata. Class="write" â€?the call mutates
+// Info returns the tool metadata. Class="write" â€” the call mutates
 // edge state (a service restarts). The ReviewGate decorator switches
 // on this value to gate the call behind a reviewer worker.
 func (t *RestartServiceTool) Info(_ context.Context) (*basetool.ToolInfo, error) {
@@ -183,13 +186,13 @@ func (t *RestartServiceTool) Info(_ context.Context) (*basetool.ToolInfo, error)
 }
 
 // InvokableRun parses argsJSON, validates the unit name against the
-// allow-list, resolves device_id â†?edge_id, dispatches the tunnel RPC,
+// allow-list, resolves device_id â†’ edge_id, dispatches the tunnel RPC,
 // and re-emits the response wrapped in restartServiceResultEnvelope.
 //
 // IMPORTANT: by the time we reach this method the ReviewGate decorator
 // has already approved the call. Production wiring must wrap this tool
 // in ReviewGate (chain.go's Wrap does so by default). A test that
-// invokes this method directly bypasses the review â€?fine for unit
+// invokes this method directly bypasses the review â€” fine for unit
 // tests, must NOT be the production path.
 func (t *RestartServiceTool) InvokableRun(ctx context.Context, argsJSON string, _ ...basetool.InvokeOption) (string, error) {
 	if t.caller == nil {
@@ -256,7 +259,7 @@ func (t *RestartServiceTool) InvokableRun(ctx context.Context, argsJSON string, 
 
 // AppendRestartServiceTool registers the restart_service BaseTool onto
 // the provided slice when the dependency triple is wired. Returns the
-// slice unchanged when any dep is nil (graceful degradation â€?a
+// slice unchanged when any dep is nil (graceful degradation â€” a
 // deployment without the tunnel can't restart anything anyway).
 //
 // The caller is responsible for wrapping the returned tool in the

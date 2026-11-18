@@ -163,11 +163,11 @@ func TestAgentTool_DedupeDoesNotCrossSessions(t *testing.T) {
 	}
 }
 
-// TestAgentTool_IgnoresBackgroundFlag â€?the schema no longer exposes
+// TestAgentTool_IgnoresBackgroundFlag â€” the schema no longer exposes
 // background; even when the LLM tries to pass it (older sessions /
 // model bias), we force sync and ignore the field. This locks in the
 // "coordinator dispatch is always synchronous" invariant that
-// eliminated the "task_id pending â†?user told to wait â†?never followed
+// eliminated the "task_id pending â†’ user told to wait â†’ never followed
 // up" failure mode (see E2E eval D4).
 func TestAgentTool_IgnoresBackgroundFlag(t *testing.T) {
 	sp := newFakeSpawner()
@@ -184,7 +184,7 @@ func TestAgentTool_IgnoresBackgroundFlag(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	if got["result"] != "ok" {
-		t.Errorf("result missing â€?sync path didn't run: %v", got)
+		t.Errorf("result missing â€” sync path didn't run: %v", got)
 	}
 	if sp.lastSpawn.Background {
 		t.Errorf("Background should be forced to false regardless of LLM input")

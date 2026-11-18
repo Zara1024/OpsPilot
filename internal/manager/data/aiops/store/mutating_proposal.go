@@ -77,7 +77,7 @@ func (r *MutatingProposalRepo) UpdateDecision(ctx context.Context, id, decision 
 	return nil
 }
 
-// MarkExecuted stamps ExecutedAt for the given proposal â€?fired after
+// MarkExecuted stamps ExecutedAt for the given proposal â€” fired after
 // the wrapped tool's InvokableRun returns (success or failure). Best-
 // effort: a missing row should not fail the tool execution.
 func (r *MutatingProposalRepo) MarkExecuted(ctx context.Context, id string, t time.Time) error {

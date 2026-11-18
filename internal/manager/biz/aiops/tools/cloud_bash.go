@@ -11,9 +11,10 @@ import (
 	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/tools/basetool"
 )
 
-// cloud_bash �?the cloud-side (manager) command tool, sibling of host_bash
+// cloud_bash — the cloud-side (manager) command tool, sibling of host_bash
 // (which runs on an edge device via tunnel). cloud_bash runs a command in
-// the manager-side Runner sandbox with a bound credential's env injected �?// the path for terraform / cloud-CLI / kubectl that operate on cloud
+// the manager-side Runner sandbox with a bound credential's env injected —
+// the path for terraform / cloud-CLI / kubectl that operate on cloud
 // resources (HLD-017).
 //
 // SAFETY (MVP): cloud_bash does NOT execute directly. Every call queues a
@@ -37,7 +38,7 @@ type CloudBashProposer interface {
 	// command output, HLD-021), or a terminal status blob on reject/timeout.
 	//
 	// credentials are the vault credential names whose fields get injected
-	// as env at execute time �?the union of the LLM's optional per-call
+	// as env at execute time — the union of the LLM's optional per-call
 	// credential and the session's active-skill bound credentials (HLD-017
 	// design-time binding). toolCallID ties the live card to this tool
 	// call's existing streaming card so the UI renders a single card.
@@ -64,22 +65,22 @@ var CloudBashSchema = json.RawMessage(`{
   "properties": {
     "command": {
       "type": "string",
-      "description": "The shell command to run in the cloud (manager) sandbox, e.g. 'terraform plan'. Runs with the chosen credential's env injected. The cwd is this conversation's PERSISTENT working directory �?files you create (e.g. write main.tf, terraform init) survive to the next command, so use relative paths and build up state across calls rather than re-creating everything each time."
+      "description": "The shell command to run in the cloud (manager) sandbox, e.g. 'terraform plan'. Runs with the chosen credential's env injected. The cwd is this conversation's PERSISTENT working directory — files you create (e.g. write main.tf, terraform init) survive to the next command, so use relative paths and build up state across calls rather than re-creating everything each time."
     },
     "credential": {
       "type": "string",
-      "description": "Optional name of a stored credential (设置→凭�? whose fields are injected as env vars (e.g. 'tencent-prod' �?TENCENTCLOUD_SECRET_ID/KEY). Omit for commands that need no cloud auth."
+      "description": "Optional name of a stored credential (设置→凭证) whose fields are injected as env vars (e.g. 'tencent-prod' → TENCENTCLOUD_SECRET_ID/KEY). Omit for commands that need no cloud auth."
     }
   },
   "required": ["command"]
 }`)
 
-const cloudBashWhenToUse = "在云�?manager)运行命令——terraform / 云厂�?CLI / kubectl 等操作云资源的命令�? +
-	"不同�?host_bash(在某台设备上�?。注�?每次调用都会在当前对话里直接弹出一张确认卡�?用户当场点击批准或拒�?" +
-	"这个工具调用会一直阻塞等�?用户批准后立刻执行并把真实的命令输出返回给你(就像普通工具一�?,你再据此继续�? +
-	"所以可以放心发�?�?*不要**引导用户去任何页面或菜单(确认就在对话�?。需要云凭证时传 credential(凭证库里的名�?�?
+const cloudBashWhenToUse = "在云端(manager)运行命令——terraform / 云厂商 CLI / kubectl 等操作云资源的命令。" +
+	"不同于 host_bash(在某台设备上跑)。注意:每次调用都会在当前对话里直接弹出一张确认卡片,用户当场点击批准或拒绝;" +
+	"这个工具调用会一直阻塞等待,用户批准后立刻执行并把真实的命令输出返回给你(就像普通工具一样),你再据此继续。" +
+	"所以可以放心发起,但**不要**引导用户去任何页面或菜单(确认就在对话里)。需要云凭证时传 credential(凭证库里的名字)。"
 
-// Info �?Class=destructive: cloud_bash can run anything with cloud creds, so
+// Info — Class=destructive: cloud_bash can run anything with cloud creds, so
 // it always carries the highest gate (and routes through human approval).
 func (t *CloudBashTool) Info(_ context.Context) (*basetool.ToolInfo, error) {
 	return &basetool.ToolInfo{
@@ -122,7 +123,7 @@ func mergeCreds(bound []string, perCall string) []string {
 // modeled on ztna-agent's ReAct loop). On approve it returns the executor's
 // REAL command output so the ReAct loop continues naturally; on reject/
 // timeout it returns a terminal status blob. The command is never executed
-// here �?the approval executor runs it once, post-approval; this tool only
+// here — the approval executor runs it once, post-approval; this tool only
 // waits and reads the recorded result.
 func (t *CloudBashTool) InvokableRun(ctx context.Context, argsJSON string, opts ...basetool.InvokeOption) (string, error) {
 	if t.proposer == nil {
@@ -143,7 +144,7 @@ func (t *CloudBashTool) InvokableRun(ctx context.Context, argsJSON string, opts 
 	// eino's authoritative per-call id (compose.GetToolCallID) ties the live
 	// approval card to THIS tool call's existing streaming card so the UI
 	// renders a single card instead of a duplicate. Empty under the legacy
-	// kernel �?the proposer falls back to a standalone card.
+	// kernel — the proposer falls back to a standalone card.
 	toolCallID := compose.GetToolCallID(ctx)
 	// HLD-019: carry the session id into the approval so the execute-on-approve
 	// hook runs the command in this session's persistent workspace.

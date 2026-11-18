@@ -33,7 +33,7 @@ const SendMessageToolName = "SendMessage"
 const sendMessageWhenToUse = "Continue a running or completed worker by sending a follow-up message. " +
 	"Use 'to' = the task_id returned by AgentTool. Useful when the initial result is close but needs a " +
 	"refinement (\"focus on the last 30 min\", \"also check disk\"). " +
-	"DO NOT use for fresh tasks (use AgentTool). DO NOT use for killed workers â€?spawn a new one."
+	"DO NOT use for fresh tasks (use AgentTool). DO NOT use for killed workers â€” spawn a new one."
 
 const sendMessageSchema = `{
   "type": "object",

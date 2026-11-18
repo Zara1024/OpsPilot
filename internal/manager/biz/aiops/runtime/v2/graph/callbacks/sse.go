@@ -15,17 +15,17 @@ import (
 )
 
 // SSEEventType enumerates the streaming events the SSE handler emits.
-// �?wire shapes mirror the legacy agent.Emit contract used
+// — wire shapes mirror the legacy agent.Emit contract used
 // in internal/manager/server/aiops/http.go so the SPA round-trips
 // without changes after cutover.
 type SSEEventType string
 
 const (
 	// SSEEventAssistantStart fires before the ChatModel produces any
-	// content (�?assistant_start frame).
+	// content (— assistant_start frame).
 	SSEEventAssistantStart SSEEventType = "assistant_start"
 	// SSEEventAssistantDelta is the new token-level streaming frame
-	// (�?"新增能力"). The delta payload only carries the
+	// (— "新增能力"). The delta payload only carries the
 	// incremental Content chunk so the SPA can append to the bubble.
 	SSEEventAssistantDelta SSEEventType = "assistant_delta"
 	// SSEEventAssistantEnd fires after the ChatModel returns. Payload
@@ -142,7 +142,7 @@ type TaskNotificationPayload struct {
 // SSEEmitter is the seam between the handler and the HTTP writer.
 // The cutover layer builds an emitter that wraps the http.Flusher +
 // writeSSE helper from internal/manager/server/aiops/http.go so the
-// wire format stays byte-compatible. emit MUST NOT block �?slow
+// wire format stays byte-compatible. emit MUST NOT block — slow
 // consumers must be handled (drop or buffer) inside the implementation
 // Streaming non-blocking 约束.
 type SSEEmitter func(SSEEvent)
@@ -151,21 +151,22 @@ type SSEEmitter func(SSEEvent)
 //
 // spec:
 //
-//	OnChatModelStart �?assistant_start
-//	OnChatModelStream(chunk)�?assistant_delta
-//	OnChatModelEnd �?assistant_end
-//	OnToolStart �?tool_start
-//	OnToolEnd �?tool_end
-//	OnGraphComplete �?done
-//	OnError �?error
+//	OnChatModelStart → assistant_start
+//	OnChatModelStream(chunk)→ assistant_delta
+//	OnChatModelEnd → assistant_end
+//	OnToolStart → tool_start
+//	OnToolEnd → tool_end
+//	OnGraphComplete → done
+//	OnError → error
 //
 // The graph "complete" event is emitted from OnEnd when info.Component
-// is the wrapper graph itself (components.ComponentOfGraph) �?eino
+// is the wrapper graph itself (components.ComponentOfGraph) — eino
 // fires the same OnEnd contract on graph-scope as on node-scope.
 //
 // Concurrency: the emitter is called sequentially within the lifetime
 // of a single graph run; tool fan-out (compose ToolsNode parallel
-// execution) emits per-tool start/end events that may interleave �?// the iteration counter is atomic so the assistant_start sequence is
+// execution) emits per-tool start/end events that may interleave —
+// the iteration counter is atomic so the assistant_start sequence is
 // consistent. Cutover-layer emitter implementations should be
 // goroutine-safe (the existing http.go writeSSE serializes through
 // the response writer, which is already single-goroutine).
@@ -182,7 +183,7 @@ type SSEHandler struct {
 	toolStarts   map[string]toolStart
 
 	// assistantIDRelay (optional) is the cross-handler share with
-	// PersistenceHandler �?see chain.go. NewDefaultHandlers sets it;
+	// PersistenceHandler — see chain.go. NewDefaultHandlers sets it;
 	// nil when SSE is used standalone (tests).
 	assistantIDRelay *assistantIDRelay
 }
@@ -222,7 +223,7 @@ func (h *SSEHandler) Needed(_ context.Context, info *callbacks.RunInfo, timing c
 			return true
 		}
 	default:
-		// Graph / Workflow / Chain �?observe terminal so we can emit
+		// Graph / Workflow / Chain — observe terminal so we can emit
 		// `done` / `error` frames.
 		switch timing {
 		case callbacks.TimingOnEnd, callbacks.TimingOnError:
@@ -289,7 +290,7 @@ func (h *SSEHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, output 
 		}
 		it := int(h.iterations.Load())
 		// h.assistantIDRelay carries the row id PersistenceHandler
-		// just stored �?chain.go registers Persistence before SSE so
+		// just stored — chain.go registers Persistence before SSE so
 		// by the time we emit here, the AppendMessage for this iter
 		// is done. Empty string when persistence is disabled
 		// (e.g. tests that wire only SSE).
@@ -336,7 +337,7 @@ func (h *SSEHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, output 
 			},
 		})
 	default:
-		// Graph-scope OnEnd �?emit `done`.
+		// Graph-scope OnEnd — emit `done`.
 		h.emit(SSEEvent{
 			Type: SSEEventDone,
 			Done: &DonePayload{Iterations: int(h.iterations.Load())},
@@ -380,7 +381,7 @@ func (h *SSEHandler) OnError(ctx context.Context, info *callbacks.RunInfo, err e
 		})
 		return ctx
 	}
-	// Top-level / ChatModel error �?emit terminal `error` frame.
+	// Top-level / ChatModel error — emit terminal `error` frame.
 	h.emit(SSEEvent{
 		Type:  SSEEventError,
 		Error: &ErrorPayload{Message: err.Error()},
@@ -398,7 +399,8 @@ func (h *SSEHandler) OnStartWithStreamInput(ctx context.Context, _ *callbacks.Ru
 
 // OnEndWithStreamOutput drains the streaming output of a ChatModel and
 // fans assistant_delta frames to the SSE emitter as chunks land.
-// �?assistant_delta 是新增的 token-level 帧�?//
+// — assistant_delta 是新增的 token-level 帧。
+//
 // We close the receiver-side copy when done so eino can reclaim the
 // stream goroutine; the original output stream continues to flow to
 // downstream graph nodes.

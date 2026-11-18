@@ -362,7 +362,8 @@ func TestInvestigatorRejectsFailedOrMismatchedBatch(t *testing.T) {
 	}
 }
 
-// 真实 BaseTool 契约回归：防�?fake 接受旧参数而掩盖运行时迁移错误�?type realCorrelationInvoker struct{ tool basetool.BaseTool }
+// 真实 BaseTool 契约回归：防止 fake 接受旧参数而掩盖运行时迁移错误。
+type realCorrelationInvoker struct{ tool basetool.BaseTool }
 
 func (i realCorrelationInvoker) Invoke(ctx context.Context, name string, args json.RawMessage) (aiopstools.ExecuteResult, error) {
 	if name != aiopstools.ToolNameCorrelateIncident {

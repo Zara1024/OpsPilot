@@ -28,8 +28,8 @@ type Caller interface {
 // which the agent uses to populate the chat_tool_calls.device_id audit
 // column.
 //
-// Post-split (May 2026): renamed EdgeID �?DeviceID. Numerically the
-// values are independent �?the legacy chat_tool_calls.edge_id column is
+// Post-split (May 2026): renamed EdgeID → DeviceID. Numerically the
+// values are independent — the legacy chat_tool_calls.edge_id column is
 // kept as the storage column name (audit-only) but the semantic
 // interpretation is the host device id.
 type ExecuteResult struct {
@@ -53,7 +53,7 @@ type Registry struct {
 	logQuery    LogQuerier
 	traceQuery  TraceQuerier
 	// knowledge is the user-curated knowledge base + git repo searcher.
-	// nil-safe �?when nil the query_knowledge tool isn't registered.
+	// nil-safe — when nil the query_knowledge tool isn't registered.
 	knowledge KnowledgeSearcher
 	// topology bundles deployment-level facts (manager version, configured
 	// backend URLs, channel-count callback) consumed by the get_topology
@@ -66,7 +66,7 @@ type Registry struct {
 	// expand_topology / find_topology_node. Distinct from the
 	// deployment-level `topology` field above (which feeds get_topology);
 	// the naming overlap is unfortunate but the two surfaces address
-	// different audiences. nil-safe �?the two BaseTools simply aren't
+	// different audiences. nil-safe — the two BaseTools simply aren't
 	// registered when this is nil.
 	topologyGraph *topologybiz.Usecase
 
@@ -79,7 +79,7 @@ type Registry struct {
 	// to validate subagent_type at args-parse time. nil-safe.
 	subagentRegistry SubagentRegistry
 
-	// auditLister feeds query_change_events (HLD-013 Phase 2 �?"what
+	// auditLister feeds query_change_events (HLD-013 Phase 2 — "what
 	// changed near T"). nil-safe: the tool isn't registered when unset.
 	// Wired post-construction from cmd/main.go via SetAuditLister.
 	auditLister AuditLister
@@ -93,22 +93,22 @@ type Registry struct {
 
 	// cloudBashProposer wires the cloud_bash tool to the human approval
 	// inbox. Set post-construction (cmd/main.go) via SetCloudBashProposer;
-	// nil �?cloud_bash is NOT registered.
+	// nil → cloud_bash is NOT registered.
 	cloudBashProposer CloudBashProposer
 	// hostBashProposer wires mutating host_bash commands to the same inline
-	// approval flow. nil �?host_bash remains read-only only.
+	// approval flow. nil → host_bash remains read-only only.
 	hostBashProposer              HostBashProposer
 	hostBashPolicyApprovalEnabled func(context.Context) bool
 
 	// notificationSender wires send_notification to the channel store + notify
-	// router. Set post-construction; nil �?the tool is not registered.
+	// router. Set post-construction; nil → the tool is not registered.
 	notificationSender NotificationSender
 	// imMessageSender wires send_im_message to the IM Bridge's direct group
 	// sender. It is separate from notificationSender by design.
 	imMessageSender IMMessageSender
 
 	// pageStore wires serve_page to the hosted-pages store + static route.
-	// Set post-construction (cmd/main.go); nil �?serve_page NOT registered.
+	// Set post-construction (cmd/main.go); nil → serve_page NOT registered.
 	pageStore PageStore
 
 	// k8sSnapshot feeds query_k8s_snapshot. It reads manager DB snapshots,
@@ -120,7 +120,7 @@ type Registry struct {
 	log *slog.Logger
 }
 
-// SetCloudBashProposer wires the cloud_bash �?approval-inbox seam. Call
+// SetCloudBashProposer wires the cloud_bash → approval-inbox seam. Call
 // after NewRegistry (cmd/main.go).
 func (r *Registry) SetCloudBashProposer(p CloudBashProposer) { r.cloudBashProposer = p }
 
@@ -132,13 +132,13 @@ func (r *Registry) SetHostBashPolicyApprovalEnabledProvider(fn func(context.Cont
 	r.hostBashPolicyApprovalEnabled = fn
 }
 
-// SetNotificationSender wires send_notification �?channel store + notify router.
+// SetNotificationSender wires send_notification → channel store + notify router.
 func (r *Registry) SetNotificationSender(s NotificationSender) { r.notificationSender = s }
 
 // SetIMMessageSender wires send_im_message to an IM Bridge group sender.
 func (r *Registry) SetIMMessageSender(s IMMessageSender) { r.imMessageSender = s }
 
-// SetPageStore wires serve_page �?hosted-pages store.
+// SetPageStore wires serve_page → hosted-pages store.
 func (r *Registry) SetPageStore(p PageStore) { r.pageStore = p }
 
 // SetPacketCaptureOperationCreator wires durable Operation creation into the
@@ -192,7 +192,8 @@ func (r *Registry) SetTopologyInfo(info TopologyInfo) {
 
 // SetWorkerSpawner wires the chatruntime.Runtime seam used by the
 // coordinator-only AgentTool / SendMessageTool / TaskStopTool (
-// Called from cmd/main.go after the Runtime is constructed �?// the Registry exists earlier in the boot sequence so we use a
+// Called from cmd/main.go after the Runtime is constructed —
+// the Registry exists earlier in the boot sequence so we use a
 // post-construction setter to avoid a circular wiring order. registry
 // MAY be nil; AgentTool then forwards subagent_type verbatim and lets
 // the runtime return its own "agent not found" error.
@@ -209,7 +210,7 @@ func (r *Registry) SetKnowledgeSearcher(k KnowledgeSearcher) {
 
 // SetTopologyGraph wires the topology usecase consumed by
 // expand_topology / find_topology_node. Same post-construction pattern
-// as the other setters �?cmd/main.go invokes it after topologyUC is
+// as the other setters — cmd/main.go invokes it after topologyUC is
 // built so NewRegistry's signature stays stable.
 func (r *Registry) SetTopologyGraph(t *topologybiz.Usecase) {
 	r.topologyGraph = t
@@ -217,7 +218,7 @@ func (r *Registry) SetTopologyGraph(t *topologybiz.Usecase) {
 
 // envIntDefault parses an env-var-string into an int. Returns def when
 // the env is unset, empty, or unparseable. We deliberately keep this
-// helper local to the tools package �?the only call site is
+// helper local to the tools package — the only call site is
 // BuildBaseTools' threshold knob and there's no value in pulling in
 // a generic config layer just for one int.
 func envIntDefault(name string, def int) int {
@@ -234,14 +235,14 @@ func envIntDefault(name string, def int) int {
 
 // defaultDeferralThreshold is the default toolBag size above which
 // deferral kicks in. 30 was chosen because the May 2026
-// roster (14 core + 4 alert/host-files + 1 mutating �?19) sits well
+// roster (14 core + 4 alert/host-files + 1 mutating ≈ 19) sits well
 // below it; the threshold only trips once one or two marketplace packs
 // land. Operators can override via ONGRID_TOOLBAG_DEFERRAL_THRESHOLD.
 const defaultDeferralThreshold = 30
 
 // BuildBaseTools constructs every BaseTool implementation paired with
 // the dependencies the Registry was given, then wraps the slice in a
-// *ToolBag �?the deferred-loading layer
+// *ToolBag — the deferred-loading layer
 //
 // Wiring contract for callers (cmd/ongrid/main.go):
 //
@@ -263,42 +264,42 @@ func (r *Registry) BuildBaseTools() *ToolBag {
 	out := make([]basetool.BaseTool, 0, 14)
 
 	// 1-2: host_load + process_list always paired with the caller +
-	// edge usecase. devices is passed for device_id �?edge_id resolution
-	// (post N+15 batch refactor �?the schemas now take device_ids[]
+	// edge usecase. devices is passed for device_id → edge_id resolution
+	// (post N+15 batch refactor — the schemas now take device_ids[]
 	// rather than edge_name).
 	out = append(out, NewGetHostLoadTool(r.caller, r.edges, r.devices, r.log))
 	out = append(out, NewGetProcessListTool(r.caller, r.edges, r.devices, r.log))
 
-	// 3: query_promql �?gated on Prom client.
+	// 3: query_promql — gated on Prom client.
 	if r.promQuery != nil {
 		out = append(out, NewQueryPromQLTool(r.promQuery, r.log))
 		out = append(out, NewListMetricCatalogTool(r.promQuery, r.log))
 	}
-	// 3a: list_database_sources �?configured databasemetrics /
+	// 3a: list_database_sources — configured databasemetrics /
 	// database-tagged custommetrics inventory, no PromQL.
 	if r.edges != nil && r.pluginConfigs != nil {
 		out = append(out, NewListDatabaseSourcesTool(r.edges, r.devices, r.pluginConfigs, r.log))
 	}
-	// 3b: database status �?curated PromQL checks over databasemetrics /
+	// 3b: database status — curated PromQL checks over databasemetrics /
 	// database-tagged custommetrics sources.
 	if r.promQuery != nil && r.edges != nil && r.pluginConfigs != nil {
 		out = append(out, NewAnalyzeDatabaseStatusTool(r.promQuery, r.edges, r.devices, r.pluginConfigs, r.log))
 	}
-	// 4: query_logql �?the stable log-query tool. Its implementation routes
+	// 4: query_logql — the stable log-query tool. Its implementation routes
 	// through the selected Loki or Elasticsearch backend.
 	if r.logQuery != nil {
 		out = append(out, NewQueryLogQLTool(r.logQuery))
 	}
-	// 5: query_traceql �?gated on Tempo client.
+	// 5: query_traceql — gated on Tempo client.
 	if r.traceQuery != nil {
 		out = append(out, NewQueryTraceQLTool(r.traceQuery, r.log))
 	}
-	// 5b: query_knowledge �?operator-curated docs + git repos.
+	// 5b: query_knowledge — operator-curated docs + git repos.
 	// Gated on knowledge service; nil-safe (tool stays out of the bag).
 	if r.knowledge != nil {
 		out = append(out, NewQueryKnowledgeTool(r.knowledge, r.log))
 	}
-	// 5c: code-aware analysis (HLD-012) �?read/list/grep the SOURCE of
+	// 5c: code-aware analysis (HLD-012) — read/list/grep the SOURCE of
 	// registered git repos (the on-disk clone Repos-sync keeps). The
 	// knowledge service is typed as the narrow KnowledgeSearcher here, so
 	// type-assert to CodeBrowser: the concrete *knowledge.Usecase satisfies
@@ -309,7 +310,7 @@ func (r *Registry) BuildBaseTools() *ToolBag {
 		out = append(out, NewGrepSourceTool(cb, r.log))
 	}
 	// 5d: Kubernetes manager DB snapshot. This is deliberately DB-backed
-	// so homepage questions such as "当前有多�?Pod" do not fan out to the
+	// so homepage questions such as "当前有多少 Pod" do not fan out to the
 	// live Kubernetes API.
 	if r.k8sSnapshot != nil {
 		out = append(out, NewQueryK8sSnapshotTool(r.k8sSnapshot, r.log))
@@ -330,23 +331,23 @@ func (r *Registry) BuildBaseTools() *ToolBag {
 	if r.edges != nil || r.devices != nil {
 		out = append(out, NewGetTopologyTool(r.edges, r.alertUC, r.topology, r.log).WithDevices(r.devices))
 	}
-	// 8: host ranking �?gated on Prom + devices
+	// 8: host ranking — gated on Prom + devices
 	if r.promQuery != nil && r.devices != nil {
 		out = append(out, NewRankHostsTool(r.promQuery, r.devices, r.log))
 		out = append(out, NewFindOutlierHostsTool(r.promQuery, r.devices, r.log))
 	}
-	// 9-11: alert-flavoured tools �?gated on alertUC.
+	// 9-11: alert-flavoured tools — gated on alertUC.
 	if r.alertUC != nil {
 		out = append(out, NewQueryIncidentsTool(r.alertUC, r.log))
 		out = append(out, NewGetIncidentDetailTool(r.alertUC, r.log))
 		out = append(out, NewQueryAlertRulesTool(r.alertUC, r.log))
 	}
-	// query_change_events �?RCA "what changed near T" (HLD-013 Phase 2).
+	// query_change_events — RCA "what changed near T" (HLD-013 Phase 2).
 	// Gated on the audit seam; nil-safe (tool stays out of the bag).
 	if r.auditLister != nil {
 		out = append(out, NewQueryChangeEventsTool(r.auditLister, r.log))
 	}
-	// 12: get_host_summary �?gated on devices (alert/caller are
+	// 12: get_host_summary — gated on devices (alert/caller are
 	// best-effort).
 	if r.devices != nil {
 		out = append(out, NewGetHostSummaryTool(r.caller, r.edges, r.devices, r.alertUC, r.log))
@@ -370,10 +371,10 @@ func (r *Registry) BuildBaseTools() *ToolBag {
 	}
 
 	// 14-16: Coordinator-only sub-agent control tools.
-	// Gated on r.spawner �?set via SetWorkerSpawner after the
+	// Gated on r.spawner — set via SetWorkerSpawner after the
 	// chatruntime.Runtime is constructed in main.go. When the spawner is
 	// nil we omit all three so the LLM never sees a tool it can't fulfil.
-	// These tools live ONLY on the coordinator's tool bag �?workers
+	// These tools live ONLY on the coordinator's tool bag — workers
 	// shouldn't be able to spawn nested workers in this first version.
 	if r.spawner != nil {
 		out = append(out, NewAgentTool(r.spawner, r.subagentRegistry, r.log))
@@ -381,7 +382,7 @@ func (r *Registry) BuildBaseTools() *ToolBag {
 		out = append(out, NewTaskStopTool(r.spawner, r.log))
 	}
 
-	// 17: restart_service �?first MUTATING BaseTool (SOP).
+	// 17: restart_service — first MUTATING BaseTool (SOP).
 	// Class="write"; the ReviewGate decorator (chain.go's Wrap)
 	// intercepts the call and spawns a reviewer worker before
 	// dispatch. Gated on the same dependency triple as host_files
@@ -409,7 +410,7 @@ func (r *Registry) BuildBaseTools() *ToolBag {
 		}
 	}
 
-	// 18: bash �?generic host shell skill. Read commands use the edge
+	// 18: bash — generic host shell skill. Read commands use the edge
 	// read-only cmdpolicy; mutating commands only run through the optional
 	// approval proposer. Class stays "read" so diagnostic bash remains
 	// visible when writes are disabled.
@@ -417,7 +418,7 @@ func (r *Registry) BuildBaseTools() *ToolBag {
 		out = append(out, NewBashToolWithProposer(r.caller, r.edges, r.devices, r.hostBashProposer, r.hostBashPolicyApprovalEnabled, r.log))
 	}
 
-	// cloud_bash �?manager-side command runner (sibling of host_bash). Gated
+	// cloud_bash — manager-side command runner (sibling of host_bash). Gated
 	// on the approval-inbox proposer so it can't run without the human-in-
 	// the-loop path wired (HLD-017).
 	if r.cloudBashProposer != nil {
@@ -433,7 +434,8 @@ func (r *Registry) BuildBaseTools() *ToolBag {
 		out = append(out, NewServePageTool(r.pageStore, r.log))
 	}
 
-	// 所有消费方共用完整静态目录，避免工作流画布漏�?host-files�?	if r.caller != nil && r.edges != nil && r.devices != nil {
+	// 所有消费方共用完整静态目录，避免工作流画布漏掉 host-files。
+	if r.caller != nil && r.edges != nil && r.devices != nil {
 		out = append(out, NewFindLargeFilesTool(r.caller, r.edges, r.devices, r.log), NewDuSummaryTool(r.caller, r.edges, r.devices, r.log), NewStatFileTool(r.caller, r.edges, r.devices, r.log))
 	}
 	out = r.appendSafeSkillTools(out)

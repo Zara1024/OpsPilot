@@ -89,7 +89,7 @@ func (r *SessionRepo) ListByParent(ctx context.Context, parentID string) ([]*mod
 
 // ListSessions returns sessions for userID ordered by id DESC. When
 // relatedIncidentID is non-nil only sessions linked to that incident
-// are returned �?used by the IncidentDetail agent-timeline panel.
+// are returned — used by the IncidentDetail agent-timeline panel.
 func (r *SessionRepo) ListSessions(ctx context.Context, userID uint64, limit, offset int, relatedIncidentID *uint64) ([]*model.Session, error) {
 	// The primary chat surface shows only user-audience transcripts.
 	// Kind describes workflow semantics; audience is the visibility boundary.
@@ -173,8 +173,8 @@ func (r *SessionRepo) UpdateSessionModel(ctx context.Context, id string, provide
 // preserve audit history.
 //
 // Implementation: a single transaction so a partial delete can't leave
-// orphaned messages. We rely on chat_tool_calls(message_id) �?chat_messages
-// and chat_messages(session_id) �?chat_sessions ordering; no FKs are
+// orphaned messages. We rely on chat_tool_calls(message_id) → chat_messages
+// and chat_messages(session_id) → chat_sessions ordering; no FKs are
 // declared in our schema, so cascade is manual.
 func (r *SessionRepo) DeleteSession(ctx context.Context, id string) error {
 	sessionDir := filepath.Join(r.attachmentRoot, id)
@@ -260,7 +260,7 @@ func (r *SessionRepo) AppendMessage(ctx context.Context, m *model.Message) error
 // recent N messages, still ordered ascending for history replay.
 //
 // Hydrates message.ToolCalls from chat_tool_calls in a single batched
-// query keyed on assistant message IDs �?without this, replay drops
+// query keyed on assistant message IDs — without this, replay drops
 // any assistant turn whose Content is NULL (tool-call-only turns) and
 // the following role=tool messages become orphans, which strict LLM
 // providers reject with HTTP 400 "tool must follow tool_calls".
@@ -297,7 +297,7 @@ func (r *SessionRepo) ListMessages(ctx context.Context, sessionID string, limit 
 // hydrateToolCalls batches one SELECT against chat_tool_calls keyed on
 // the assistant message ids in msgs, and attaches the rows to each
 // message in-place. Order within a single assistant turn is preserved
-// by sorting on (created_at, id) �?the agent persists tool_calls one
+// by sorting on (created_at, id) — the agent persists tool_calls one
 // at a time so created_at is monotonic, and id is the stable tiebreak.
 func (r *SessionRepo) hydrateToolCalls(ctx context.Context, msgs []*model.Message) error {
 	assistantIDs := make([]string, 0, len(msgs))
@@ -409,7 +409,8 @@ func (r *SessionRepo) FinalizePendingToolCalls(ctx context.Context, sessionID st
 	return res.RowsAffected, nil
 }
 
-// 工具结果与执行表按会话和调用 ID 关联；LLM 可能跨轮复用 ID，须取结果之前最近的一次执行�?func (r *SessionRepo) hydrateToolResults(ctx context.Context, msgs []*model.Message) error {
+// 工具结果与执行表按会话和调用 ID 关联；LLM 可能跨轮复用 ID，须取结果之前最近的一次执行。
+func (r *SessionRepo) hydrateToolResults(ctx context.Context, msgs []*model.Message) error {
 	ids := []string{}
 	sessions := []string{}
 	for _, m := range msgs {

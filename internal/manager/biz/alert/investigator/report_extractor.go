@@ -35,7 +35,7 @@ type extractedReport struct {
 // extractStructured reuses the existing extraction call and checks references
 // against persisted observations. Failure preserves the narrative, not a guessed root cause.
 func (uc *Usecase) extractStructured(ctx context.Context, incident alertmodel.Incident, finalAnswer string, toolCallCount int, locale string, sources evidenceSet) ReadyFields {
-	// related_alerts is independent of Pass-2 â€?it's a pure DB query
+	// related_alerts is independent of Pass-2 â€” it's a pure DB query
 	// over alert_incidents, so we run it unconditionally and reuse the
 	// result whether or not the LLM extraction succeeds.
 	relatedJSON := uc.buildRelatedAlertsJSON(ctx, incident)
@@ -151,12 +151,12 @@ func (uc *Usecase) extractStructured(ctx context.Context, incident alertmodel.In
 	out.EvidenceCheckJSON = &checkedJSON
 	out.EvidenceJSON = marshalOrDefault(ex.Evidence, "[]")
 	out.SuggestedActionsJSON = marshalOrDefault(ex.Suggested, "[]")
-	// related_alerts already computed at the top of the function â€?DB
+	// related_alerts already computed at the top of the function â€” DB
 	// query independent of Pass-2. Reuse to avoid a second round-trip.
 	out.RelatedAlertsJSON = relatedJSON
 
 	if ex.Confidence != nil {
-		// Clamp model self-report to [0, 1] â€?some models drift to
+		// Clamp model self-report to [0, 1] â€” some models drift to
 		// 0-100 or 0-10.
 		c := *ex.Confidence
 		if c > 1 && c <= 100 {
@@ -177,7 +177,7 @@ func (uc *Usecase) extractStructured(ctx context.Context, incident alertmodel.In
 // relatedAlertWire is the per-row shape persisted into
 // related_alerts_json. Kept minimal so the SPA can render a compact
 // list (rule + when + status) without joining further. The full
-// incident is reachable via incident_id â†?/v1/alerts/incidents/{id}.
+// incident is reachable via incident_id â†’ /v1/alerts/incidents/{id}.
 type relatedAlertWire struct {
 	IncidentID  uint64 `json:"incident_id"`
 	Rule        string `json:"rule"`
@@ -194,8 +194,8 @@ const (
 )
 
 // buildRelatedAlertsJSON queries the related-alerts seam and serialises
-// the result. Returns "[]" on any failure / missing dep â€?RelatedAlertsJSON
-// must be non-empty (the column is NOT NULL with no DEFAULT â€?MySQL
+// the result. Returns "[]" on any failure / missing dep â€” RelatedAlertsJSON
+// must be non-empty (the column is NOT NULL with no DEFAULT â€” MySQL
 // Error 1101 trap).
 func (uc *Usecase) buildRelatedAlertsJSON(ctx context.Context, target alertmodel.Incident) string {
 	if uc.related == nil {
@@ -261,7 +261,7 @@ Rules:
 // buildExtractorPrompt frames the alert context + worker output for
 // the structured extraction call. Keeps the prompt fully self-contained
 // so the summarizer doesn't need the in-progress chat history. locale
-// overrides the language the JSON string fields come back in â€?without
+// overrides the language the JSON string fields come back in â€” without
 // it the extractor inherits whatever language the worker wrote in.
 func buildExtractorPrompt(incident alertmodel.Incident, finalAnswer string, locale string) string {
 	var b strings.Builder
@@ -372,7 +372,7 @@ func clampRunes(s string, max int) string {
 	if len(r) <= max {
 		return s
 	}
-	return string(r[:max-1]) + "â€?
+	return string(r[:max-1]) + "â€¦"
 }
 
 func truncate(s string, max int) string {
@@ -380,5 +380,5 @@ func truncate(s string, max int) string {
 	if len(r) <= max {
 		return s
 	}
-	return string(r[:max]) + "â€?
+	return string(r[:max]) + "â€¦"
 }

@@ -1,7 +1,7 @@
-// worker.go implements �?the coordinator/worker multi-agent
+// worker.go implements — the coordinator/worker multi-agent
 // path. The Runtime owns a small in-memory map of spawned workers; each
 // worker is an independent graph.Invoke against a tool-bag filtered by
-// the worker agent's persona (whitelist + disallowed_tools �?black wins).
+// the worker agent's persona (whitelist + disallowed_tools — black wins).
 //
 // Each worker owns an internal work session. The root session remains owned
 // by the default assistant; parent_session_id records only the immediate
@@ -12,19 +12,21 @@
 //
 // State machine (figure):
 //
-//	pending �?set transiently between SpawnRequest accept and goroutine
+//	pending — set transiently between SpawnRequest accept and goroutine
 //	           start (effectively never observable for sync spawns)
-//	  �?//	running �?goroutine has begun graph.Invoke; status flips here
+//	  ↓
+//	running — goroutine has begun graph.Invoke; status flips here
 //	           BEFORE the child graph emits its first event
-//	  �?//	completed �?graph.Invoke returned a non-nil AssistantMessage with
+//	  ↓
+//	completed — graph.Invoke returned a non-nil AssistantMessage with
 //	           no error; Result holds the final assistant content
-//	failed �?graph.Invoke returned err != nil OR the agent name was
+//	failed — graph.Invoke returned err != nil OR the agent name was
 //	            unknown / agent registry was nil
-//	killed �?StopWorker called while status was running; cancel()
+//	killed — StopWorker called while status was running; cancel()
 //	            fires and the goroutine observes ctx.Done() then sets
 //	            EndedAt + status=killed (without overwriting err)
 //
-// Background semantics �?when SpawnRequest.Background is true SpawnWorker
+// Background semantics — when SpawnRequest.Background is true SpawnWorker
 // returns immediately with status=running and the graph.Invoke runs in a
 // detached goroutine; the goroutine emits a "task_notification" SSE
 // envelope back through req.ParentEmit upon terminal status. Callers
@@ -66,26 +68,26 @@ import (
 type WorkerStatus = contract.WorkerStatus
 
 const (
-	// WorkerStatusPending �?accepted but not yet started. Observable
+	// WorkerStatusPending — accepted but not yet started. Observable
 	// only in tests that intercept between SpawnWorker accept and goroutine
 	// scheduling; in production this state is essentially transient.
 	WorkerStatusPending WorkerStatus = "pending"
-	// WorkerStatusRunning �?graph.Invoke is in flight.
+	// WorkerStatusRunning — graph.Invoke is in flight.
 	WorkerStatusRunning WorkerStatus = "running"
-	// WorkerStatusCompleted �?graph.Invoke returned a final assistant
+	// WorkerStatusCompleted — graph.Invoke returned a final assistant
 	// message with no error.
 	WorkerStatusCompleted WorkerStatus = "completed"
-	// WorkerStatusFailed �?graph.Invoke returned an error, or the agent
+	// WorkerStatusFailed — graph.Invoke returned an error, or the agent
 	// name was unknown.
 	WorkerStatusFailed WorkerStatus = "failed"
-	// WorkerStatusKilled �?explicitly stopped via StopWorker.
+	// WorkerStatusKilled — explicitly stopped via StopWorker.
 	WorkerStatusKilled WorkerStatus = "killed"
 )
 
 // Worker tracks a spawned sub-agent. Unique by ID within a Runtime
 // instance.
 type Worker struct {
-	// ID is "agent-<8 hex>" �?unique per Runtime, stable for the
+	// ID is "agent-<8 hex>" — unique per Runtime, stable for the
 	// worker's lifetime.
 	ID string
 	// AgentName is the persona name (frontmatter `name` field).
@@ -97,7 +99,7 @@ type Worker struct {
 	SessionID string
 	// ParentSessionID is the coordinator session that requested the
 	// spawn. Tracked here so a future audit query can rebuild the parent
-	// �?worker tree without a schema change.
+	// → worker tree without a schema change.
 	ParentSessionID string
 	// Prompt is the initial user message handed to the worker.
 	Prompt string
@@ -117,7 +119,7 @@ type Worker struct {
 	// Err is the failure reason (when terminal = failed / killed).
 	Err string
 
-	// Internal fields �?not surfaced to callers via copies.
+	// Internal fields — not surfaced to callers via copies.
 	cancel context.CancelFunc
 	mu     sync.Mutex
 }
@@ -167,9 +169,9 @@ func (rt *Runtime) SpawnWorker(ctx context.Context, req SpawnRequest) (*Worker, 
 	sessID := newWorkerSessionID(id)
 
 	// Persist the worker session row up-front so audit + worker-tree
-	// queries can resolve the (parent �?worker) relationship without
+	// queries can resolve the (parent → worker) relationship without
 	// waiting for the worker to finish. We need the parent's UserID for
-	// row-level scoping; missing parent �?worker session is orphan-able
+	// row-level scoping; missing parent → worker session is orphan-able
 	// (still persisted, but parent_session_id=nil) so the LLM-driven
 	// flow remains usable in tests / sync calls without a parent row.
 	var sourceScope *aiopsmodel.APMSourceScope
@@ -202,9 +204,9 @@ func (rt *Runtime) SpawnWorker(ctx context.Context, req SpawnRequest) (*Worker, 
 		}
 		// On lookup failure we proceed without a parent ref so the
 		// worker can still run; the audit row simply has parent_session_id
-		// = nil. Logged at info �?not fatal.
+		// = nil. Logged at info — not fatal.
 		if err != nil && rt.log != nil {
-			rt.log.Info("chatruntime: worker spawn �?parent session lookup failed",
+			rt.log.Info("chatruntime: worker spawn — parent session lookup failed",
 				"parent_session_id", req.ParentSession,
 				"err", err.Error())
 		}
@@ -277,7 +279,7 @@ func (rt *Runtime) SpawnWorker(ctx context.Context, req SpawnRequest) (*Worker, 
 		// Close the session row when the goroutine terminates by any
 		// path (normal completion, error, kill, panic). Without this
 		// the chat_sessions row stays closed_at=NULL forever and
-		// every SpawnWorker call leaks one "looks-active" row �?see
+		// every SpawnWorker call leaks one "looks-active" row — see
 		// the orphan accumulation that hit 161 rows on the test env
 		// before this fix landed. We use context.Background so the
 		// close fires even when the caller's ctx is already cancelled
@@ -365,7 +367,7 @@ func (rt *Runtime) CountWorkersByStatus() (running, pending int) {
 }
 
 // SendToWorker continues a worker by appending a follow-up user message.
-// The worker must be running or already in a terminal state �?claude-code
+// The worker must be running or already in a terminal state — claude-code
 // allows continuing a completed worker so a coordinator can refine the
 // task without a fresh spawn (figure: SendMessageTool
 // targets either state). For a running worker the message is queued
@@ -373,7 +375,8 @@ func (rt *Runtime) CountWorkersByStatus() (running, pending int) {
 // follow-up prompt.
 //
 // First version: we run the follow-up synchronously in the current
-// goroutine (no queueing), and disallow continuing a killed worker �?// the LLM should spawn a new one in that case.
+// goroutine (no queueing), and disallow continuing a killed worker —
+// the LLM should spawn a new one in that case.
 func (rt *Runtime) SendToWorker(ctx context.Context, workerID, message string) error {
 	if rt == nil {
 		return errors.New("chatruntime: nil runtime")
@@ -426,7 +429,7 @@ func (rt *Runtime) SendToWorker(ctx context.Context, workerID, message string) e
 }
 
 // StopWorker cancels a running worker. Returns nil even when the worker
-// is already terminal �?stopping is idempotent.
+// is already terminal — stopping is idempotent.
 func (rt *Runtime) StopWorker(_ context.Context, workerID string) error {
 	if rt == nil {
 		return errors.New("chatruntime: nil runtime")
@@ -481,7 +484,7 @@ func (rt *Runtime) GetWorker(workerID string) (*Worker, bool) {
 // written into chat_messages under the worker's session (not the
 // coordinator's). The user-role prompt is persisted up-front here,
 // matching Handle()'s "user message lands on disk before the LLM call"
-// invariant �?same survival semantics on a graph crash.
+// invariant — same survival semantics on a graph crash.
 func (rt *Runtime) runWorker(ctx context.Context, agentDef *Agent, sessID, userText, locale string, parentEmit Emit, workerID string) (result string, retErr error) {
 	session := &aiopsmodel.Session{ID: sessID}
 	if rt.cfg.Sessions != nil && sessID != "" {
@@ -527,7 +530,7 @@ func (rt *Runtime) runWorker(ctx context.Context, agentDef *Agent, sessID, userT
 	}
 
 	// Persist the user-role prompt under the worker's session id. Same
-	// invariant Handle() honours on the coordinator path �?the user turn
+	// invariant Handle() honours on the coordinator path — the user turn
 	// lives on disk before the graph runs so a crash mid-invoke leaves
 	// an auditable trace.
 	var handlers []einocallbacks.Handler
@@ -575,8 +578,8 @@ func (rt *Runtime) runWorker(ctx context.Context, agentDef *Agent, sessID, userT
 	// Thread the coordinator's resolved LLM choice (stamped on ctx via
 	// basetool.WithLLMChoice at the SpawnWorker boundary) onto the
 	// graph's ChatModel as eino model options. Without these, the
-	// RoutingChatModel falls through to its built-in default �?which
-	// is "openai" �?and installs with no OpenAI key see the worker
+	// RoutingChatModel falls through to its built-in default — which
+	// is "openai" — and installs with no OpenAI key see the worker
 	// fail with `provider "openai" not configured`. Empty fields add
 	// no option, preserving back-compat with auto-spawn paths
 	// (investigator) that don't carry a coordinator choice.
@@ -594,7 +597,7 @@ func (rt *Runtime) runWorker(ctx context.Context, agentDef *Agent, sessID, userT
 	// Sever the worker's callback chain from the coordinator's. The ctx we
 	// were handed carries the parent graph's callback manager (eino propagates
 	// it into nested Invokes), so WITHOUT this reset the worker's first
-	// ChatModel.OnStart fires the COORDINATOR's PersistenceHandler �?whose
+	// ChatModel.OnStart fires the COORDINATOR's PersistenceHandler — whose
 	// flushIncompleteBatch then sees the still-in-flight AgentTool tool_call as
 	// "pending" (AgentTool is blocked right here running this worker) and
 	// autoheals it with an error stub. The coordinator's LLM reads that stub as
@@ -602,7 +605,7 @@ func (rt *Runtime) runWorker(ctx context.Context, agentDef *Agent, sessID, userT
 	// manager; the worker's own handlers are registered via WithCallbacks below.
 	workerCtx := einocallbacks.InitCallbacks(ctx, nil)
 
-	// Autoheal any tool batch still open when the worker exits �?same
+	// Autoheal any tool batch still open when the worker exits — same
 	// rationale as the parent runtime defer. context.WithoutCancel
 	// keeps the stub inserts running even if the caller cancelled.
 	defer func() {
@@ -703,7 +706,7 @@ var coordinatorOnlyTools = map[string]bool{
 // despite a non-"read" Class, because they only produce a benign read-only
 // artifact (host an HTML page) with no infrastructure side-effect. The write
 // gate exists to guard arbitrary host exec (cloud_bash) / install (destructive),
-// not page generation �?so serve_page stays usable in normal chat regardless.
+// not page generation — so serve_page stays usable in normal chat regardless.
 var alwaysAvailableTools = map[string]bool{
 	"serve_page": true,
 }
@@ -722,7 +725,7 @@ var alwaysAvailableTools = map[string]bool{
 //     CanDelegate; SpawnWorker enforces a maximum delegation depth of two.
 //   - viewerOnly==true drops every tool whose Info().Class is
 //     not "read". Viewer chat is degraded to single-agent read-only,
-//     which is fine �?the coordinator can still answer with read tools
+//     which is fine — the coordinator can still answer with read tools
 //     directly (no need to dispatch since there's nothing mutating to do).
 func filterToolsForAgent(bag []basetool.BaseTool, agentDef *Agent, isCoordinator bool) []basetool.BaseTool {
 	return filterToolsForAgentRole(bag, agentDef, isCoordinator, false)
@@ -753,13 +756,13 @@ func filterToolsForAgentRole(bag []basetool.BaseTool, agentDef *Agent, isCoordin
 		// Class="write") or mutate (host_restart_service, etc.).
 		// Exception: alwaysAvailableTools (e.g. serve_page) produce a benign,
 		// read-only artifact with no infra side-effect, so the write gate /
-		// viewer downgrade shouldn't hide them �?generating a page is not a
+		// viewer downgrade shouldn't hide them — generating a page is not a
 		// dangerous write the way arbitrary host exec is.
 		if viewerOnly && (info.Class != "read" || info.Confirmation == basetool.ConfirmationRequired) && !alwaysAvailableTools[info.Name] {
 			continue
 		}
 		// Dynamic tools (runtime-discovered: MCP servers HLD-018, and any future
-		// installed skill / extension �?identified by Origin, NOT a name prefix
+		// installed skill / extension — identified by Origin, NOT a name prefix
 		// so this scales as those sources grow) can't be pre-listed in a
 		// persona's static Tools whitelist, so they're always in scope for every
 		// persona (coordinator + workers). The viewerOnly check above already
@@ -770,7 +773,7 @@ func filterToolsForAgentRole(bag []basetool.BaseTool, agentDef *Agent, isCoordin
 		// ongrid-device question). The multi-turn sweep showed that BACKFIRED with
 		// the deployed weak model (zhipu): direct tool use is reliable but
 		// delegation is not, so the coordinator never reached the MCP tools at all
-		// �?it fell back to `cloud_bash kubectl` (uninstalled) and couldn't answer
+		// — it fell back to `cloud_bash kubectl` (uninstalled) and couldn't answer
 		// "k8s namespaces". MCP became unreachable in chat. The real cause of the
 		// rabbit-hole is ROUTING (device≈node confusion), addressed in the
 		// coordinator system prompt, not by amputating the coordinator's reach.
@@ -783,7 +786,7 @@ func filterToolsForAgentRole(bag []basetool.BaseTool, agentDef *Agent, isCoordin
 		}
 		// Coordinator-only tools survive the strip when we ARE the
 		// coordinator. They're always in scope for the coordinator
-		// regardless of any persona whitelist �?control plane.
+		// regardless of any persona whitelist — control plane.
 		if coordinatorOnlyTools[info.Name] {
 			if !isCoordinator {
 				if info.Name != "AgentTool" || agentDef == nil || !agentDef.CanDelegate {
@@ -825,7 +828,7 @@ func matchesAny(name string, patterns []string) bool {
 }
 
 // snapshotWorker returns a copy of w safe to publish to a caller. The
-// internal lock + cancel func are not copied �?the returned *Worker is
+// internal lock + cancel func are not copied — the returned *Worker is
 // strictly read-only.
 func (rt *Runtime) snapshotWorker(w *Worker) *Worker {
 	if w == nil {
@@ -867,7 +870,7 @@ func newWorkerID() string {
 // newWorkerSessionID derives a session id from the worker id. Distinct
 // from the parent session so worker chat history can be persisted
 // independently. The "worker-<8hex>" shape mirrors the worker id's
-// hex tail and stays under chat_sessions.id (char(36)) �?short, prefix-
+// hex tail and stays under chat_sessions.id (char(36)) — short, prefix-
 // searchable, and visually distinct from coordinator UUIDs.
 func newWorkerSessionID(workerID string) string {
 	// workerID is "agent-<8hex>"; rebrand the prefix to "worker-" so
@@ -897,11 +900,11 @@ func hasTool(bag []basetool.BaseTool, name string) bool {
 }
 
 // prologueKBLookup runs `query_knowledge` once with the user's task as
-// the natural-language query and, when the top hit has score �?0.6,
+// the natural-language query and, when the top hit has score ≥ 0.6,
 // returns a formatted KB context block ready to prepend to userText.
 //
 // All failure modes (tool missing, decode error, no hits, low score)
-// return "" �?the caller falls back to the bare user prompt. This is
+// return "" — the caller falls back to the bare user prompt. This is
 // deliberately silent: the LLM should never see a "KB lookup failed"
 // message, just sometimes-richer context.
 func (rt *Runtime) prologueKBLookup(ctx context.Context, bag []basetool.BaseTool, userText string) string {
@@ -931,7 +934,7 @@ func (rt *Runtime) prologueKBLookup(ctx context.Context, bag []basetool.BaseTool
 	if err != nil || out == "" {
 		return ""
 	}
-	// Parse loosely �?the response shape is {"items":[{"title":..,"preview":..,"score":..}, ...]}
+	// Parse loosely — the response shape is {"items":[{"title":..,"preview":..,"score":..}, ...]}
 	var parsed struct {
 		Items []struct {
 			Title   string  `json:"title"`
@@ -952,7 +955,7 @@ func (rt *Runtime) prologueKBLookup(ctx context.Context, bag []basetool.BaseTool
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("[KB 自动注入 · 协调员认为这是相�?playbook]\n")
+	b.WriteString("[KB 自动注入 · 协调员认为这是相关 playbook]\n")
 	b.WriteString("Title: ")
 	b.WriteString(top.Title)
 	b.WriteString(fmt.Sprintf("  (score=%.2f)\n", top.Score))
@@ -967,7 +970,7 @@ func (rt *Runtime) prologueKBLookup(ctx context.Context, bag []basetool.BaseTool
 		b.WriteString("\n\nSource: ")
 		b.WriteString(top.URL)
 	}
-	b.WriteString("\n\n请基于这�?playbook 推进诊断；末尾在答案里标�?`（参�?KB: " + top.Title + "）`。如�?playbook 不适用，可以忽略并自由发挥�?)
+	b.WriteString("\n\n请基于这份 playbook 推进诊断；末尾在答案里标注 `（参考 KB: " + top.Title + "）`。如果 playbook 不适用，可以忽略并自由发挥。")
 	return b.String()
 }
 

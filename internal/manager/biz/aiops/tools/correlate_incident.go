@@ -50,7 +50,7 @@ const correlateMaxResponseBytes = 100 * 1024
 // *alertbiz.Usecase satisfies it; tests inject a fake.
 //
 // Declared once here so registry.alertUC can stay a single field across
-// the whole package �?the test seam wins over a tighter per-tool
+// the whole package — the test seam wins over a tighter per-tool
 // interface, since most of these methods are read-only and trivial to
 // satisfy.
 type AlertUsecase interface {
@@ -138,17 +138,17 @@ type currentLoad struct {
 // reason over (log_match, trace_*).
 //
 // NB: the incident row stores rule_key under .Rule but does NOT carry the
-// full ConditionsJSON spec �?that lives on the alert_rules row. Without
+// full ConditionsJSON spec — that lives on the alert_rules row. Without
 // importing the alert biz internals we approximate: when the incident's
 // rule_key matches a closed-set canonical metric name (cpu_pct, mem_pct,
-// �? we use that as the metric. Otherwise we fall back to the labels' or
+// …) we use that as the metric. Otherwise we fall back to the labels' or
 // annotations' "metric" hint, which the rule writer can set explicitly.
 func promExprForIncident(inc *alertmodel.Incident) (string, bool) {
-	// Heuristic 1 �?rule_key happens to match the closed-set name.
+	// Heuristic 1 — rule_key happens to match the closed-set name.
 	if expr, ok := metricExprFor(inc.Rule); ok {
 		return wrapPerDevice(expr, inc.DeviceID), true
 	}
-	// Heuristic 2 �?label / annotation hint.
+	// Heuristic 2 — label / annotation hint.
 	if labels, _ := inc.Labels(); labels != nil {
 		if name := strings.TrimSpace(labels["metric"]); name != "" {
 			if expr, ok := metricExprFor(name); ok {
@@ -167,7 +167,7 @@ func promExprForIncident(inc *alertmodel.Incident) (string, bool) {
 }
 
 // metricExprFor mirrors alert/evaluators_phaseA.metricExprFor so we don't
-// have to export it from that package. Keep these two in sync �?when a new
+// have to export it from that package. Keep these two in sync — when a new
 // closed-set metric is added to the host evaluator vocabulary, mirror it
 // here so correlate_incident keeps showing the relevant series.
 func metricExprFor(metric string) (string, bool) {
@@ -198,7 +198,7 @@ func metricExprFor(metric string) (string, bool) {
 // device_id by intersecting it with a label-only selector on that id.
 // Returns expr unchanged when deviceID is nil. The intersection form
 // `(<expr>) and on(device_id) (group by (device_id) ({device_id="<id>"}))`
-// works for both raw selectors and `�?by (device_id) …` aggregations, so
+// works for both raw selectors and `… by (device_id) …` aggregations, so
 // callers don't need to know the expression's shape.
 func wrapPerDevice(expr string, deviceID *uint64) string {
 	if deviceID == nil {
@@ -317,7 +317,7 @@ func truncateLine(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n] + "�?
+	return s[:n] + "…"
 }
 
 // singleVectorValue extracts the first sample's float value from an
@@ -386,7 +386,7 @@ func marshalBundleWithCap(bundle *correlateIncidentBundle) ([]byte, error) {
 	if len(out) <= correlateMaxResponseBytes {
 		return out, nil
 	}
-	// Last resort �?drop metric_panel values (keep labels only).
+	// Last resort — drop metric_panel values (keep labels only).
 	if len(bundle.MetricPanel) > 0 {
 		bundle.Truncated["metric_panel_values"] = 1
 		for i := range bundle.MetricPanel {
@@ -396,11 +396,11 @@ func marshalBundleWithCap(bundle *correlateIncidentBundle) ([]byte, error) {
 	return json.Marshal(bundle)
 }
 
-// correlate_incident.go �?N+15 batch refactor. Outer fan-out
+// correlate_incident.go — N+15 batch refactor. Outer fan-out
 // is added; the per-incident bundle assembly is unchanged (each inner
 // already runs prom + log + trace probes concurrently inside its own
 // 60s ceiling). schema cap stays at 16 to match the other batch tools,
-// but the WhenToUse strongly suggests 2-4 �?each inner is heavy.
+// but the WhenToUse strongly suggests 2-4 — each inner is heavy.
 
 // CorrelateIncidentTool is the BaseTool form of correlate_incident.
 type CorrelateIncidentTool struct {
@@ -460,7 +460,7 @@ type CorrelateIncidentBatchResponse struct {
 
 // CorrelateIncidentBatchSchema is the JSON schema for the batched call.
 // Cap stays 16 to match the other batch tools but WhenToUse strongly
-// nudges 2-4 �?each inner is already heavy (3 upstream probes).
+// nudges 2-4 — each inner is already heavy (3 upstream probes).
 var CorrelateIncidentBatchSchema = json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -469,23 +469,23 @@ var CorrelateIncidentBatchSchema = json.RawMessage(`{
       "items": {"type": "integer", "minimum": 1},
       "minItems": 1,
       "maxItems": 16,
-      "description": "告警 id 列表，一次最�?16 个�?*典型 2-4 �?*——每�?incident 内部已经 3 路并发，�?16 个会成本爆炸�?
+      "description": "告警 id 列表，一次最多 16 个。**典型 2-4 个**——每个 incident 内部已经 3 路并发，给 16 个会成本爆炸。"
     },
     "window_minutes": {
       "type": "integer",
       "minimum": 1,
       "maximum": 240,
-      "description": "对每�?incident 的窗口（围绕 first_fired_at），默认 30 分钟，最�?240。共享给所�?id�?
+      "description": "对每个 incident 的窗口（围绕 first_fired_at），默认 30 分钟，最大 240。共享给所有 id。"
     }
   },
   "required": ["incident_ids"]
 }`)
 
-// correlateIncidentWhenToUse �?batch-first routing hint (N+15).
-const correlateIncidentWhenToUse = "对一�?incident_id 各跑完整 metric+log+trace+edge 关联诊断�? +
-	"**典型 2-4 个一�?*（每个内部已�?3 路并发）�?*别一次给 16 �?*——成本爆炸�? +
-	"NOT for: 单纯�?incident 字段（用 get_incident_detail�? �?incident_id 的自由查（用 query_promql / query_logql�? " +
-	"�?incidents（用 query_incidents）�?
+// correlateIncidentWhenToUse — batch-first routing hint (N+15).
+const correlateIncidentWhenToUse = "对一组 incident_id 各跑完整 metric+log+trace+edge 关联诊断。" +
+	"**典型 2-4 个一次**（每个内部已经 3 路并发）。**别一次给 16 个**——成本爆炸。" +
+	"NOT for: 单纯查 incident 字段（用 get_incident_detail）/ 没 incident_id 的自由查（用 query_promql / query_logql）/ " +
+	"列 incidents（用 query_incidents）。"
 
 // Info returns metadata. Class=read.
 func (t *CorrelateIncidentTool) Info(_ context.Context) (*basetool.ToolInfo, error) {
@@ -797,7 +797,7 @@ func (t *CorrelateIncidentTool) queryHostSnapshot(ctx context.Context, deviceID 
 	}
 
 	if t.alertUC != nil {
-		// Recent flap counter �?pull a wider page filtered to this device,
+		// Recent flap counter — pull a wider page filtered to this device,
 		// then post-filter by first_fired_at >= firedAt - 24h.
 		func() {
 			listCtx, lcancel := context.WithTimeout(ctx, 5*time.Second)

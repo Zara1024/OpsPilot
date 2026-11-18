@@ -333,7 +333,7 @@ func TestAnalyzeDatabaseStatus_NonFiniteThresholdValueDoesNotBecomeCritical(t *t
 	}, row, numericCheck{
 		MetricKey: "connection_usage_pct",
 		Code:      "mysql_connection_pressure",
-		Title:     "MySQL 连接使用率偏�?,
+		Title:     "MySQL 连接使用率偏高",
 		Expr:      expr,
 		Required:  []string{"mysql_global_status_threads_connected", "mysql_global_variables_max_connections"},
 		CritAbove: floatPtr(90),

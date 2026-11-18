@@ -13,7 +13,7 @@ func shouldBlockAlertRuleCreateOnPreviewSkip(reason string) bool {
 		return false
 	}
 	blockingNeedles := []string{
-		"请补全规则字�?,
+		"请补全规则字段",
 		"为空",
 		"not in closed-set",
 		"不在 closed-set",
@@ -22,7 +22,7 @@ func shouldBlockAlertRuleCreateOnPreviewSkip(reason string) bool {
 		"required",
 		"unsupported",
 		"$window",
-		"未发�?service_name",
+		"未发现 service_name",
 	}
 	for _, needle := range blockingNeedles {
 		if strings.Contains(reason, needle) {

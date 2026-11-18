@@ -210,7 +210,7 @@ func TestBudgetStopModel_DraftRepairDoesNotConsumeSuccessfulDraftLimit(t *testin
 			call := makeAssistantToolCall("", "retry_draft", toolNameDraftConfigChange, `{}`)
 			inner := newScriptedChatModel(call)
 			got, err := wrapBudgetStopModel(inner).Generate(context.Background(), []*schema.Message{
-				schema.UserMessage("创建一�?K8s 告警规则"),
+				schema.UserMessage("创建一条 K8s 告警规则"),
 				schema.ToolMessage(tc.result, "first_draft", schema.WithToolName(toolNameDraftConfigChange)),
 			})
 			if err != nil {
@@ -228,7 +228,7 @@ func TestBudgetStopModel_ConfirmedDraftReturnsPendingConfirmation(t *testing.T) 
 	inner := newScriptedChatModel(call, call)
 	got, err := wrapBudgetStopModel(inner).Generate(context.Background(), []*schema.Message{
 		schema.UserMessage("创建几个 K8s 告警规则"),
-		schema.ToolMessage(`{"kind":"config_draft","draft_hash":"sha256:valid","summary":"CPU high","scope":{"type":"host","label":"主机�?}}`, "first_draft", schema.WithToolName(toolNameDraftConfigChange)),
+		schema.ToolMessage(`{"kind":"config_draft","draft_hash":"sha256:valid","summary":"CPU high","scope":{"type":"host","label":"主机级"}}`, "first_draft", schema.WithToolName(toolNameDraftConfigChange)),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -236,7 +236,7 @@ func TestBudgetStopModel_ConfirmedDraftReturnsPendingConfirmation(t *testing.T) 
 	if len(got.ToolCalls) != 0 || inner.generateCalls() != 1 {
 		t.Fatalf("second successful draft should remain blocked: message=%+v model calls=%d", got, inner.generateCalls())
 	}
-	for _, want := range []string{"CPU high", "主机�?, "尚未应用", "确认", "后续消息"} {
+	for _, want := range []string{"CPU high", "主机级", "尚未应用", "确认", "后续消息"} {
 		if !strings.Contains(got.Content, want) {
 			t.Fatalf("pending draft reply missing %q: %s", want, got.Content)
 		}
@@ -261,7 +261,7 @@ func TestBudgetStopModel_StreamReturnsPendingDraftAtBudget(t *testing.T) {
 			if err != nil || got == nil {
 				t.Fatalf("message=%+v err=%v", got, err)
 			}
-			for _, want := range []string{"CPU high", "Scope: " + scope.label, "not been applied", "reply “ok�?, "one at a time", "later message"} {
+			for _, want := range []string{"CPU high", "Scope: " + scope.label, "not been applied", "reply “ok”", "one at a time", "later message"} {
 				if !strings.Contains(got.Content, want) {
 					t.Fatalf("reply missing %q: %s", want, got.Content)
 				}
@@ -278,7 +278,7 @@ func TestBuildReActGraph_StreamStopsAfterSecondDraftAttempt(t *testing.T) {
 		makeAssistantToolCall("", "first", toolNameDraftConfigChange, `{}`),
 		makeAssistantToolCall("", "second", toolNameDraftConfigChange, `{"rule":{"name":"second"}}`),
 	)
-	result := `{"kind":"config_draft","draft_hash":"sha256:valid","summary":"CPU high","scope":{"type":"host","label":"主机�?}}`
+	result := `{"kind":"config_draft","draft_hash":"sha256:valid","summary":"CPU high","scope":{"type":"host","label":"主机级"}}`
 	draft := &fakeBaseTool{name: toolNameDraftConfigChange, class: "read", parameters: `{"type":"object"}`, runResp: result}
 	g, err := BuildReActGraph(model, []basetool.BaseTool{draft}, Config{MaxIterations: 8})
 	if err != nil {
@@ -314,7 +314,7 @@ func TestBuildReActGraph_MixedToolBudgetsPreservePendingDraft(t *testing.T) {
 				}
 				replies = append(replies, repeat)
 				model := newScriptedChatModel(replies...)
-				draft := &fakeBaseTool{name: toolNameDraftConfigChange, class: "read", parameters: `{"type":"object"}`, runResp: `{"kind":"config_draft","draft_hash":"sha256:valid","summary":"First","scope":{"type":"host","label":"主机�?}}`}
+				draft := &fakeBaseTool{name: toolNameDraftConfigChange, class: "read", parameters: `{"type":"object"}`, runResp: `{"kind":"config_draft","draft_hash":"sha256:valid","summary":"First","scope":{"type":"host","label":"主机级"}}`}
 				catalog := &fakeBaseTool{name: toolNameListMetricCatalog, class: "read", parameters: `{"type":"object"}`, runResp: `{"metrics":[{"name":"up"}]}`}
 				g, err := BuildReActGraph(model, []basetool.BaseTool{draft, catalog}, Config{MaxIterations: maxToolCallsPerRun + 5})
 				if err != nil {
@@ -336,7 +336,7 @@ func TestBuildReActGraph_MixedToolBudgetsPreservePendingDraft(t *testing.T) {
 					t.Fatalf("output=%+v err=%v", out, err)
 				}
 				content := out.AssistantMessage.Content
-				for _, want := range []string{"First", "主机�?, "尚未应用", "确认", "后续消息"} {
+				for _, want := range []string{"First", "主机级", "尚未应用", "确认", "后续消息"} {
 					if !strings.Contains(content, want) {
 						t.Fatalf("pending draft reply missing %q: %s", want, content)
 					}
@@ -381,7 +381,7 @@ func TestBuildReActGraph_RepairsDraftAfterMetricCatalogPreflight(t *testing.T) {
 		makeAssistantToolCall("", "draft_before_catalog", toolNameDraftConfigChange, args),
 		makeAssistantToolCall("", "catalog", toolNameListMetricCatalog, `{}`),
 		makeAssistantToolCall("", "draft_after_catalog", toolNameDraftConfigChange, args),
-		makeAssistantNoTools("请确认草案�?),
+		makeAssistantNoTools("请确认草案。"),
 	)
 	draft := &fakeBaseTool{name: toolNameDraftConfigChange, class: "read", parameters: `{"type":"object"}`, runResp: result}
 	catalog := &fakeBaseTool{name: toolNameListMetricCatalog, class: "read", parameters: `{"type":"object"}`, runResp: `{"metrics":[{"name":"up"}]}`}
@@ -390,11 +390,11 @@ func TestBuildReActGraph_RepairsDraftAfterMetricCatalogPreflight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := g.Invoke(context.Background(), &Input{UserText: "创建一�?K8s 告警规则"})
+	out, err := g.Invoke(context.Background(), &Input{UserText: "创建一条 K8s 告警规则"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.AssistantMessage.Content != "请确认草案�? || draft.calls.Load() != 1 || catalog.calls.Load() != 1 {
+	if out.AssistantMessage.Content != "请确认草案。" || draft.calls.Load() != 1 || catalog.calls.Load() != 1 {
 		t.Fatalf("draft should execute after catalog repair: message=%+v draft calls=%d catalog calls=%d", out.AssistantMessage, draft.calls.Load(), catalog.calls.Load())
 	}
 	_, ends := sink.records()

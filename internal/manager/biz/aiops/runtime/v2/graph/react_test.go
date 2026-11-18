@@ -35,7 +35,7 @@ func TestAssembleMessagesAddsCurrentTurnImages(t *testing.T) {
 // scriptedState is the shared mutable bookkeeping for scriptedChatModel
 // instances. eino's ToolCallingChatModel.WithTools returns a *new*
 // instance with tools bound, which means the test must share counters /
-// reply pointers between the original and any derived instance �?the
+// reply pointers between the original and any derived instance — the
 // inner ReAct agent calls .WithTools then dispatches to the new copy.
 type scriptedState struct {
 	mu            sync.Mutex
@@ -52,7 +52,7 @@ type scriptedState struct {
 // returns the last reply (so loops with MaxIterations work as expected).
 //
 // Multiple scriptedChatModel instances may share a single *scriptedState
-// (eino's WithTools copies the receiver) �?counters must therefore be
+// (eino's WithTools copies the receiver) — counters must therefore be
 // stored on the shared state, not the wrapping instance.
 type scriptedChatModel struct {
 	st *scriptedState
@@ -262,11 +262,11 @@ func TestBudgetStopModel_FinalizesAfterToolBudget(t *testing.T) {
 	t.Parallel()
 	inner := newScriptedChatModel(&schema.Message{
 		Role:    schema.Assistant,
-		Content: "现有日志证据表明 api-gateway 错误率升高，但时间窗仍不足以确认根因�?,
+		Content: "现有日志证据表明 api-gateway 错误率升高，但时间窗仍不足以确认根因。",
 	})
 	wrapped := wrapBudgetStopModel(inner)
 	got, err := wrapped.Generate(context.Background(), []*schema.Message{
-		schema.UserMessage("查日�?),
+		schema.UserMessage("查日志"),
 		schema.ToolMessage(`{"status":"call_budget_exceeded","tool":"query_logql","final_answer_required":true}`, "call_1", schema.WithToolName("query_logql")),
 		schema.UserMessage("<system-reminder>stop loops</system-reminder>"),
 	})
@@ -276,7 +276,7 @@ func TestBudgetStopModel_FinalizesAfterToolBudget(t *testing.T) {
 	if got.Role != schema.Assistant || len(got.ToolCalls) != 0 {
 		t.Fatalf("budget stop response = %+v, want assistant without tool calls", got)
 	}
-	if !strings.Contains(got.Content, "错误率升�?) {
+	if !strings.Contains(got.Content, "错误率升高") {
 		t.Fatalf("budget stop did not use model synthesis: %q", got.Content)
 	}
 	if inner.st.generateCalls.Load() != 1 {
@@ -292,9 +292,9 @@ func TestBudgetStopModel_IgnoresPriorTurnToolBudget(t *testing.T) {
 	})
 	wrapped := wrapBudgetStopModel(inner)
 	got, err := wrapped.Generate(context.Background(), []*schema.Message{
-		schema.UserMessage("查日�?),
+		schema.UserMessage("查日志"),
 		schema.ToolMessage(`{"status":"call_budget_exceeded","tool":"query_logql","final_answer_required":true}`, "call_1", schema.WithToolName("query_logql")),
-		schema.UserMessage("改查最�?10 分钟 api-gateway"),
+		schema.UserMessage("改查最近 10 分钟 api-gateway"),
 		schema.UserMessage("<system-reminder>stop loops</system-reminder>"),
 	})
 	if err != nil {
@@ -312,7 +312,7 @@ func TestBudgetStopModel_PerToolCountResetsAtNewUserTurn(t *testing.T) {
 	t.Parallel()
 	inner := newScriptedChatModel(makeAssistantToolCall("继续查询", "call_new_turn", "query_promql", `{}`))
 	wrapped := wrapBudgetStopModel(inner)
-	history := []*schema.Message{schema.UserMessage("上一轮查�?)}
+	history := []*schema.Message{schema.UserMessage("上一轮查询")}
 	for i := 0; i < maxCallsForTool("query_promql"); i++ {
 		history = append(history, schema.ToolMessage(`{"resultType":"vector","result":[]}`, "call_old_"+string(rune('a'+i)), schema.WithToolName("query_promql")))
 	}
@@ -339,7 +339,7 @@ func TestBudgetStopModel_PrunesSameBatchRepeatedToolCalls(t *testing.T) {
 	inner := newScriptedChatModel(&schema.Message{Role: schema.Assistant, ToolCalls: calls})
 	wrapped := wrapBudgetStopModel(inner)
 	got, err := wrapped.Generate(context.Background(), []*schema.Message{
-		schema.UserMessage("�?Kubernetes 异常 Pod"),
+		schema.UserMessage("找 Kubernetes 异常 Pod"),
 	})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
@@ -379,10 +379,10 @@ func TestBudgetStopModel_PerToolLimitUsesModelSynthesisWithoutRawJSON(t *testing
 			ID:       "call_extra",
 			Function: schema.FunctionCall{Name: "query_promql", Arguments: `{}`},
 		}}},
-		&schema.Message{Role: schema.Assistant, Content: "本周 CPU 均值证据存在，�?Prometheus 保留期不足，无法可靠计算上周对比�?},
+		&schema.Message{Role: schema.Assistant, Content: "本周 CPU 均值证据存在，但 Prometheus 保留期不足，无法可靠计算上周对比。"},
 	)
 	wrapped := wrapBudgetStopModel(inner)
-	history := []*schema.Message{schema.UserMessage("对比本周和上�?CPU")}
+	history := []*schema.Message{schema.UserMessage("对比本周和上周 CPU")}
 	for i := 0; i < maxCallsForTool("query_promql"); i++ {
 		history = append(history, schema.ToolMessage(`{"resultType":"matrix","result":[{"values":[[1787212275.995,"0.006107340485348943"]]}]}`, "call_prom_"+string(rune('a'+i)), schema.WithToolName("query_promql")))
 	}
@@ -394,7 +394,7 @@ func TestBudgetStopModel_PerToolLimitUsesModelSynthesisWithoutRawJSON(t *testing
 	if len(got.ToolCalls) != 0 {
 		t.Fatalf("tool calls = %d, want 0", len(got.ToolCalls))
 	}
-	if !strings.Contains(got.Content, "Prometheus 保留期不�?) {
+	if !strings.Contains(got.Content, "Prometheus 保留期不足") {
 		t.Fatalf("content missing semantic synthesis: %q", got.Content)
 	}
 	if strings.Contains(got.Content, "1787212275") || strings.Contains(got.Content, "resultType") {
@@ -462,7 +462,7 @@ func TestBudgetStopModel_BlocksHostToolAfterEmptyNamedDeviceLookup(t *testing.T)
 	})
 	wrapped := wrapBudgetStopModel(inner)
 	got, err := wrapped.Generate(context.Background(), []*schema.Message{
-		schema.UserMessage("�?edge-001 最占内存的进程"),
+		schema.UserMessage("找 edge-001 最占内存的进程"),
 		schema.ToolMessage(`{"count":0,"items":[]}`, "call_devices", schema.WithToolName("query_devices")),
 	})
 	if err != nil {
@@ -521,7 +521,7 @@ func TestAssembleMessages_MentionsAndReminderInline(t *testing.T) {
 	if !strings.Contains(reminder.Content, "web_search 已被关闭") {
 		t.Errorf("reminder missing web_search disabled note: %q", reminder.Content)
 	}
-	if !strings.Contains(reminder.Content, "call_budget_exceeded 只限制当前用户消�?) {
+	if !strings.Contains(reminder.Content, "call_budget_exceeded 只限制当前用户消息") {
 		t.Errorf("reminder missing per-turn budget reset note: %q", reminder.Content)
 	}
 	user := out[2]
@@ -545,9 +545,9 @@ func TestAssembleMessages_AgentReminderAndDynamicHints(t *testing.T) {
 		SystemPrompt:     "agent rules",
 		UserText:         "继续诊断",
 		WebSearchEnabled: true,
-		AgentReminder:    "结论先于过程，最多列 3 条假�?,
+		AgentReminder:    "结论先于过程，最多列 3 条假设",
 		DynamicHints: []string{
-			"注意: query_logql 已连续失�?2 次，请换工具或要求用户澄�?,
+			"注意: query_logql 已连续失败 2 次，请换工具或要求用户澄清",
 			"已经跑了 22 轮，如不能在下一轮给出最终回答应当总结当前已知信息回答用户",
 		},
 	}
@@ -562,10 +562,10 @@ func TestAssembleMessages_AgentReminderAndDynamicHints(t *testing.T) {
 	if !strings.Contains(rem, "结论先于过程") {
 		t.Errorf("reminder missing AgentReminder bullet: %q", rem)
 	}
-	if !strings.Contains(rem, "query_logql 已连续失�?2 �?) {
+	if !strings.Contains(rem, "query_logql 已连续失败 2 次") {
 		t.Errorf("reminder missing dynamic-hint failure bullet: %q", rem)
 	}
-	if !strings.Contains(rem, "已经跑了 22 �?) {
+	if !strings.Contains(rem, "已经跑了 22 轮") {
 		t.Errorf("reminder missing dynamic-hint iteration bullet: %q", rem)
 	}
 	// web_search ON -> the disabled-note bullet must NOT be present.
@@ -591,17 +591,17 @@ func TestAssembleMessages_LocaleDirective(t *testing.T) {
 
 	// zh-CN: Chinese directive instead.
 	zh, _ := assembleMessages(&Input{SystemPrompt: "agent rules", UserText: "状态？", Locale: "zh-CN"})
-	if !strings.Contains(zh[0].Content, "用中文回�?) {
+	if !strings.Contains(zh[0].Content, "用中文回复") {
 		t.Errorf("zh system message should append the Chinese directive: %q", zh[0].Content)
 	}
 
 	// empty locale: no directive at all (back-compat for non-SPA callers
-	// like the IM bridge �?system prompt is left exactly as-is).
+	// like the IM bridge — system prompt is left exactly as-is).
 	none, _ := assembleMessages(&Input{SystemPrompt: "agent rules", UserText: "x"})
 	if none[0].Content != "agent rules" {
 		t.Errorf("empty locale must not alter the system prompt: %q", none[0].Content)
 	}
-	if strings.Contains(none[1].Content, "Respond in English") || strings.Contains(none[1].Content, "用中文回�?) {
+	if strings.Contains(none[1].Content, "Respond in English") || strings.Contains(none[1].Content, "用中文回复") {
 		t.Errorf("empty locale reminder must carry no language directive: %q", none[1].Content)
 	}
 }

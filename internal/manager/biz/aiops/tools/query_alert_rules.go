@@ -83,10 +83,10 @@ func NewQueryAlertRulesTool(alertUC AlertUsecase, log *slog.Logger) *QueryAlertR
 	return &QueryAlertRulesTool{alertUC: alertUC, log: log}
 }
 
-// queryAlertRulesWhenToUse �?reverse-guard against confusing this with
+// queryAlertRulesWhenToUse — reverse-guard against confusing this with
 // listing incidents (rules vs incidents are different objects).
 const queryAlertRulesWhenToUse = "When the user wants to LIST alert RULE definitions (the templates that fire incidents) " +
-	"�?'这条规则是谁在用' / 'show all metric_threshold rules'. " +
+	"— '这条规则是谁在用' / 'show all metric_threshold rules'. " +
 	"NOT for incidents themselves (use query_incidents). " +
 	"NOT for an individual rule's history of firings (use query_incidents with rule_key). " +
 	"NOT for editing rules (read-only)."

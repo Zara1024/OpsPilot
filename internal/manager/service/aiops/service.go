@@ -4,7 +4,7 @@
 //
 // Ownership model: every session has a single owning user_id.
 // Non-owners get ErrNotFound (not ErrForbidden) to avoid leaking session
-// existence. Admins bypass the ownership check �?the handler passes the
+// existence. Admins bypass the ownership check — the handler passes the
 // caller's role through, and the service re-reads the session to pick the
 // owning user_id for the agent call.
 package aiops
@@ -59,7 +59,7 @@ type Service struct {
 	// cancels maps an in-flight turn's session id to its cancel func, so an
 	// explicit user "stop" (Esc) can interrupt the turn. This is needed
 	// BECAUSE runChat detaches the turn from the HTTP request ctx
-	// (WithoutCancel, so a refresh doesn't kill it, HLD-021) �?passive
+	// (WithoutCancel, so a refresh doesn't kill it, HLD-021) — passive
 	// disconnect no longer cancels, so stopping requires an explicit signal.
 	cancelMu sync.Mutex
 	cancels  map[string]context.CancelFunc
@@ -73,7 +73,8 @@ type RuntimeHandler interface {
 	Handle(ctx context.Context, req *chatruntime.Request) (*chatruntime.Reply, error)
 }
 
-// New 构造唯一 Graph 聊天入口；runtime 不可用时调用明确失败，不回退旧循环�?func New(runtime RuntimeHandler, sessions biz.SessionRepo, usage *biz.UsageUsecase, log *slog.Logger) *Service {
+// New 构造唯一 Graph 聊天入口；runtime 不可用时调用明确失败，不回退旧循环。
+func New(runtime RuntimeHandler, sessions biz.SessionRepo, usage *biz.UsageUsecase, log *slog.Logger) *Service {
 	return &Service{runtime: runtime, sessions: sessions, usage: usage, log: log, cancels: map[string]context.CancelFunc{}}
 }
 
@@ -211,7 +212,7 @@ type CreateSessionInput struct {
 	// SystemPrompt + filtered ToolBag take effect on every Handle() call
 	// for this session. Empty = use the global coordinator default.
 	// Stale agent names (deleted persona) silently fall back to default
-	// at run time �?see runtime.go::Handle.
+	// at run time — see runtime.go::Handle.
 	AgentID string
 }
 
@@ -334,7 +335,7 @@ func (s *Service) CreateSession(ctx context.Context, caller Caller, in CreateSes
 // ListSessions returns the caller's sessions. When relatedIncidentID is
 // non-nil only sessions linked to that incident are returned (used by
 // the IncidentDetail page's agent-timeline panel). Admins see only
-// their own �?an explicit /v1/chat/sessions?all=1 can be added later.
+// their own — an explicit /v1/chat/sessions?all=1 can be added later.
 func (s *Service) ListSessions(ctx context.Context, caller Caller, limit, offset int, relatedIncidentID *uint64) ([]*model.Session, error) {
 	return s.sessions.ListSessions(ctx, caller.UserID, limit, offset, relatedIncidentID)
 }
@@ -416,7 +417,7 @@ func (s *Service) UpdateSessionModel(ctx context.Context, caller Caller, session
 }
 
 // PostMessage runs one user turn through the agent and returns the final
-// assistant Reply. This is a blocking call �?the full OpenAI loop plus any
+// assistant Reply. This is a blocking call — the full OpenAI loop plus any
 // tunnel dispatches complete before returning. The agent itself re-checks
 // ownership; to support admin-bypass we resolve the owning user_id here
 // and pass it in.
@@ -450,7 +451,8 @@ type TurnRejectedError struct{ error }
 
 func (e *TurnRejectedError) Unwrap() error { return e.error }
 
-// runChat 是聊天请求的统一入口，完成鉴权、取消管理后调用 Graph runtime�?func (s *Service) runChat(ctx context.Context, caller Caller, sessionID string, content string, emit chatprotocol.Emit, opts chatprotocol.RunOptions) (*chatprotocol.Reply, error) {
+// runChat 是聊天请求的统一入口，完成鉴权、取消管理后调用 Graph runtime。
+func (s *Service) runChat(ctx context.Context, caller Caller, sessionID string, content string, emit chatprotocol.Emit, opts chatprotocol.RunOptions) (*chatprotocol.Reply, error) {
 	content = strings.TrimSpace(content)
 	if content == "" && len(opts.Attachments) == 0 {
 		return nil, &TurnRejectedError{fmt.Errorf("%w: content required", errs.ErrInvalid)}
@@ -508,7 +510,7 @@ func (e *TurnRejectedError) Unwrap() error { return e.error }
 	ctx = context.WithoutCancel(ctx)
 
 	// ...but make the detached turn explicitly cancellable so a user "stop"
-	// (Esc �?StopSession) can interrupt it. Register under the session id;
+	// (Esc → StopSession) can interrupt it. Register under the session id;
 	// unregister on return (guarding against a newer turn having replaced us).
 	ctx, cancel := context.WithCancel(ctx)
 	s.registerCancel(sess.ID, cancel)
@@ -564,7 +566,7 @@ func resolveSessionRunOptions(sess *model.Session, opts chatprotocol.RunOptions)
 
 // registerCancel records the in-flight turn's cancel under its session id. If
 // a previous turn for the same session is somehow still registered (shouldn't
-// happen �?the SPA serializes turns per session), cancel it first so we never
+// happen — the SPA serializes turns per session), cancel it first so we never
 // leak a turn.
 func (s *Service) registerCancel(sessionID string, cancel context.CancelFunc) {
 	s.cancelMu.Lock()
@@ -575,7 +577,7 @@ func (s *Service) registerCancel(sessionID string, cancel context.CancelFunc) {
 	s.cancelMu.Unlock()
 }
 
-// unregisterCancel removes the mapping on turn completion �?but only if it is
+// unregisterCancel removes the mapping on turn completion — but only if it is
 // still ours. A newer turn (or a StopSession that already fired) may have
 // replaced/cleared the entry; comparing by pointer avoids clobbering it.
 func (s *Service) unregisterCancel(sessionID string, cancel context.CancelFunc) {
@@ -629,7 +631,7 @@ func (s *Service) runGraph(ctx context.Context, sess *model.Session, content str
 	mentions := translateMentionsToRuntime(opts.Mentions)
 	// Pull the caller's role from the request context (set by the auth
 	// middleware). Empty when the call originates from a background
-	// scheduler (no JWT) �?runtime treats that as non-viewer (full tools).
+	// scheduler (no JWT) — runtime treats that as non-viewer (full tools).
 	role := ""
 	if t, ok := tenantctx.From(ctx); ok {
 		role = t.Role
@@ -712,7 +714,7 @@ func translateRuntimeEvent(ev chatruntime.Event) chatprotocol.Event {
 }
 
 // translateMentionsToRuntime copies the shared chatprotocol.Mention shape
-// into the chatruntime.Mention shape. One alloc per turn �?fine.
+// into the chatruntime.Mention shape. One alloc per turn — fine.
 func translateMentionsToRuntime(in []chatprotocol.Mention) []chatruntime.Mention {
 	if len(in) == 0 {
 		return nil

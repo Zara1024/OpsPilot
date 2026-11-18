@@ -2,15 +2,15 @@
 // that wire ongrid cross-cutting concerns into the new compose.Graph
 // agent kernel: persistence, SSE streaming, audit, metrics, and
 // (carried over from PR-1) budget gating. The handler set is documented
-// in (Callback �? + (主参考图 �?callback chain
+// in (Callback 链) + (主参考图 — callback chain
 // 横切区块).
 //
 // Each file in this package owns exactly one handler; chain.go combines
 // them into a default list. Handlers are wired at Invoke time via
-// compose.WithCallbacks (see graph.BuildReActGraph header comment) �?no
+// compose.WithCallbacks (see graph.BuildReActGraph header comment) — no
 // global registration is performed by these constructors so a graph
 // run cannot accidentally pick up handlers from another tenant or
-// session. PR-6 of scaffolding only �?the cutover layer (NEXT
+// session. PR-6 of scaffolding only — the cutover layer (NEXT
 // PR) will assemble Deps and pass the chain through compose.Invoke.
 package callbacks
 
@@ -34,12 +34,12 @@ import (
 
 // PersistenceDeps bundles the persistence handler's collaborators.
 // SessionID identifies which chat row to write into. Repo is the
-// SessionRepo binding (�?write chat_messages and
-// chat_tool_calls). Logger is optional �?used to record best-effort
+// SessionRepo binding (— write chat_messages and
+// chat_tool_calls). Logger is optional — used to record best-effort
 // persistence failures so they don't fail user-visible requests but
-// stay observable. Registerer is optional �?when set, the handler
+// stay observable. Registerer is optional — when set, the handler
 // increments ongrid_persist_errors_total{kind=...} for any persist
-// failure (错误处理 �?persist 失败不阻�?graph).
+// failure (错误处理 — persist 失败不阻断 graph).
 type PersistenceDeps struct {
 	SessionID  string
 	Repo       biz.SessionRepo
@@ -51,12 +51,12 @@ type PersistenceDeps struct {
 // the graph executes. Mirrors the persistence side-effects the legacy
 // agent.go for-loop performs synchronously; spec:
 //
-//	OnChatModelEnd �?INSERT chat_messages (role=assistant)
-//	OnToolStart �?INSERT chat_tool_calls (status=pending)
-//	OnToolEnd �?UPDATE chat_tool_calls + INSERT chat_messages (role=tool)
+//	OnChatModelEnd → INSERT chat_messages (role=assistant)
+//	OnToolStart → INSERT chat_tool_calls (status=pending)
+//	OnToolEnd → UPDATE chat_tool_calls + INSERT chat_messages (role=tool)
 //
 // User-message persistence stays at the chatruntime entry point (as
-// agent.go does today) �?by the time the graph starts, the user's
+// agent.go does today) — by the time the graph starts, the user's
 // turn is already on disk. This handler is only responsible for the
 // agent's own writes.
 //
@@ -65,8 +65,8 @@ type PersistenceDeps struct {
 // so the SessionID + per-call state stay scoped. Tool start times are
 // stashed on context (per-call) which is goroutine-safe.
 //
-// Errors: persist failures NEVER abort the graph �?the handler logs +
-// counts and returns ctx unchanged. 可观测�? audit/
+// Errors: persist failures NEVER abort the graph — the handler logs +
+// counts and returns ctx unchanged. 可观测性: audit/
 // persist best-effort.
 type PersistenceHandler struct {
 	deps PersistenceDeps
@@ -75,7 +75,7 @@ type PersistenceHandler struct {
 	// at construction; nil when Registerer is nil.
 	errCounter *prometheus.CounterVec
 
-	// toolCalls maps eino tool_call_id �?the chat_tool_calls row id we
+	// toolCalls maps eino tool_call_id → the chat_tool_calls row id we
 	// inserted on OnStart, so OnEnd can update the same row. eino
 	// guarantees the tool_call_id is unique within a graph run; we
 	// scope the map to this handler instance, not globally.
@@ -88,12 +88,12 @@ type PersistenceHandler struct {
 	asstWrites int
 
 	// assistantIDRelay (optional) is the cross-handler share with
-	// SSEHandler �?see chain.go. Set by NewDefaultHandlers; nil when
+	// SSEHandler — see chain.go. Set by NewDefaultHandlers; nil when
 	// tests use NewPersistenceHandler directly.
 	assistantIDRelay *assistantIDRelay
 }
 
-// toolCallEntry tracks per-call state across OnStart �?OnEnd.
+// toolCallEntry tracks per-call state across OnStart → OnEnd.
 type toolCallEntry struct {
 	rowID      string
 	startedAt  time.Time
@@ -103,7 +103,7 @@ type toolCallEntry struct {
 }
 
 // NewPersistenceHandler builds the handler. Returns nil if SessionID
-// or Repo is missing �?the cutover layer treats nil as "persistence
+// or Repo is missing — the cutover layer treats nil as "persistence
 // disabled" (matching the existing optional-handler pattern).
 func NewPersistenceHandler(deps PersistenceDeps) *PersistenceHandler {
 	if deps.SessionID == "" || deps.Repo == nil {
@@ -221,7 +221,7 @@ func (h *PersistenceHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo,
 // errors we still update the chat_tool_calls row to status=error so
 // the audit trail captures the failure; ChatModel errors are recorded
 // by the audit handler (this layer doesn't produce a chat row for
-// them �?there's no message to persist).
+// them — there's no message to persist).
 func (h *PersistenceHandler) OnError(ctx context.Context, info *callbacks.RunInfo, err error) context.Context {
 	if h == nil || info == nil || err == nil {
 		return ctx
@@ -294,7 +294,7 @@ func (h *PersistenceHandler) persistToolEnd(ctx context.Context, info *callbacks
 	delete(h.toolCalls, tcID)
 	h.toolCallsMu.Unlock()
 	if !ok {
-		// No matching OnStart �?chatruntime didn't fire it (e.g.
+		// No matching OnStart — chatruntime didn't fire it (e.g.
 		// graph injection edge case). Skip the update so we don't
 		// orphan a tool_calls row.
 		return
@@ -321,8 +321,8 @@ func (h *PersistenceHandler) persistToolEnd(ctx context.Context, info *callbacks
 	}
 
 	// Append a role=tool message so history replay sees the tool
-	// result. agent.go's existing behaviour �?preserved by
-	// 数据�?invariants.
+	// result. agent.go's existing behaviour — preserved by
+	// 数据层 invariants.
 	tname := entry.toolName
 	tcallID := entry.toolCallID
 	body := ""
@@ -382,7 +382,7 @@ var (
 // row id under which tool calls should be parented. The cutover layer
 // will set this; PR-6 leaves the field zero-valued when the key is
 // absent (the SQL schema permits NULL message_id during the migration
-// window �?chatruntime will backfill).
+// window — chatruntime will backfill).
 type messageIDCtxKey struct{}
 
 // toolCallIDCtxKey lets the chatruntime + assembler pass eino's

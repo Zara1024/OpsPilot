@@ -39,17 +39,17 @@ func NewServePageTool(s PageStore, log *slog.Logger) *ServePageTool {
 var servePageSchema = json.RawMessage(`{
   "type": "object",
   "properties": {
-    "html": { "type": "string", "description": "完整�?HTML 文档字符串（自带 <html><body>…）。会原样托管�? },
-    "title": { "type": "string", "description": "可选标题，用于页面列表展示�? }
+    "html": { "type": "string", "description": "完整的 HTML 文档字符串（自带 <html><body>…）。会原样托管。" },
+    "title": { "type": "string", "description": "可选标题，用于页面列表展示。" }
   },
   "required": ["html"]
 }`)
 
-const servePageWhenToUse = "把你生成�?HTML 报告 / 临时状态面板托管成一个可访问的内网链接时用—�? +
-	"比如\"把这次巡检结果做成一个网页给我\"。传完整 HTML，返回的 url 直接发给用户即可（内网可打开）�? +
-	"适合一次性的报告页，不是长期应用�?
+const servePageWhenToUse = "把你生成的 HTML 报告 / 临时状态面板托管成一个可访问的内网链接时用——" +
+	"比如\"把这次巡检结果做成一个网页给我\"。传完整 HTML，返回的 url 直接发给用户即可（内网可打开）。" +
+	"适合一次性的报告页，不是长期应用。"
 
-// Info �?Class=write: it publishes a page (side-effecting) but not destructive.
+// Info — Class=write: it publishes a page (side-effecting) but not destructive.
 func (t *ServePageTool) Info(_ context.Context) (*basetool.ToolInfo, error) {
 	return &basetool.ToolInfo{
 		Name:         ToolNameServePage,
@@ -85,15 +85,16 @@ func (t *ServePageTool) InvokableRun(ctx context.Context, argsJSON string, _ ...
 	// Hand the user the IN-APP artifact link, not the raw /api/pages read
 	// endpoint: pages are private (login required) and a bare API path 401s on a
 	// top-level click. /pages/<id> opens the page in the 产物 viewer, where the
-	// user is already authenticated �?and where the 分享 button mints a public
+	// user is already authenticated — and where the 分享 button mints a public
 	// link if they need to send it off-platform.
 	viewURL := "/pages/" + id
 	t.log.Info("serve_page: hosted", slog.String("id", id), slog.String("url", viewURL))
 	out, _ := json.Marshal(map[string]any{
 		"id":  id,
 		"url": viewURL,
-		// Tell the model to render url as a Markdown link, not a bare path �?		// so the user gets a clickable "查看页面" instead of /pages/<hash> text.
-		"note": "页面已生成。请�?Markdown 链接形式把它给用户（例如 [查看页面](" + viewURL + ")），不要只贴路径文本。页面需登录查看；要发给未登录的人，让用户去「产物」里点该页的「分享」按钮生成公开链接�?,
+		// Tell the model to render url as a Markdown link, not a bare path —
+		// so the user gets a clickable "查看页面" instead of /pages/<hash> text.
+		"note": "页面已生成。请用 Markdown 链接形式把它给用户（例如 [查看页面](" + viewURL + ")），不要只贴路径文本。页面需登录查看；要发给未登录的人，让用户去「产物」里点该页的「分享」按钮生成公开链接。",
 	})
 	return string(out), nil
 }

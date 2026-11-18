@@ -17,6 +17,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang/snappy v0.0.4
 	github.com/google/jsonschema-go v0.4.3
+	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/gosnmp/gosnmp v1.41.0
 	github.com/itchyny/gojq v0.12.17

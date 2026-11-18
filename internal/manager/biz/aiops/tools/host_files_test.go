@@ -61,7 +61,7 @@ func TestFindLargeFilesTool_Info(t *testing.T) {
 		t.Errorf("Description empty")
 	}
 	if info.WhenToUse == "" {
-		t.Errorf("WhenToUse empty â€?requires it separated from Description")
+		t.Errorf("WhenToUse empty â€” requires it separated from Description")
 	}
 	if !strings.Contains(info.WhenToUse, "batch") && !strings.Contains(info.WhenToUse, "multiple") {
 		t.Errorf("WhenToUse should nudge batch usage: %q", info.WhenToUse)
@@ -76,7 +76,7 @@ func TestFindLargeFilesTool_Info(t *testing.T) {
 	}
 	pathsProp, _ := props["paths"].(map[string]any)
 	if pathsProp == nil {
-		t.Fatalf("schema missing paths property â€?must be array now")
+		t.Fatalf("schema missing paths property â€” must be array now")
 	}
 	if pathsProp["type"] != "array" {
 		t.Errorf("paths.type = %v, want array", pathsProp["type"])
@@ -592,12 +592,12 @@ func TestStatFileTool_DispatchError(t *testing.T) {
 // =====================================================================
 
 func TestAppendHostFilesTools_NilDepsReturnsUnchanged(t *testing.T) {
-	// nil bag â€?early return.
+	// nil bag â€” early return.
 	got := AppendHostFilesTools(nil, nil, nil, nil, nil)
 	if got != nil {
 		t.Errorf("expected nil bag to return nil, got %v", got)
 	}
-	// non-nil bag, nil deps â€?bag unchanged (no host_files appended).
+	// non-nil bag, nil deps â€” bag unchanged (no host_files appended).
 	bag := NewToolBag(nil, 30)
 	got = AppendHostFilesTools(bag, nil, nil, nil, nil)
 	if got != bag {

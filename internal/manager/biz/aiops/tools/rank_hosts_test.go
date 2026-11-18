@@ -96,7 +96,8 @@ func TestRankHostsTool_DispatchError(t *testing.T) {
 	}
 }
 
-// 同号 Edge 的旧指标不能成为 Host 身份�?type rankHostTestDevices struct{}
+// 同号 Edge 的旧指标不能成为 Host 身份。
+type rankHostTestDevices struct{}
 
 func (rankHostTestDevices) Get(_ context.Context, id uint64) (*devicemodel.Device, error) {
 	return &devicemodel.Device{ID: id, Name: "host-name"}, nil

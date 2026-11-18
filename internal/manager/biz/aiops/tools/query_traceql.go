@@ -30,7 +30,8 @@ const QueryTraceQLDescription = "Search Tempo with TraceQL, or set trace_id to r
 var traceQLDeviceIDMatcher = regexp.MustCompile(`(?i)\bresource\.device_id\s*(=|!=|=~|!~)\s*"([^"]*)"`)
 
 // QueryTraceQLSchema is the JSON Schema of the tool's argument object.
-// query may be empty when service/operation/duration filters are supplied â€?// Tempo's tag-mode search handles that case.
+// query may be empty when service/operation/duration filters are supplied â€”
+// Tempo's tag-mode search handles that case.
 var QueryTraceQLSchema = json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -348,9 +349,9 @@ func NewQueryTraceQLTool(tq TraceQuerier, log *slog.Logger) *QueryTraceQLTool {
 	return &QueryTraceQLTool{traceQuery: tq, log: log}
 }
 
-// queryTraceQLWhenToUse â€?reverse-guard against picking trace search for
+// queryTraceQLWhenToUse â€” reverse-guard against picking trace search for
 // log/metric questions.
-const queryTraceQLWhenToUse = "When the user wants TRACES â€?span chains across services, latency outliers, " +
+const queryTraceQLWhenToUse = "When the user wants TRACES â€” span chains across services, latency outliers, " +
 	"specific trace IDs, or 'which call took 5 seconds'. " +
 	"NOT for log lines (use query_logql), NOT for metric trends (use query_promql), " +
 	"NOT for live host stats (use get_host_load). " +

@@ -146,14 +146,14 @@ func (e ApprovalExecutors) Register(approvalUC *managerbizapproval.Usecase) {
 		env["PIP_USER"] = "1"
 		env["PIP_BREAK_SYSTEM_PACKAGES"] = "1"
 		env["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
-		// Optional pip index mirror â€?tccli + deps from pypi.org can take many
+		// Optional pip index mirror â€” tccli + deps from pypi.org can take many
 		// minutes from a China-based host; a mirror cuts it to seconds. Generic
 		// (empty default = pypi); the test env sets it to a Tsinghua mirror.
 		if idx := strings.TrimSpace(os.Getenv("ONGRID_PIP_INDEX_URL")); idx != "" {
 			env["PIP_INDEX_URL"] = idx
 		}
 		// Resolve the session's persistent workspace as cwd (HLD-019). Empty
-		// workdir â†?runner uses a transient temp dir (legacy behavior).
+		// workdir â†’ runner uses a transient temp dir (legacy behavior).
 		workdir, err := e.Workspace.Session(p.SessionID)
 		if err != nil {
 			return "", err
@@ -161,7 +161,8 @@ func (e ApprovalExecutors) Register(approvalUC *managerbizapproval.Usecase) {
 		// Give the command a writable HOME. The runner passes ONLY this env map
 		// to the child (it does NOT inherit the manager's environment), so
 		// without this HOME is unset and any tool that writes a dotdir on
-		// startup â€?tccli â†?~/.tccli, awscli â†?~/.aws, terraform plugin cache â€?		// fails with a permission/HOME error (the sandbox is non-root and the
+		// startup â€” tccli â†’ ~/.tccli, awscli â†’ ~/.aws, terraform plugin cache â€”
+		// fails with a permission/HOME error (the sandbox is non-root and the
 		// passwd home doesn't exist). Point HOME at the session's persistent
 		// workspace so that per-tool state also survives across commands.
 		if workdir != "" {
@@ -189,7 +190,7 @@ func (e ApprovalExecutors) Register(approvalUC *managerbizapproval.Usecase) {
 		tool := aiopstools.NewBashToolWithProposer(e.Frontier, e.Edges, e.Devices, nil, nil, e.Log)
 		return tool.RunApproved(ctx, p.DeviceIDs, p.Command, p.TimeoutSeconds)
 	})
-	// HLD-018 P2: mcp_call executor â€?on approve, connect the server and run
+	// HLD-018 P2: mcp_call executor â€” on approve, connect the server and run
 	// the tool. Trusted servers skip this and run synchronously in the tool.
 	register("mcp_call", func(ctx context.Context, payloadJSON string) (string, error) {
 		var p mcpCallPayload
@@ -209,7 +210,7 @@ func (e ApprovalExecutors) Register(approvalUC *managerbizapproval.Usecase) {
 	// Conversational skill install (extensions): on approve, fetch + install
 	// the pack from the user-provided source, then summarize what landed (incl.
 	// credential slots, so the agent can next prompt to bind a credential).
-	// Class=destructive â€?a skill can ship a binary cloud_bash later runs, so
+	// Class=destructive â€” a skill can ship a binary cloud_bash later runs, so
 	// this only runs after a human approves. The approval IS the authorization,
 	// so the install runs with admin authority; installed_by = proposing user.
 	register("install_skill", func(ctx context.Context, payloadJSON string) (string, error) {

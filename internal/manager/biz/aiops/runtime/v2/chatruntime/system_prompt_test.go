@@ -10,7 +10,7 @@ import (
 )
 
 func TestComposeSystemPrompt_Empty(t *testing.T) {
-	// agentProfile==nil �?coordinator �?the coordinatorToolRouting block is
+	// agentProfile==nil ⇒ coordinator ⇒ the coordinatorToolRouting block is
 	// injected, so even an otherwise-empty compose carries it.
 	got := ComposeSystemPrompt("", nil, nil)
 	if got != coordinatorToolRouting+"\n\n"+contract.RuntimeIdentityPrompt("v2") {
@@ -102,7 +102,7 @@ func TestComposeSystemPrompt_NilSkillEntrySkipped(t *testing.T) {
 func TestComposeSystemPrompt_EmptyPromptBody(t *testing.T) {
 	skills := []*Skill{{Name: "empty"}}
 	got := ComposeSystemPrompt("", skills, nil)
-	// nil agentProfile �?coordinator routing block precedes the skill header.
+	// nil agentProfile ⇒ coordinator routing block precedes the skill header.
 	if got != coordinatorToolRouting+"\n\n[能力: empty]"+"\n\n"+contract.RuntimeIdentityPrompt("v2") {
 		t.Errorf("got %q", got)
 	}
@@ -154,7 +154,7 @@ func TestBuildToolCapabilityDigest_TruncatesLargeDynamicSets(t *testing.T) {
 func TestComposeSystemPrompt_RuntimeIdentityAndUnknownTelemetry(t *testing.T) {
 	for _, profile := range []*Agent{nil, {Name: "worker", SystemPrompt: "worker persona"}} {
 		got := ComposeSystemPrompt("custom persona", nil, profile)
-		for _, want := range []string{"agent_runtime_version=v2", "current_edge.agent_version", "Edge 版本", "manager_version", "plugin_status=not_queried", "历史占位�?} {
+		for _, want := range []string{"agent_runtime_version=v2", "current_edge.agent_version", "Edge 版本", "manager_version", "plugin_status=not_queried", "历史占位值"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("missing identity/evidence rule %q", want)
 			}

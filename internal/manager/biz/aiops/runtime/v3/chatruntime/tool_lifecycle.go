@@ -8,7 +8,9 @@ import (
 	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/tools/basetool"
 )
 
-// runtimeTool 保留本轮 schema；撤销或替换后，旧引用不得开始新的调用�?// 已经进入执行的调用继续沿用原超时/取消机制，不在持锁期间执行外�?IO�?type runtimeTool struct {
+// runtimeTool 保留本轮 schema；撤销或替换后，旧引用不得开始新的调用。
+// 已经进入执行的调用继续沿用原超时/取消机制，不在持锁期间执行外部 IO。
+type runtimeTool struct {
 	inner    basetool.BaseTool
 	runtime  *Runtime
 	name     string
@@ -33,11 +35,13 @@ func (t *runtimeTool) Info(context.Context) (*basetool.ToolInfo, error) {
 	return cloneToolInfo(t.info), nil
 }
 
-// FullInfo 保留此执行版本的完整 schema，避免旧回合读到新版本参数�?func (t *runtimeTool) FullInfo(context.Context) (*basetool.ToolInfo, error) {
+// FullInfo 保留此执行版本的完整 schema，避免旧回合读到新版本参数。
+func (t *runtimeTool) FullInfo(context.Context) (*basetool.ToolInfo, error) {
 	return cloneToolInfo(t.fullInfo), nil
 }
 
-// inspectToolBatch 在修改任何视图前校验整批元数据，错误不破坏现有工具�?type toolBatch struct {
+// inspectToolBatch 在修改任何视图前校验整批元数据，错误不破坏现有工具。
+type toolBatch struct {
 	infos map[string]*basetool.ToolInfo
 	names []string
 }
@@ -68,7 +72,8 @@ func inspectToolBatch(tools []basetool.BaseTool, prefix string) (*toolBatch, err
 	return &toolBatch{infos: infos, names: names}, nil
 }
 
-// AppendToolBag 同步注册执行与搜索视图；同名工具替换，整批重复名称被拒绝�?func (rt *Runtime) AppendToolBag(tools []basetool.BaseTool) error {
+// AppendToolBag 同步注册执行与搜索视图；同名工具替换，整批重复名称被拒绝。
+func (rt *Runtime) AppendToolBag(tools []basetool.BaseTool) error {
 	if rt == nil {
 		return fmt.Errorf("runtime unavailable")
 	}
@@ -104,7 +109,8 @@ func (rt *Runtime) ReplaceToolsByNamePrefix(prefix string, replacements []baseto
 	return rt.ReplaceToolSource(prefix, replacements, replacements)
 }
 
-// ReplaceToolSource 校验来源边界与两份视图，成功后一起替换并撤销旧版本�?func (rt *Runtime) ReplaceToolSource(prefix string, raw, decorated []basetool.BaseTool) error {
+// ReplaceToolSource 校验来源边界与两份视图，成功后一起替换并撤销旧版本。
+func (rt *Runtime) ReplaceToolSource(prefix string, raw, decorated []basetool.BaseTool) error {
 	if rt == nil || strings.TrimSpace(prefix) == "" {
 		return fmt.Errorf("runtime and tool source required")
 	}

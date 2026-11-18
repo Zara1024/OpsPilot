@@ -18,7 +18,7 @@ const ToolNameQueryIncidents = "query_incidents"
 // QueryIncidentsDescription pushes the model toward this tool whenever
 // the question is "how many / which incidents matched X".
 const QueryIncidentsDescription = "List ongrid alert incidents filtered by severity, status, device_id, rule_key and a since-window (in minutes). " +
-	"Use this for questions like '过去 24h 有几�?critical incident' or 'show open incidents on device X'. " +
+	"Use this for questions like '过去 24h 有几条 critical incident' or 'show open incidents on device X'. " +
 	"Returns a capped incident list, not an exact total or time-window event aggregation. event_count is the incident lifetime count; do not use it as the count within since_minutes. " +
 	"Returns array of {id, title, severity, status, rule, device_id, first_fired_at, last_fired_at}."
 
@@ -114,9 +114,9 @@ func NewQueryIncidentsTool(alertUC AlertUsecase, log *slog.Logger) *QueryInciden
 	return &QueryIncidentsTool{alertUC: alertUC, log: log}
 }
 
-// queryIncidentsWhenToUse �?reverse-guard against using this for the
+// queryIncidentsWhenToUse — reverse-guard against using this for the
 // individual incident drilldown.
-const queryIncidentsWhenToUse = "When the user wants to LIST recent alert incidents �?'过去 24h 有几�?critical incident', " +
+const queryIncidentsWhenToUse = "When the user wants to LIST recent alert incidents — '过去 24h 有几条 critical incident', " +
 	"'show open incidents on device X'. " +
 	"NOT for a specific incident's timeline (use get_incident_detail). " +
 	"NOT for the full diagnostic bundle (use correlate_incident with a specific incident_id). " +
@@ -151,7 +151,8 @@ func (t *QueryIncidentsTool) InvokableRun(ctx context.Context, argsJSON string, 
 	if in.SinceMinutes <= 0 {
 		in.SinceMinutes = 24 * 60
 	}
-	// time.Duration 是纳秒计数，转换前防止乘法溢出�?	if int64(in.SinceMinutes) > int64((1<<63-1)/time.Minute) {
+	// time.Duration 是纳秒计数，转换前防止乘法溢出。
+	if int64(in.SinceMinutes) > int64((1<<63-1)/time.Minute) {
 		return "", fmt.Errorf("query_incidents: since_minutes exceeds duration range")
 	}
 	cutoff := time.Now().UTC().Add(-time.Duration(in.SinceMinutes) * time.Minute)

@@ -15,7 +15,7 @@ import (
 )
 
 // newHostLoadToolFor builds a GetHostLoadTool with the test-fake
-// resolver so we can plant device_id â†?edge_id mappings without a real
+// resolver so we can plant device_id â†’ edge_id mappings without a real
 // device usecase.
 func newHostLoadToolFor(_ *testing.T, resolver hostFilesDeviceResolver, fc *fakeCaller) *GetHostLoadTool {
 	return &GetHostLoadTool{caller: fc, resolver: resolver}
@@ -96,7 +96,7 @@ func TestGetHostLoadTool_BatchHappy(t *testing.T) {
 }
 
 func TestGetHostLoadTool_BatchPartialSuccess(t *testing.T) {
-	// Resolver maps 1+2 but NOT 4 â€?expect entry[2].Error populated.
+	// Resolver maps 1+2 but NOT 4 â€” expect entry[2].Error populated.
 	fc := &fakeCaller{
 		respBody: mustMarshal(tunnel.GetHostLoadResponse{CPUPct: 1}),
 	}
@@ -207,7 +207,7 @@ func TestGetHostLoadTool_DispatchError(t *testing.T) {
 	if env.ErrorCount != 1 || !strings.Contains(env.Results[0].Error, "frontier offline") {
 		t.Errorf("expected dispatch error in envelope: %+v", env)
 	}
-	// The fake caller's underlying err is still surfaced â€?ensure the
+	// The fake caller's underlying err is still surfaced â€” ensure the
 	// errors.Is chain passes through fmt.Errorf.
 	if !errors.Is(fc.respErr, errs.ErrEdgeOffline) && !strings.Contains(env.Results[0].Error, "frontier") {
 		t.Errorf("error trail wrong: %v", env.Results[0].Error)

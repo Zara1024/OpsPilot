@@ -179,7 +179,7 @@ func TestTextSearchBoundedAndUTF8Safe(t *testing.T) {
 	if err != nil || len(b) > biz.ViewLimit {
 		t.Fatalf("unbounded page %d %v", len(b), err)
 	}
-	if strings.Contains(string(b), "ï¿?) {
+	if strings.Contains(string(b), "ï¿½") {
 		t.Fatal("UTF-8 split")
 	}
 }

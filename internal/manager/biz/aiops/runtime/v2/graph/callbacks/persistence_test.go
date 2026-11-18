@@ -362,7 +362,7 @@ func TestPersistenceHandler_NeededFiltersComponent(t *testing.T) {
 		t.Errorf("ChatModel OnEnd should be needed")
 	}
 	// ChatModel.OnStart became Needed once flushIncompleteBatch was
-	// added â€?it's the cleanest signal that the previous tool batch
+	// added â€” it's the cleanest signal that the previous tool batch
 	// is terminally done, so the autoheal flush hooks there.
 	if !h.Needed(context.Background(), chatModelInfo(), callbacks.TimingOnStart) {
 		t.Errorf("ChatModel OnStart should be needed (autoheal flush hook)")
@@ -379,7 +379,7 @@ func TestPersistenceHandler_NeededFiltersComponent(t *testing.T) {
 // --- autoheal / batch tracker tests ---------------------------------------
 
 // assistantEndWithToolCalls drives ChatModel.OnEnd with a synthesised
-// assistant message that emits N tool_calls â€?the same shape ChatModel
+// assistant message that emits N tool_calls â€” the same shape ChatModel
 // produces when the model wants to fan out to tools. Used to set up
 // the batch tracker for autoheal tests.
 func assistantEndWithToolCalls(t *testing.T, h *PersistenceHandler, calls ...struct{ ID, Name string }) {
@@ -473,7 +473,7 @@ func TestAutoheal_TwoOfFourMissing_StubsInserted(t *testing.T) {
 		struct{ ID, Name string }{ID: "call_02", Name: "host_bash"},
 		struct{ ID, Name string }{ID: "call_03", Name: "host_bash"},
 	)
-	// Only 01 and 03's OnStart+OnEnd fire â€?00 and 02 silently dropped.
+	// Only 01 and 03's OnStart+OnEnd fire â€” 00 and 02 silently dropped.
 	for _, id := range []string{"call_01", "call_03"} {
 		ctx := WithToolCallID(context.Background(), id)
 		h.OnStart(ctx, toolInfo("host_bash"), &einotool.CallbackInput{ArgumentsInJSON: `{}`})
@@ -574,7 +574,7 @@ func TestAutoheal_NoBatch_NoOp(t *testing.T) {
 	t.Parallel()
 	repo := newFakeSessionRepo()
 	h := NewPersistenceHandler(PersistenceDeps{SessionID: "s", Repo: repo})
-	// Very first turn â€?no prior assistant batch.
+	// Very first turn â€” no prior assistant batch.
 	h.OnStart(context.Background(), chatModelInfo(), nil)
 	repo.mu.Lock()
 	defer repo.mu.Unlock()

@@ -30,7 +30,7 @@ func NewInvestigationRepo(db *gorm.DB) *InvestigationRepo {
 // to relatedAlertLimit in biz.
 //
 // Topology-aware fan-out (incidents on devices reachable via
-// depends_on / member_of edges) is a follow-up â€?the same-device
+// depends_on / member_of edges) is a follow-up â€” the same-device
 // window already catches most operationally-useful co-occurrence
 // (disk_high + swap_high on the same VM, scrape_down following
 // node_down on the same host).
@@ -52,7 +52,7 @@ func (r *InvestigationRepo) RelatedToIncident(ctx context.Context, target *model
 	if target.DeviceID != nil {
 		q = q.Where("device_id = ?", *target.DeviceID)
 	} else {
-		// Target has no device â€?match incidents that also have no
+		// Target has no device â€” match incidents that also have no
 		// device, to avoid noisy cluster-wide co-incidents.
 		q = q.Where("device_id IS NULL")
 	}
@@ -64,7 +64,7 @@ func (r *InvestigationRepo) RelatedToIncident(ctx context.Context, target *model
 }
 
 // Create inserts a new report row. Returns errs.ErrConflict on a
-// duplicate incident_id (uniq index) â€?the caller is expected to
+// duplicate incident_id (uniq index) â€” the caller is expected to
 // treat that as "already enqueued, skip".
 func (r *InvestigationRepo) Create(ctx context.Context, rep *model.InvestigationReport) error {
 	if err := r.db.WithContext(ctx).Create(rep).Error; err != nil {
@@ -96,9 +96,9 @@ func (r *InvestigationRepo) UpdateStatus(ctx context.Context, id, status, reason
 // FailOrphaned marks every investigation still in a non-terminal state
 // (pending / running) as failed. A worker only lives inside the manager
 // process, so any pending/running report left over from a previous process
-// is orphaned â€?its worker died with that process and nothing will ever
+// is orphaned â€” its worker died with that process and nothing will ever
 // finish it; without this it spins forever in the SPA ("Spawning root-cause
-// analysis workerâ€?). Run once at manager startup (mirrors the edge
+// analysis workerâ€¦"). Run once at manager startup (mirrors the edge
 // "stale-online" boot backfill). Returns the number of rows healed.
 func (r *InvestigationRepo) FailOrphaned(ctx context.Context, reason string) (int64, error) {
 	res := r.db.WithContext(ctx).Model(&model.InvestigationReport{}).
@@ -118,7 +118,7 @@ func (r *InvestigationRepo) FailOrphaned(ctx context.Context, reason string) (in
 // compensation pass: if the manager started without an LLM provider
 // configured, alertUC.SetInvestigator was never called and incidents that
 // fired in that window had their auto-investigation silently skipped (no
-// row written â†?API returns status=not_started forever). Once a provider
+// row written â†’ API returns status=not_started forever). Once a provider
 // gets configured + the manager restarts, this list lets the backfill
 // re-enqueue them through the normal Enqueue gates (severity, concurrency
 // cap, dedup).
@@ -197,7 +197,7 @@ func (r *InvestigationRepo) MarkReady(ctx context.Context, id string, fields inv
 	return nil
 }
 
-// (ReadyFields lives in biz/alert/investigator â€?see investigator.ReadyFields.)
+// (ReadyFields lives in biz/alert/investigator â€” see investigator.ReadyFields.)
 
 // GetByIncident returns the report bound to an incident, or
 // errs.ErrNotFound if no report exists yet.
@@ -229,13 +229,13 @@ func (r *InvestigationRepo) Get(ctx context.Context, id string) (*model.Investig
 // by the manual re-trigger path so a fresh investigation can overwrite
 // a prior failed / ready / stuck report without unique-constraint
 // conflict (incident_id is uniqueIndex on investigation_reports).
-// Returns nil even when nothing was deleted â€?idempotent on purpose.
+// Returns nil even when nothing was deleted â€” idempotent on purpose.
 func (r *InvestigationRepo) DeleteByIncident(ctx context.Context, incidentID uint64) error {
 	// Unscoped() forces a hard DELETE; without it gorm uses the soft-
 	// delete path (sets deleted_at) which leaves the row visible to
 	// the uniq_invreports_incident index, and the next Enqueue's
 	// INSERT collides with Error 1062. The force-overwrite path is
-	// destructive by design â€?operators trigger it to wipe a stuck /
+	// destructive by design â€” operators trigger it to wipe a stuck /
 	// failed / stale row; soft-delete semantics don't help here.
 	return r.db.WithContext(ctx).Unscoped().Where("incident_id = ?", incidentID).
 		Delete(&model.InvestigationReport{}).Error

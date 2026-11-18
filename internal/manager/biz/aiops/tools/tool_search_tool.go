@@ -1,9 +1,10 @@
-// tool_search_tool.go implements ToolSearch entry �?// the always-loaded tool the LLM uses to pull schemas for any
+// tool_search_tool.go implements ToolSearch entry —
+// the always-loaded tool the LLM uses to pull schemas for any
 // specialty tool that's been redacted-by-default. It mirrors
 // Anthropic's harness convention so the LLM's training prior on the
 // "select:..." vs keyword form carries straight over.
 //
-// The tool is pure-read against an in-memory tool list �?no external
+// The tool is pure-read against an in-memory tool list — no external
 // I/O, no per-call allocation worth tracing. We deliberately keep the
 // implementation small; the heavy lifting (toolbag partitioning) lives
 // in toolbag.go and the Registry decides whether to register it at
@@ -28,7 +29,7 @@ const ToolSearchToolName = "ToolSearch"
 // DeferredToolBagProvider is the seam ToolSearch uses to query the
 // underlying ToolBag without importing the concrete type. Defined on
 // the producer side so chatruntime can mirror the shape locally
-// without a cyclic import (tools �?chatruntime �?tools).
+// without a cyclic import (tools → chatruntime → tools).
 type DeferredToolBagProvider interface {
 	// DeferredTools returns the tools that have been redacted-by-default
 	// (specialty tier). ToolSearch biases keyword queries toward this
@@ -40,12 +41,12 @@ type DeferredToolBagProvider interface {
 	AllTools() []basetool.BaseTool
 }
 
-// toolSearchWhenToUse �?same wording style as the other WhenToUse
+// toolSearchWhenToUse — same wording style as the other WhenToUse
 // strings in this package; routing hint.
-const toolSearchWhenToUse = "When you see a tool name in the system reminder but its schema is not loaded �?query for it here. " +
+const toolSearchWhenToUse = "When you see a tool name in the system reminder but its schema is not loaded — query for it here. " +
 	"Use 'select:foo,bar' to fetch by exact name(s), or keywords like 'find files' for substring match. " +
 	"Returns up to max_results (default 5) full schemas matching the query. " +
-	"NOT a replacement for actually invoking the tool �?after fetching schema, call the tool directly with the now-loaded parameters."
+	"NOT a replacement for actually invoking the tool — after fetching schema, call the tool directly with the now-loaded parameters."
 
 const toolSearchSchema = `{
   "type": "object",
@@ -81,7 +82,7 @@ type toolSearchEntry struct {
 }
 
 // toolSearchResponse is the JSON body returned to the LLM. We keep the
-// envelope minimal �?`tools` plus a `query` echo so the LLM can
+// envelope minimal — `tools` plus a `query` echo so the LLM can
 // reference what it asked for in subsequent turns.
 type toolSearchResponse struct {
 	Query       string            `json:"query"`
@@ -97,7 +98,7 @@ type ToolSearchTool struct {
 	log *slog.Logger
 }
 
-// NewToolSearchTool builds a ToolSearchTool. p MUST be non-nil �?when
+// NewToolSearchTool builds a ToolSearchTool. p MUST be non-nil — when
 // nil there is nothing to search and the tool would always return an
 // empty result; we let the construction site fail loudly rather than
 // silently degrade.
@@ -215,7 +216,7 @@ func (t *ToolSearchTool) fullToolsAllowedByContext(ctx context.Context) []baseto
 }
 
 // matchTools applies the query against the tool universe. select:
-// prefix �?exact-name match (CSV-split). Otherwise substring keyword
+// prefix → exact-name match (CSV-split). Otherwise substring keyword
 // match over name + description + when_to_use. Stable order: input
 // order is preserved (no scoring / fuzzy ranking in v1; the LLM
 // usually has a clear name in mind).
@@ -223,7 +224,7 @@ func matchTools(ctx context.Context, all []basetool.BaseTool, query string, maxR
 	q := strings.TrimSpace(query)
 	out := make([]toolSearchEntry, 0, maxResults)
 
-	// "select:" prefix: exact-name CSV match. Empty match �?empty
+	// "select:" prefix: exact-name CSV match. Empty match → empty
 	// result (LLM gets {"tools":[]}).
 	if rest, ok := strings.CutPrefix(q, "select:"); ok {
 		want := splitNonEmpty(rest, ",")
@@ -255,7 +256,7 @@ func matchTools(ctx context.Context, all []basetool.BaseTool, query string, maxR
 
 	// Keyword match: lower-case substring over (name, description,
 	// when_to_use). Multi-token queries require ALL tokens to match
-	// somewhere across the haystack �?keeps "find files" from
+	// somewhere across the haystack — keeps "find files" from
 	// matching every read-only tool.
 	tokens := splitNonEmpty(strings.ToLower(q), " ")
 	if len(tokens) == 0 {
@@ -316,7 +317,8 @@ func splitNonEmpty(s, sep string) []string {
 	return out
 }
 
-// searchSchemaTool 只供 ToolSearch 读取完整元数据，执行仍委托受控引用�?type searchSchemaTool struct {
+// searchSchemaTool 只供 ToolSearch 读取完整元数据，执行仍委托受控引用。
+type searchSchemaTool struct {
 	basetool.BaseTool
 	info *basetool.ToolInfo
 }

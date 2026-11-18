@@ -29,7 +29,8 @@ func (p schemaContractProbe) InvokableRun(context.Context, string, ...basetool.I
 	return "ok", nil
 }
 
-// 编译所有静�?Schema，不依赖某种部署恰好注册了哪些工具�?func TestAllStaticToolSchemasCompile(t *testing.T) {
+// 编译所有静态 Schema，不依赖某种部署恰好注册了哪些工具。
+func TestAllStaticToolSchemasCompile(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
 			Tools []struct {
@@ -159,7 +160,8 @@ func TestDeferredToolUsesExecutionContractAfterSearch(t *testing.T) {
 	ctx := context.Background()
 	inner := NewQueryAlertRulesTool(&fakeAlertUC{}, nil)
 	bag := NewToolBag([]basetool.BaseTool{inner}, 0)
-	// �?runtime_builder 一致：先裁剪展示，再安装审�?校验装饰器�?	tool := decorators.Wrap(bag.SchemasForLLM()[0], decorators.Deps{Registerer: prometheus.NewRegistry()})
+	// 与 runtime_builder 一致：先裁剪展示，再安装审批/校验装饰器。
+	tool := decorators.Wrap(bag.SchemasForLLM()[0], decorators.Deps{Registerer: prometheus.NewRegistry()})
 	info, err := tool.Info(ctx)
 	if err != nil {
 		t.Fatal(err)

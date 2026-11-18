@@ -17,10 +17,10 @@ import (
 	"github.com/Zara1024/OpsPilot/internal/pkg/tunnel"
 )
 
-// bash.go �?N+15 batch refactor. The BaseTool form of bash now
+// bash.go — N+15 batch refactor. The BaseTool form of bash now
 // takes `device_ids[]` + a SINGLE `cmd` (one read-only command run on
-// each device). Cmd is NOT an array �?fleet semantics ("看每台机器的
-// nginx 状�?) is fundamentally one cmd × N devices, and offering
+// each device). Cmd is NOT an array — fleet semantics ("看每台机器的
+// nginx 状态") is fundamentally one cmd × N devices, and offering
 // multi-cmd would invite the LLM to bundle unrelated commands and lose
 // the ability to reason about each result. If the user wants two
 // different commands, the LLM splits into two calls.
@@ -32,13 +32,13 @@ import (
 //
 // Edge handler is unchanged: each inner call still hits MethodBashExec
 // with the same BashExecRequest, and each device runs the cmdpolicy
-// sandbox check independently �?this is N independent edge-side
+// sandbox check independently — this is N independent edge-side
 // validations, not a manager-side one. A device whose policy doesn't
 // allow the cmd surfaces Allowed=false in its slot; the others succeed.
 //
 // Why Class="read" stays:
 //
-//   - Default cmdpolicy preset is read-only �?every binary classified
+//   - Default cmdpolicy preset is read-only — every binary classified
 //     writeable is rejected at the edge BEFORE any spawn.
 //   - The manager-side review_gate decorator only intercepts
 //     Class="write"|"destructive" tools. Marking bash as read keeps it
@@ -52,13 +52,14 @@ const ToolNameBash = "host_bash"
 // BashDescription is the one-line "what does this tool do" blurb.
 const BashDescription = "Run a shell command on edge hosts. Read commands run through the edge read-only sandbox. Write commands require an inline approval card when agent writes are enabled. If command policy approval is also enabled, sandbox-denied commands request human approval for the denied hosts before unrestricted execution."
 
-// bashWhenToUse �?batch-first routing hint (N+15). Fleet semantics:
+// bashWhenToUse — batch-first routing hint (N+15). Fleet semantics:
 // one cmd, many devices. List of allowed binaries is replicated here
 // (not loaded from the live policy) because the LLM needs the prompt
-// at construction time and the live policy lives on every edge �?there
+// at construction time and the live policy lives on every edge — there
 // is no single canonical view in the cloud. Drift between this string
 // and the edge baseline is caught by a unit test.
-const bashWhenToUse = `一�?read-only 命令�?fleet 模式跑多 device。例：device_ids=[1,2,3] cmd="systemctl status nginx" 看每�?nginx 状态�?
+const bashWhenToUse = `一条 read-only 命令以 fleet 模式跑多 device。例：device_ids=[1,2,3] cmd="systemctl status nginx" 看每台 nginx 状态。
+
 ALLOWED:
   - Filesystem read: ls / cat / head / tail / find / du / stat / grep / awk / sed / wc
   - System state read: ps / df / free / uptime / iostat / vmstat / lsof / ss / netstat / journalctl / dmesg
@@ -82,31 +83,34 @@ REJECTED at the edge for read-only execution (policy violation, the per-device r
   - Shells / scripting: bash / sh / python / perl / ruby / node
   - Network downloads: curl -o / wget / scp / ssh
 
-TYPICAL USES (always pass device_ids[] �?even single device should use a 1-element array):
+TYPICAL USES (always pass device_ids[] — even single device should use a 1-element array):
   host_bash(device_ids=[1,2,3], cmd="ps aux --sort=-%cpu | head -10")
   host_bash(device_ids=[1,2,3], cmd="iptables -L -n")
   host_bash(device_ids=[1,2,3], cmd="systemctl status nginx")
   host_bash(device_ids=[1,2,3], cmd="journalctl -u nginx --since '1 hour ago' | grep -i error")
   host_bash(device_ids=[1,2,3], cmd="df -h")
 
-NETWORK-RESEARCH 探测套路（Layer-1 高级网络命令�?
-  host_bash(device_ids=[1], cmd="ovs-vsctl show")                      # OVS �?+ 端口拓扑
+NETWORK-RESEARCH 探测套路（Layer-1 高级网络命令）:
+  host_bash(device_ids=[1], cmd="ovs-vsctl show")                      # OVS 桥 + 端口拓扑
   host_bash(device_ids=[1], cmd="ovs-ofctl dump-flows br0")            # 流表
   host_bash(device_ids=[1], cmd="nft list ruleset")                    # nftables 全表
   host_bash(device_ids=[1], cmd="conntrack -L | head -50")             # conntrack top
   host_bash(device_ids=[1], cmd="conntrack -S")                        # 全局 ct 计数
-  host_bash(device_ids=[1], cmd="bpftool prog show")                   # 已加�?BPF 程序
+  host_bash(device_ids=[1], cmd="bpftool prog show")                   # 已加载 BPF 程序
   host_bash(device_ids=[1], cmd="bpftool net show")                    # tc/xdp BPF attach
   host_bash(device_ids=[1], cmd="ethtool -i eth0")                     # 网卡驱动信息
   host_bash(device_ids=[1], cmd="ip netns list")                       # netns 清单
 
 NOT FOR:
-  - 不同命令在同一次调用（用户分多次调�?�?一�?host_bash 一�?cmd�?  - 不需�?fleet 视角的单设备查询：仍然走 host_bash，但 device_ids 给一个元素的数组
-  - Service restart / mutating ops �?�?host_restart_service
-  - 写文�?/ 删除文件 �?只能在用户明确要求时调用 host_bash 触发内置确认卡，禁止绕到 AgentTool
-  - Trivial �?fact 查询 �?优先 get_host_load / get_host_processes / host_find_large_files（结构化输出，token 更省�?  - "哪个目录占用最�? / "磁盘满了" / "du" 类问�?�?必须�?host_du_summary（结构化分级 + 内置 coverage check，bash �?du 容易只看 /var/* 之类窄路径就停，host_du_summary �?coverage hint 会强制你扫到 80% 覆盖率才能收尾）
-  - 单文�?size / mtime / owner �?�?host_stat_file（一�?batch 多文件）
-  - 找大文件 �?�?host_find_large_files（top-N，size>X�?
+  - 不同命令在同一次调用（用户分多次调用 — 一次 host_bash 一条 cmd）
+  - 不需要 fleet 视角的单设备查询：仍然走 host_bash，但 device_ids 给一个元素的数组
+  - Service restart / mutating ops → 用 host_restart_service
+  - 写文件 / 删除文件 → 只能在用户明确要求时调用 host_bash 触发内置确认卡，禁止绕到 AgentTool
+  - Trivial 单 fact 查询 → 优先 get_host_load / get_host_processes / host_find_large_files（结构化输出，token 更省）
+  - "哪个目录占用最大" / "磁盘满了" / "du" 类问题 → 必须用 host_du_summary（结构化分级 + 内置 coverage check，bash 跑 du 容易只看 /var/* 之类窄路径就停，host_du_summary 的 coverage hint 会强制你扫到 80% 覆盖率才能收尾）
+  - 单文件 size / mtime / owner → 用 host_stat_file（一次 batch 多文件）
+  - 找大文件 → 用 host_find_large_files（top-N，size>X）
+
 If command policy approval is enabled together with agent writes, this tool automatically requests human approval for sandbox-denied hosts and returns their post-approval results. Approval applies only to the exact command and listed hosts. Hosts that already ran are not retried. Rejection, cancellation or expiry does not execute the denied command.
 If a per-device result still returns Allowed=false, READ THE REASON and explain the restriction. Do not disguise the command to evade policy or retry the same command expecting a different result.`
 
@@ -122,22 +126,22 @@ var BashSchema = json.RawMessage(`{
       },
       "minItems": 1,
       "maxItems": 16,
-      "description": "设备 id 列表，一次最�?16 个。fleet 视角看同一�?cmd 在每台机器的输出�?
+      "description": "设备 id 列表，一次最多 16 个。fleet 视角看同一条 cmd 在每台机器的输出。"
     },
     "device_id": {
       "type": "integer",
-      "description": "兼容旧参数：单台设备 id。优先使�?device_ids�?,
+      "description": "兼容旧参数：单台设备 id。优先使用 device_ids。",
       "minimum": 1
     },
     "cmd": {
       "type": "string",
-      "description": "**单条** shell-like 命令，跑在每�?device_id 上。读命令直接走只�?sandbox；写命令只在用户明确要求时触发内置确认卡，批准后才执行。支�?pipes (|)；读路径不支�?redirects / ; && || $() <() heredocs / backticks。如果想跑两条不同命令，分两次调用�?
+      "description": "**单条** shell-like 命令，跑在每个 device_id 上。读命令直接走只读 sandbox；写命令只在用户明确要求时触发内置确认卡，批准后才执行。支持 pipes (|)；读路径不支持 redirects / ; && || $() <() heredocs / backticks。如果想跑两条不同命令，分两次调用。"
     },
     "timeout_seconds": {
       "type": "integer",
       "minimum": 1,
       "maximum": 300,
-      "description": "Optional per-device timeout override. Default 300s; max 300s. 共享给所�?device�?
+      "description": "Optional per-device timeout override. Default 300s; max 300s. 共享给所有 device。"
     }
   },
   "required": [
@@ -157,7 +161,7 @@ var BashSchema = json.RawMessage(`{
   ]
 }`)
 
-// bashCallTimeout caps the manager �?edge round-trip. The edge
+// bashCallTimeout caps the manager → edge round-trip. The edge
 // enforces its own (shorter) timeout from the policy; this is the
 // outer ceiling per inner call so a hung tunnel can't park a slot.
 const bashCallTimeout = 5*time.Minute + 30*time.Second
@@ -200,7 +204,7 @@ type BashResultEntry struct {
 }
 
 // BashBatchResponse is the wire envelope. cmd is echoed ONCE at the
-// envelope level rather than per entry �?saves ~60-200 bytes × N
+// envelope level rather than per entry — saves ~60-200 bytes × N
 // duplicated string per response.
 type BashBatchResponse struct {
 	Cmd          string            `json:"cmd"`
@@ -239,7 +243,7 @@ func NewBashToolWithProposer(c Caller, e *edgebiz.Usecase, d *devicebiz.Usecase,
 	}
 }
 
-// Info returns the tool metadata. Class="read" �?the v1 cmdpolicy
+// Info returns the tool metadata. Class="read" — the v1 cmdpolicy
 // preset rejects writes at the edge.
 func (t *BashTool) Info(_ context.Context) (*basetool.ToolInfo, error) {
 	return &basetool.ToolInfo{
@@ -253,7 +257,7 @@ func (t *BashTool) Info(_ context.Context) (*basetool.ToolInfo, error) {
 }
 
 // singleBash runs the cmd on one device. Sandbox rejection (Allowed=false)
-// is folded into the entry as Allowed=false + Reason �?this is NOT a
+// is folded into the entry as Allowed=false + Reason — this is NOT a
 // failure at the batch level (success_count counts the entry as success
 // because the dispatch round-tripped cleanly). Only resolver / dispatch
 // errors set entry.Error; counts those as errors in the envelope.
@@ -375,8 +379,11 @@ func (t *BashTool) InvokableRun(ctx context.Context, argsJSON string, opts ...ba
 	defer cancel()
 
 	results := runBatch(batchCtx, in.DeviceIDs, func(ctx context.Context, id uint64) BashResultEntry {
-		// 写动作开关只决定"能不能生成提�?，不改变下发模式。走到这里说�?		// 分类器判定为读命令，一旦漏判，也必须以只读模式交给 Edge �?		// cmdpolicy，由�?fail closed。只有审批通过后执行的 RunApproved
-		// 才允�?Unrestricted�?		return t.singleBash(ctx, id, in.Cmd, in.TimeoutSeconds, false)
+		// 写动作开关只决定"能不能生成提案"，不改变下发模式。走到这里说明
+		// 分类器判定为读命令，一旦漏判，也必须以只读模式交给 Edge 的
+		// cmdpolicy，由它 fail closed。只有审批通过后执行的 RunApproved
+		// 才允许 Unrestricted。
+		return t.singleBash(ctx, id, in.Cmd, in.TimeoutSeconds, false)
 	})
 	if hostWriteAllowed && t.proposer != nil && t.policyApprovalEnabled != nil && t.policyApprovalEnabled(ctx) && ctx.Err() == nil {
 		var deniedIDs []uint64
@@ -457,8 +464,10 @@ func marshalBashEnvelope(cmd string, results []BashResultEntry) (string, error) 
 	return string(out), nil
 }
 
-// isHostBashWriteCommand 判定一条命令是否可能改动作主机。它只做保守分流�?// 判成写就走提案确认，判成读也只是以只读模式下发，最终仍�?Edge �?cmdpolicy
-// 决定。因此这里宁可多报，不可漏报�?func isHostBashWriteCommand(cmd string) bool {
+// isHostBashWriteCommand 判定一条命令是否可能改动作主机。它只做保守分流：
+// 判成写就走提案确认，判成读也只是以只读模式下发，最终仍由 Edge 的 cmdpolicy
+// 决定。因此这里宁可多报，不可漏报。
+func isHostBashWriteCommand(cmd string) bool {
 	segments, risky := splitHostShellCommands(cmd)
 	if risky {
 		return true
@@ -471,8 +480,16 @@ func marshalBashEnvelope(cmd string, results []BashResultEntry) (string, error) 
 	return false
 }
 
-// splitHostShellCommands �?shell 分隔符把命令切成多个简单命令段，并报告是否
-// 出现 Edge 侧无法执行的语法。risky 的判据取�?internal/edgeagent/cmdpolicy �?// 解析器：它只接受简单命令与裸管道，其余一律拒绝，所以这些语法必须走审批�?// 不能以只读模式下发后�?Edge 拒掉（那会让原本能执行的命令直接失效）�?// 被标�?risky 的有：输�?输入重定向、命令替�?$() 与反引号、参数展开 ${}�?// �?shell 与进程替换的括号、命令列表符 ; �?&& �?||、后台执�?&，以及换�?// （Edge 把换行当空白，会把两条命令粘成一�?argv）。引号内的分隔符不算语法�?// 单引号内是字面量；双引号内的 $( )�?{ } 与反引号仍会执行，所以按风险处理�?// �?| 是唯一双方都支持的复合语法，继续只切段不判写�?func splitHostShellCommands(cmd string) ([]string, bool) {
+// splitHostShellCommands 按 shell 分隔符把命令切成多个简单命令段，并报告是否
+// 出现 Edge 侧无法执行的语法。risky 的判据取自 internal/edgeagent/cmdpolicy 的
+// 解析器：它只接受简单命令与裸管道，其余一律拒绝，所以这些语法必须走审批，
+// 不能以只读模式下发后被 Edge 拒掉（那会让原本能执行的命令直接失效）。
+// 被标为 risky 的有：输出/输入重定向、命令替换 $() 与反引号、参数展开 ${}、
+// 子 shell 与进程替换的括号、命令列表符 ; 与 && 与 ||、后台执行 &，以及换行
+// （Edge 把换行当空白，会把两条命令粘成一条 argv）。引号内的分隔符不算语法：
+// 单引号内是字面量；双引号内的 $( )、${ } 与反引号仍会执行，所以按风险处理。
+// 裸 | 是唯一双方都支持的复合语法，继续只切段不判写。
+func splitHostShellCommands(cmd string) ([]string, bool) {
 	var segments []string
 	var buf []rune
 	risky := false
@@ -497,7 +514,8 @@ func marshalBashEnvelope(cmd string, results []BashResultEntry) (string, error) 
 			i++
 			continue
 		}
-		// 命令替换与参数展开在双引号内同样会执行或被 Edge 拒绝�?		if c == '`' || (c == '$' && i+1 < len(runes) && (runes[i+1] == '(' || runes[i+1] == '{')) {
+		// 命令替换与参数展开在双引号内同样会执行或被 Edge 拒绝。
+		if c == '`' || (c == '$' && i+1 < len(runes) && (runes[i+1] == '(' || runes[i+1] == '{')) {
 			risky = true
 		}
 		if inDouble {
@@ -513,25 +531,31 @@ func marshalBashEnvelope(cmd string, results []BashResultEntry) (string, error) 
 		case '"':
 			inDouble = true
 		case ';', '\n':
-			// 命令列表�?; 与换行：前者被 Edge 判为 forbidden，后者被当成空白把两�?			// 命令粘成一�?argv。两者都不能按只读段逐段判断�?			risky = true
+			// 命令列表符 ; 与换行：前者被 Edge 判为 forbidden，后者被当成空白把两条
+			// 命令粘成一条 argv。两者都不能按只读段逐段判断。
+			risky = true
 			flush()
 		case '|':
-			// || 是逻辑或，�?Edge 拒绝；裸 | 是双方都支持的管道，只切段不判写�?			if i+1 < len(runes) && runes[i+1] == '|' {
+			// || 是逻辑或，被 Edge 拒绝；裸 | 是双方都支持的管道，只切段不判写。
+			if i+1 < len(runes) && runes[i+1] == '|' {
 				i++
 				risky = true
 			}
 			flush()
 		case '&':
-			// && 与后�?& 都被 Edge 拒绝，吃�?&& 的第二个字符避免多切一个空段�?			if i+1 < len(runes) && runes[i+1] == '&' {
+			// && 与后台 & 都被 Edge 拒绝，吃掉 && 的第二个字符避免多切一个空段。
+			if i+1 < len(runes) && runes[i+1] == '&' {
 				i++
 			}
 			risky = true
 			flush()
 		case '>', '<':
-			// 输出重定向必然改文件；输入重定向同样�?Edge 一律拒绝�?			risky = true
+			// 输出重定向必然改文件；输入重定向同样被 Edge 一律拒绝。
+			risky = true
 			flush()
 		case '(', ')':
-			// �?shell / 进程替换：Edge 的解析器直接拒绝，留在段里供诊断�?			risky = true
+			// 子 shell / 进程替换：Edge 的解析器直接拒绝，留在段里供诊断。
+			risky = true
 			buf = append(buf, c)
 		default:
 			buf = append(buf, c)
@@ -541,7 +565,8 @@ func marshalBashEnvelope(cmd string, results []BashResultEntry) (string, error) 
 	return segments, risky
 }
 
-// hostSegmentIsWrite 对一个简单命令段做原来的首命令判断�?func hostSegmentIsWrite(segment string) bool {
+// hostSegmentIsWrite 对一个简单命令段做原来的首命令判断。
+func hostSegmentIsWrite(segment string) bool {
 	fields := dropHostEnvAssignments(strings.Fields(segment))
 	fields = dropHostSudo(fields)
 	if len(fields) == 0 {
@@ -569,8 +594,9 @@ func marshalBashEnvelope(cmd string, results []BashResultEntry) (string, error) 
 	return false
 }
 
-// dropHostEnvAssignments 去掉前导�?NAME=value。`LC_ALL=C rm -f x` 的首词是
-// 赋值而不是命令名，不剥掉就会把写命令漏判成读命令�?func dropHostEnvAssignments(fields []string) []string {
+// dropHostEnvAssignments 去掉前导的 NAME=value。`LC_ALL=C rm -f x` 的首词是
+// 赋值而不是命令名，不剥掉就会把写命令漏判成读命令。
+func dropHostEnvAssignments(fields []string) []string {
 	for len(fields) > 0 && isHostEnvAssignment(fields[0]) {
 		fields = fields[1:]
 	}
@@ -597,8 +623,9 @@ func isHostEnvAssignment(token string) bool {
 	return true
 }
 
-// dropHostSudo 跳过 sudo 自身、它的前导选项以及带值选项的参数。只�?fields[1]
-// 的话 `sudo -u nginx rm -f x` 会把 -u 当成命令名而漏判�?func dropHostSudo(fields []string) []string {
+// dropHostSudo 跳过 sudo 自身、它的前导选项以及带值选项的参数。只取 fields[1]
+// 的话 `sudo -u nginx rm -f x` 会把 -u 当成命令名而漏判。
+func dropHostSudo(fields []string) []string {
 	if len(fields) == 0 || fields[0] != "sudo" {
 		return fields
 	}
@@ -633,7 +660,7 @@ func isDockerWriteCommand(args []string) bool {
 
 // AppendBashTool registers the bash BaseTool onto the provided slice
 // when the dependency triple is wired. Returns the slice unchanged
-// when any dep is nil (graceful degradation �?without the tunnel +
+// when any dep is nil (graceful degradation — without the tunnel +
 // device junction we can't address an edge).
 func AppendBashTool(out []basetool.BaseTool, c Caller, e *edgebiz.Usecase, d *devicebiz.Usecase, log *slog.Logger) []basetool.BaseTool {
 	if c == nil || e == nil || d == nil {

@@ -50,7 +50,7 @@ func TestRuntimeDailyBudgetErrorPersistsAndEmits(t *testing.T) {
 		t.Fatal(err)
 	}
 	var events []Event
-	reply, err := rt.Handle(context.Background(), &Request{SessionID: sess.ID, UserID: 7, UserText: "核对保存的数�?, Emit: func(ev Event) { events = append(events, ev) }})
+	reply, err := rt.Handle(context.Background(), &Request{SessionID: sess.ID, UserID: 7, UserText: "核对保存的数据", Emit: func(ev Event) { events = append(events, ev) }})
 	if err != nil || reply == nil || reply.Message == nil || reply.Message.Content == nil {
 		t.Fatalf("reply=%+v err=%v", reply, err)
 	}

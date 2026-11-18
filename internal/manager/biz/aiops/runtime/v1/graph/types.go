@@ -1,15 +1,16 @@
 // Package graph is the eino-based agent execution kernel introduced by
-// / (Agent compose.Graph �?ReAct) + (主参考图
-// �?Graph 执行�?. It builds a `compose.Runnable[*Input, *Output]` whose
+// / (Agent compose.Graph 拼 ReAct) + (主参考图
+// — Graph 执行层). It builds a `compose.Runnable[*Input, *Output]` whose
 // internal shape is the standard ReAct loop:
 //
-//	START �?MessageAssembler �?ChatModel �?Branch(tool_calls?) �?//	  yes �?ToolsNode �?MsgAppend �?�?ChatModel
-//	  no �?END
+//	START → MessageAssembler → ChatModel → Branch(tool_calls?) →
+//	  yes → ToolsNode → MsgAppend → 回 ChatModel
+//	  no → END
 //
 // Implementation note (architectural deviation ): the
 // inner ReAct subgraph is built via cloudwego/eino's stock
 // `flow/agent/react.NewAgent`, which already produces the exact graph
-// the spec calls out (ChatModel �?Branch �?ToolsNode), bound at compile
+// the spec calls out (ChatModel ↔ Branch ↔ ToolsNode), bound at compile
 // time with the user-supplied `model.ToolCallingChatModel` + tools. Our
 // own wrapper graph (this package) adds the **MessageAssembler** lambda
 // in front so callers pass `*Input` (system prompt + history + user
@@ -18,11 +19,11 @@
 // `*Output` (assistant message + iteration count + usage) instead of
 // the bare assistant `*schema.Message`. We are NOT re-implementing the
 // branch / tools-node wiring by hand because eino's ReAct implementation
-// is the canonical maintained one �?re-rolling it would be churn against
+// is the canonical maintained one — re-rolling it would be churn against
 // no benefit. See react.go header comment for the layered topology.
 //
 // PR-6 of scaffolding only. The cutover (replacing agent.go's
-// 660-line for-loop with this graph) is the NEXT PR �?main.go is not
+// 660-line for-loop with this graph) is the NEXT PR — main.go is not
 // touched here. Callers in this PR are tests + internal wiring only.
 package graph
 
@@ -53,7 +54,7 @@ type Input struct {
 
 	// History is the prior conversation in eino message form. Includes
 	// user / assistant / tool messages; ordered chronologically.
-	// HistoryLimit gating happens upstream �?this layer takes the slice
+	// HistoryLimit gating happens upstream — this layer takes the slice
 	// as-is.
 	History []*schema.Message
 
@@ -72,25 +73,25 @@ type Input struct {
 
 	// MentionsRendered is the pre-rendered markdown bullet list of
 	// @-mention context blocks. Empty = no mentions on this turn.
-	// agent.go's exact format ("用户在消息中引用了以下平台对�?...") is
+	// agent.go's exact format ("用户在消息中引用了以下平台对象 ...") is
 	// reproduced here for replay parity.
 	MentionsRendered string
 
 	// AgentReminder is the persona-level critical_reminder string the
 	// coordinator/runtime resolved for this turn. When
-	// non-empty it is appended verbatim �?without further wrapping �?as
+	// non-empty it is appended verbatim — without further wrapping — as
 	// one bullet inside the per-turn <system-reminder> block the
 	// MessageAssembler injects. Empty = no persona reminder for this
 	// turn (coordinator persona without a critical_reminder, or no
 	// persona at all).
 	//
 	// Static persona prose still lives inside SystemPrompt via
-	// chatruntime.ComposeSystemPrompt �?this field carries only the
+	// chatruntime.ComposeSystemPrompt — this field carries only the
 	// short reminder line that gets re-injected on every turn.
 	AgentReminder string
 	// DynamicHints is the runtime-computed list of per-turn hint lines
 	// (each rendered as one bullet inside the <system-reminder> block).
-	// �?examples: "tool X failed N times in a row", "we
+	// — examples: "tool X failed N times in a row", "we
 	// already ran Y iterations". Computed by chatruntime from the
 	// session's recent message + tool history; the graph is not the
 	// source of truth and never inspects history to derive its own
@@ -109,7 +110,7 @@ type Input struct {
 // Output is the terminal result of a graph run. Mirrors the parts of
 // agent.Reply this layer can populate without reaching into the
 // session repo (which is the persistence callback's job). Iterations
-// is best-effort �?eino's react agent doesn't expose the step count
+// is best-effort — eino's react agent doesn't expose the step count
 // directly, so the OutputProjector counts ChatModel turns on the
 // callback channel and stamps the value here.
 type Output struct {
@@ -131,7 +132,7 @@ type Output struct {
 // Config tunes graph behaviour. Defaults match agent.go's existing
 // for-loop so the cutover PR sees zero behavioural drift.
 //
-// 改进�?#5: MaxIterations 内嵌 �?eino's ReAct accepts
+// 改进点 #5: MaxIterations 内嵌 — eino's ReAct accepts
 // MaxStep at construction; we expose it here.
 type Config struct {
 	// Model is the LLM model id (e.g. "gpt-4o", "claude-sonnet-4-6").
@@ -139,7 +140,7 @@ type Config struct {
 	Model string
 
 	// Provider is the routing key recognised by RoutingChatModel
-	// (�?provider 路由保留). Empty = use the routing
+	// (— provider 路由保留). Empty = use the routing
 	// model's defaultProvider.
 	Provider string
 

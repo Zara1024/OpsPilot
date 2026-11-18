@@ -297,7 +297,8 @@ func (t *QueryNetworkInterfacesTool) InvokableRun(ctx context.Context, argsJSON 
 	}
 
 	rows, total := networkInterfacePage(reported, in)
-	// offset 可以很大；仅在存在后续匹配行时相加，避免整数溢出�?	var nextOffset *int
+	// offset 可以很大；仅在存在后续匹配行时相加，避免整数溢出。
+	var nextOffset *int
 	if in.Offset < total && len(rows) < total-in.Offset {
 		next := in.Offset + len(rows)
 		nextOffset = &next
@@ -326,7 +327,8 @@ func (t *QueryNetworkInterfacesTool) InvokableRun(ctx context.Context, argsJSON 
 	return string(out), nil
 }
 
-// networkInterfacePage 先过滤再分页，保留快照顺序，避免一次返回全部端口�?func networkInterfacePage(reported []networkInterfaceRow, in queryNetworkInterfacesArgs) ([]networkInterfaceRow, int) {
+// networkInterfacePage 先过滤再分页，保留快照顺序，避免一次返回全部端口。
+func networkInterfacePage(reported []networkInterfaceRow, in queryNetworkInterfacesArgs) ([]networkInterfaceRow, int) {
 	rows := make([]networkInterfaceRow, 0, min(len(reported), in.Limit))
 	total := 0
 	for _, row := range reported {

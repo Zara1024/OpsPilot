@@ -28,7 +28,7 @@ func TestRestartServiceTool_Info(t *testing.T) {
 	if info.Name != ToolNameRestartService {
 		t.Errorf("Name = %q, want %q", info.Name, ToolNameRestartService)
 	}
-	// Class="write" is the contract â€?the ReviewGate decorator switches
+	// Class="write" is the contract â€” the ReviewGate decorator switches
 	// on this exact value to gate the call. Regression-protect it here
 	// so a future refactor can't downgrade to "read" silently.
 	if info.Class != "write" {
@@ -38,7 +38,7 @@ func TestRestartServiceTool_Info(t *testing.T) {
 		t.Errorf("Description empty")
 	}
 	if info.WhenToUse == "" {
-		t.Errorf("WhenToUse empty â€?requires it separated from Description")
+		t.Errorf("WhenToUse empty â€” requires it separated from Description")
 	}
 	if !strings.Contains(strings.ToLower(info.WhenToUse), "reviewer") {
 		t.Errorf("WhenToUse should warn the LLM about the reviewer flow: %q", info.WhenToUse)

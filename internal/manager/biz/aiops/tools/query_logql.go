@@ -194,7 +194,7 @@ func runQueryLogQL(ctx context.Context, querier LogQuerier, args []byte) ([]byte
 		}
 		start = t
 	} else if in.End != "" {
-		// User pinned end but not start â€?keep the 1h window relative to
+		// User pinned end but not start â€” keep the 1h window relative to
 		// the supplied end so the call is still bounded.
 		start = end.Add(-time.Hour)
 	}
@@ -250,10 +250,10 @@ func NewQueryLogQLTool(lq LogQuerier) *QueryLogQLTool {
 	return &QueryLogQLTool{logQuery: lq}
 }
 
-// queryLogQLWhenToUse â€?the canonical reverse-guard for log search.
+// queryLogQLWhenToUse â€” the canonical reverse-guard for log search.
 // explicit "do NOT use for ..." steers the model away from
 // the metric / trace tools when the question is really about log content.
-const queryLogQLWhenToUse = "When the user asks about log CONTENT â€?grep error / panic / fatal, see the line text " +
+const queryLogQLWhenToUse = "When the user asks about log CONTENT â€” grep error / panic / fatal, see the line text " +
 	"that explains why a service failed, or inspect backend-selected log streams. Use stream selectors and line filters for portable Loki/Elasticsearch queries; metric LogQL is Loki-only. " +
 	"NOT for filesystem state, file names or file sizes (use a host_files skill). " +
 	"NOT for metric trends like cpu/mem (use query_promql). " +

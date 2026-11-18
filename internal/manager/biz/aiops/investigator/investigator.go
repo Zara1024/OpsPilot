@@ -1,16 +1,16 @@
-// Package investigator implements P2 �?proactive AI investigation. When
+// Package investigator implements P2 — proactive AI investigation. When
 // an incident first fires, the alert usecase asks the investigator to
 // spawn a background goroutine that:
 //
 //  1. Calls the correlate_incident tool directly (no chat round-trip) to
 //     gather the metric/log/trace/edge bundle.
 //  2. Sends the bundle plus a fixed system prompt to the LLM in a single
-//     round-trip �?no multi-turn agent loop.
+//     round-trip — no multi-turn agent loop.
 //  3. Persists the LLM response as a model.Event row with
 //     event_type=ai_initial_diagnosis, actor_type=system. The
 //     IncidentDetail SPA picks it up and renders prominently at the top.
 //
-// This is the "reactive AIOps �?proactive AIOps" move: instead of
+// This is the "reactive AIOps → proactive AIOps" move: instead of
 // waiting for on-call to type into /chat, the system investigates the
 // moment the incident is born.
 //
@@ -21,7 +21,7 @@
 //     investigator and the firing path is unchanged.
 //   - Investigations are bounded by a worker pool (default 3 workers + 100
 //     buffered jobs). Bursts above the buffer are dropped with a logged
-//     warning �?never block the alert ingestion path on a slow LLM.
+//     warning — never block the alert ingestion path on a slow LLM.
 //   - Each goroutine has its own 60s deadline derived from
 //     context.Background(), decoupled from the firing request context, so
 //     the firing HTTP/gRPC handler doesn't get held up by upstream LLM
@@ -62,7 +62,12 @@ const (
 // systemPrompt is the fixed system prompt sent on every investigation.
 // Kept Chinese to match the operator audience and terse so the LLM
 // reliably emits exactly the three asked-for paragraphs.
-const systemPrompt = `你是 ongrid AIOps 平台的资�?SRE 助手。下面是一条刚触发的告�?+ 它的关联数据�?请用 3 段话产出初查报告�?1. 一句话定性：现象 + 严重�?+ 影响范围�?2. 可能根因：基�?metric/log/trace 数据，列 1-3 个最可能的原因，每个一句话说明依据�?3. 立即可执行的排障步骤�?-5 条具体动作（命令 / 检查项 / 升级路径），按优先级排序�?
+const systemPrompt = `你是 ongrid AIOps 平台的资深 SRE 助手。下面是一条刚触发的告警 + 它的关联数据。
+请用 3 段话产出初查报告：
+1. 一句话定性：现象 + 严重度 + 影响范围。
+2. 可能根因：基于 metric/log/trace 数据，列 1-3 个最可能的原因，每个一句话说明依据。
+3. 立即可执行的排障步骤：3-5 条具体动作（命令 / 检查项 / 升级路径），按优先级排序。
+
 不要复述原始数据，要给判断和动作。简洁。`
 
 // EventWriter is the narrow alert-repo seam this package needs. The
@@ -163,7 +168,7 @@ func New(llmClient llm.Client, tools ToolInvoker, events EventWriter, cfg Config
 // with its own deadline derived from context.Background().
 //
 // When the queue is full (the worker pool is already saturated), the
-// job is dropped with a logged warning rather than blocking �?the alert
+// job is dropped with a logged warning rather than blocking — the alert
 // firing path must never wait on AI investigation.
 //
 // Safe to call on a nil receiver: returns immediately. This lets the
@@ -216,7 +221,7 @@ func (i *Investigator) workerLoop() {
 
 // runOne executes a single investigation. All errors log + return; we
 // never panic out of a worker, never write a partial event. The
-// dispatch context is decoupled from the caller �?the alert HTTP/gRPC
+// dispatch context is decoupled from the caller — the alert HTTP/gRPC
 // handler that triggered this firing has long since returned by the
 // time we get here.
 func (i *Investigator) runOne(incident *model.Incident) {
@@ -323,7 +328,7 @@ func (i *Investigator) gatherBundle(ctx context.Context, incidentID uint64) ([]b
 }
 
 // capUserMessage trims the bundle JSON if it exceeds the configured
-// cap. We don't try to preserve JSON validity on truncation �?the LLM
+// cap. We don't try to preserve JSON validity on truncation — the LLM
 // can read a slightly chopped JSON tail just fine, and the alternative
 // (parse + re-trim) is overkill for v1. We append an explicit marker so
 // the model knows the tail was cut.

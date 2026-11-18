@@ -58,7 +58,7 @@ type WebSearchProbe interface {
 
 // LLMRouterInvalidator drops the in-process LLM provider catalog cache
 // so the next chat call re-reads system_settings.llm.* rows. Wired to
-// *llm.MultiClient â€?used by the LLM settings UI's save flow so admin
+// *llm.MultiClient â€” used by the LLM settings UI's save flow so admin
 // edits propagate instantly instead of waiting up to 60s for the
 // router's TTL to roll over.
 type LLMRouterInvalidator interface {
@@ -88,13 +88,13 @@ type Handler struct {
 
 // NewHandler builds the handler. prom may be nil when ONGRID_PROM_ENABLED=false;
 // the test route then 503s instead of crashing. loki/tempo/webSearch probes
-// are optional â€?when nil the corresponding /test endpoint 503s.
+// are optional â€” when nil the corresponding /test endpoint 503s.
 func NewHandler(grafana GrafanaService, prom PromConfigProbe, loki URLProbe, tempo URLProbe, webSearch WebSearchProbe) *Handler {
 	return &Handler{grafana: grafana, prom: prom, loki: loki, tempo: tempo, webSearch: webSearch}
 }
 
 // SetLLMRouter wires the LLM provider catalog invalidator post-construction.
-// Optional â€?without it the /v1/integrations/llm/invalidate endpoint 503s,
+// Optional â€” without it the /v1/integrations/llm/invalidate endpoint 503s,
 // admin saves still take effect within the router's 60s TTL.
 func (h *Handler) SetLLMRouter(r LLMRouterInvalidator) { h.llmRouter = r }
 
@@ -104,17 +104,17 @@ func (h *Handler) SetLLMProbe(p LLMConfigProbe) { h.llmProbe = p }
 
 // Register attaches routes:
 //
-//	POST /v1/integrations/grafana/test           (admin)  â€?verify connectivity
-//	POST /v1/integrations/grafana/sync           (admin)  â€?push folder + datasource + dashboards
-//	POST /v1/integrations/grafana/sync-loki      (admin)  â€?push only the Loki datasource
-//	POST /v1/integrations/prom/test              (admin)  â€?run "up" PromQL probe
-//	POST /v1/integrations/llm/test               (admin)  â€?validate an unsaved provider tuple
-//	POST /v1/integrations/llm/validate-and-save  (admin)  â€?validate every model and atomically save
-//	GET  /v1/observability/dashboards/{uid}      (any auth user) â€?proxy Grafana dashboard JSON
+//	POST /v1/integrations/grafana/test           (admin)  â€” verify connectivity
+//	POST /v1/integrations/grafana/sync           (admin)  â€” push folder + datasource + dashboards
+//	POST /v1/integrations/grafana/sync-loki      (admin)  â€” push only the Loki datasource
+//	POST /v1/integrations/prom/test              (admin)  â€” run "up" PromQL probe
+//	POST /v1/integrations/llm/test               (admin)  â€” validate an unsaved provider tuple
+//	POST /v1/integrations/llm/validate-and-save  (admin)  â€” validate every model and atomically save
+//	GET  /v1/observability/dashboards/{uid}      (any auth user) â€” proxy Grafana dashboard JSON
 //
 // The dashboards proxy lives under /v1/observability rather than
 // /v1/integrations because it's a read path used by the Monitor page on
-// every user load â€?semantically a query, not an admin action â€?and we
+// every user load â€” semantically a query, not an admin action â€” and we
 // want the route to read like a noun, not a verb. Auth is plain bearer
 // (the manager middleware already gates this group).
 func (h *Handler) Register(r chi.Router) {
@@ -317,7 +317,7 @@ func (h *Handler) invalidateLLM(w http.ResponseWriter, r *http.Request) {
 //
 //	{ "dashboard": { "uid", "title", "panels": [...] }, "meta": {...} }
 //
-// We don't reshape â€?Monitor.tsx walks panels[] and Grafana's full
+// We don't reshape â€” Monitor.tsx walks panels[] and Grafana's full
 // schema is richer than we want to model in Go.
 func (h *Handler) fetchDashboard(w http.ResponseWriter, r *http.Request) {
 	if !h.requireUser(w, r) {

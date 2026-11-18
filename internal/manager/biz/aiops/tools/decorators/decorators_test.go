@@ -448,7 +448,8 @@ func TestTenantBind_SkipsWhenSchemaLacksTenantID(t *testing.T) {
 }
 
 // TestChain_RunsAllInOrder asserts the composed Wrap() applies all five
-// decorators in the documented order: tenant_bind â†?timeout â†?audit â†?// ratelimit â†?metric. We verify by observing each layer's side
+// decorators in the documented order: tenant_bind â†’ timeout â†’ audit â†’
+// ratelimit â†’ metric. We verify by observing each layer's side
 // effect after one successful call.
 func TestChain_RunsAllInOrder(t *testing.T) {
 	inner := &fakeTool{
@@ -488,7 +489,7 @@ func TestChain_RunsAllInOrder(t *testing.T) {
 	if got := mustCounter(t, reg, "ongrid_tool_invocations_total", "chain_tool", "success"); got != 1 {
 		t.Errorf("metric counter = %f, want 1", got)
 	}
-	// ratelimit: confirm by exhausting the limiter â€?set up a tight
+	// ratelimit: confirm by exhausting the limiter â€” set up a tight
 	// limiter and verify Wrap() includes it.
 	tightLim := NewTokenBucketLimiter(1)
 	tightWrapped := Wrap(&fakeTool{name: "tight_tool", result: "x"}, Deps{
@@ -505,7 +506,7 @@ func TestChain_RunsAllInOrder(t *testing.T) {
 
 func TestChain_TimeoutStillAudited(t *testing.T) {
 	// Audit start should fire before the timeout wrapper kicks in,
-	// proving the chain order â€?timeout outside audit means a
+	// proving the chain order â€” timeout outside audit means a
 	// chat_tool_calls row exists even on timeout.
 	inner := &fakeTool{
 		name:       "slow_tool",

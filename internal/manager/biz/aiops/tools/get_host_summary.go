@@ -86,7 +86,7 @@ func resolveHostDevice(ctx context.Context, devices *devicebiz.Usecase, id uint6
 //
 // Fan-out budget rationale: each inner already takes up to 30s
 // (hostSummaryCallTimeout), and runBatch keeps batchConcurrency=4 in
-// flight. With 16 ids the worst-case wall time is ~30s × �?6/4�?= 120s;
+// flight. With 16 ids the worst-case wall time is ~30s × ⌈16/4⌉ = 120s;
 // we set the outer to 90s as the practical cap (typical batches have
 // most ids returning fast since host_load + DB read are cheap when the
 // edge is online; the outer just prevents one slow edge from wedging
@@ -144,7 +144,7 @@ var GetHostSummaryBatchSchema = json.RawMessage(`{
       "items": {"type": "integer", "minimum": 1},
       "minItems": 0,
       "maxItems": 16,
-      "description": "设备 id 列表，一次最�?16 个，把它们的 metadata + host_load + 24h incidents 一次性全拿回来（省得逐台单独调）。【省略或留空 = 汇总全部主机（最�?16 个）】，适合「巡检 / 体检所有设备」这类不指定具体 id 的请求，无需先查设备清单�?
+      "description": "设备 id 列表，一次最多 16 个，把它们的 metadata + host_load + 24h incidents 一次性全拿回来（省得逐台单独调）。【省略或留空 = 汇总全部主机（最多 16 个）】，适合「巡检 / 体检所有设备」这类不指定具体 id 的请求，无需先查设备清单。"
     }
   }
 }`)
@@ -153,12 +153,12 @@ var GetHostSummaryBatchSchema = json.RawMessage(`{
 // large fleet doesn't blow past maxItems / the batch timeout in one call.
 const hostSummaryAllCap = 16
 
-// getHostSummaryWhenToUse �?batch-first routing hint (N+15).
-const getHostSummaryWhenToUse = "一次给多个 device_id，把它们�?metadata + host_load + 24h incidents 一次性全拿回来（省得逐台单独调）�? +
-	"想巡检 / 体检『所有』主机而不指定具体 id 时，device_ids 直接留空即可（自动汇总全部，最�?16 个）�? +
-	"�?get_host_load + get_incident_detail 各自批量更省 LLM 轮次（每�?incidents 只回 trimmed envelope）�? +
-	"NOT for: 单设备深查（�?host_bash + ps + journalctl�? 集群级聚合（�?rank_hosts�? " +
-	"诊断单个 incident �?metric+log+trace 关联（用 correlate_incident�? 列设备清单（�?query_devices）�?
+// getHostSummaryWhenToUse — batch-first routing hint (N+15).
+const getHostSummaryWhenToUse = "一次给多个 device_id，把它们的 metadata + host_load + 24h incidents 一次性全拿回来（省得逐台单独调）。" +
+	"想巡检 / 体检『所有』主机而不指定具体 id 时，device_ids 直接留空即可（自动汇总全部，最多 16 个）。" +
+	"比 get_host_load + get_incident_detail 各自批量更省 LLM 轮次（每条 incidents 只回 trimmed envelope）。" +
+	"NOT for: 单设备深查（用 host_bash + ps + journalctl）/ 集群级聚合（用 rank_hosts）/ " +
+	"诊断单个 incident 的 metric+log+trace 关联（用 correlate_incident）/ 列设备清单（用 query_devices）。"
 
 // Info returns metadata. Class=read.
 func (t *GetHostSummaryTool) Info(_ context.Context) (*basetool.ToolInfo, error) {
@@ -172,8 +172,8 @@ func (t *GetHostSummaryTool) Info(_ context.Context) (*basetool.ToolInfo, error)
 }
 
 // singleHostSummary runs the same stitch the closure executor runs:
-// resolve edge �?fetch roles �?optional host_load �?24h incidents +
-// plugin_status. Each sub-call is best-effort �?a slow Loki / offline
+// resolve edge → fetch roles → optional host_load → 24h incidents +
+// plugin_status. Each sub-call is best-effort — a slow Loki / offline
 // edge degrades gracefully into a partial summary, NOT an entry-level
 // Error. The only thing that turns into Error is "we can't even
 // identify the edge" (resolver failure).
@@ -259,7 +259,8 @@ func (t *GetHostSummaryTool) singleHostSummary(ctx context.Context, deviceID uin
 		}
 	}
 
-	// 摘要尚未查询插件配置/运行状态，不能把缺少观测误报为能力不支持�?	out["plugin_status"] = "not_queried"
+	// 摘要尚未查询插件配置/运行状态，不能把缺少观测误报为能力不支持。
+	out["plugin_status"] = "not_queried"
 	out["plugin_status_reason"] = "This summary does not query plugin configuration or runtime status. Do not infer disabled, unsupported, or unavailable telemetry."
 	entry.Summary = out
 	return entry
@@ -290,8 +291,8 @@ func (t *GetHostSummaryTool) InvokableRun(ctx context.Context, argsJSON string, 
 		in.DeviceIDs = append(in.DeviceIDs, host.ID)
 	}
 
-	// "All edges" mode: device_ids omitted/empty �?summarize every edge
-	// (capped). Lets "巡检所有设�? work without a separate list-devices step.
+	// "All edges" mode: device_ids omitted/empty → summarize every edge
+	// (capped). Lets "巡检所有设备" work without a separate list-devices step.
 	if len(in.DeviceIDs) == 0 {
 		ids, err := t.allHostDeviceIDs(ctx)
 		if err != nil {

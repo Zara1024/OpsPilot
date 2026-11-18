@@ -284,7 +284,7 @@ func TestEinoToolAdapter_MemoizesIdenticalReadCalls(t *testing.T) {
 	}
 }
 
-// Write/destructive tools are never memoized â€?the review/mutation flow
+// Write/destructive tools are never memoized â€” the review/mutation flow
 // must see every call.
 func TestEinoToolAdapter_DoesNotMemoizeWriteTool(t *testing.T) {
 	t.Parallel()
@@ -298,7 +298,7 @@ func TestEinoToolAdapter_DoesNotMemoizeWriteTool(t *testing.T) {
 	}
 }
 
-// A failed call stays retryable â€?the error envelope is not cached.
+// A failed call stays retryable â€” the error envelope is not cached.
 func TestEinoToolAdapter_DoesNotMemoizeErrors(t *testing.T) {
 	t.Parallel()
 	inner := &fakeBaseTool{name: "query_x", class: "read", runErr: errors.New("boom")}
@@ -330,7 +330,7 @@ func TestEinoToolAdapter_PerToolCallCap(t *testing.T) {
 	if got := inner.calls.Load(); got != int32(maxToolCallsPerRun) {
 		t.Fatalf("expected %d executions, got %d", maxToolCallsPerRun, got)
 	}
-	// One past the cap â†?directive, no execution.
+	// One past the cap â†’ directive, no execution.
 	out, _ := a.InvokableRun(ctx, `{"q":"over"}`)
 	if !strings.Contains(out, "call_budget_exceeded") {
 		t.Errorf("past the cap should return the budget directive, got %q", out)
@@ -676,7 +676,7 @@ func TestEinoToolAdapter_DraftConfigValidationFailedDoesNotConsumeConfirmableDra
 	}
 }
 
-// The single-tool WrapBaseTool path leaves memo nil â€?no caching.
+// The single-tool WrapBaseTool path leaves memo nil â€” no caching.
 func TestEinoToolAdapter_NoMemoByDefault(t *testing.T) {
 	t.Parallel()
 	inner := &fakeBaseTool{name: "query_x", class: "read", runResp: "ok"}

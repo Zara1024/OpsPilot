@@ -79,7 +79,7 @@ const cloudBashToolsDir = "/var/lib/ongrid/tools"
 
 // skillBinPATH returns a PATH that prepends every installed skill's bin dir
 // (skillsRoot/<pack>/bin) to the system default, so a CLI an extension ships
-// is callable from cloud_bash. Missing root / no bin dirs â†?the system PATH
+// is callable from cloud_bash. Missing root / no bin dirs â†’ the system PATH
 // unchanged. Order across packs is directory-listing order (stable enough; an
 // operator with colliding tool names across packs should rename).
 func skillBinPATH(skillsRoot string) string {
@@ -108,7 +108,8 @@ func skillBinPATH(skillsRoot string) string {
 
 // availableCredentialsHint returns a " (available: a, b)" suffix listing the
 // vault's credential names, for an error message when a cloud_bash credential
-// resolve misses. Empty string when listing fails or the vault is empty â€?// never blocks the real error. Names are not secret (values are).
+// resolve misses. Empty string when listing fails or the vault is empty â€”
+// never blocks the real error. Names are not secret (values are).
 func availableCredentialsHint(ctx context.Context, secretUC *managerbizsecret.Usecase) string {
 	if secretUC == nil {
 		return ""
@@ -129,7 +130,7 @@ func availableCredentialsHint(ctx context.Context, secretUC *managerbizsecret.Us
 	return " (available credentials: " + strings.Join(names, ", ") + ")"
 }
 
-// aiopstools.CloudBashProposer seam â€?the cloud_bash tool calls
+// aiopstools.CloudBashProposer seam â€” the cloud_bash tool calls
 // ProposeAndAwait to queue a command, surface the inline card, then block on
 // the human decision and get back the real result (HLD-021).
 type CloudBashProposer struct{ Usecase *managerbizapproval.Usecase }
@@ -137,7 +138,7 @@ type CloudBashProposer struct{ Usecase *managerbizapproval.Usecase }
 func (s CloudBashProposer) ProposeAndAwait(ctx context.Context, command string, credentials []string, sessionID, toolCallID string, userID uint64) (string, error) {
 	title := command
 	if len(title) > 100 {
-		title = title[:100] + "â€?
+		title = title[:100] + "â€¦"
 	}
 	a, err := s.Usecase.Propose(ctx, managerbizapproval.ProposeInput{
 		RuntimeVersion: string(aiopschatruntime.VersionFromContext(ctx)),
@@ -157,7 +158,7 @@ func (s CloudBashProposer) ProposeAndAwait(ctx context.Context, command string, 
 	// blob (HLD-021: it blocks, then returns the real output), so the card is
 	// driven by this frame. ToolCallID lets the SPA render it AS the tool
 	// call's existing streaming card (single card). Best-effort: a blocking
-	// (non-SSE) caller has no emitter â€?the card just won't show, but the
+	// (non-SSE) caller has no emitter â€” the card just won't show, but the
 	// approval still sits in the inbox.
 	if emit := aiopschatruntime.EmitFromContext(ctx); emit != nil {
 		emit(aiopschatruntime.Event{
@@ -187,7 +188,7 @@ func (s HostBashProposer) ProposeAndAwait(ctx context.Context, deviceIDs []uint6
 		summary += "\nHuman approval bypasses the Edge command policy for this command only.\n" + policyReason
 	}
 	if len(title) > 100 {
-		title = title[:100] + "â€?
+		title = title[:100] + "â€¦"
 	}
 	a, err := s.Usecase.Propose(ctx, managerbizapproval.ProposeInput{
 		RuntimeVersion: string(aiopschatruntime.VersionFromContext(ctx)),
@@ -231,7 +232,7 @@ func (s CloudBashProposer) awaitDecision(ctx context.Context, id string) (string
 		case <-ticker.C:
 			a, err := s.Usecase.Get(ctx, id)
 			if err != nil {
-				continue // transient read error â€?keep polling
+				continue // transient read error â€” keep polling
 			}
 			switch a.Status {
 			case "executed", "failed":
@@ -261,13 +262,13 @@ type installSkillPayload struct {
 }
 
 // InstallSkillProposer queues a skill install into the human approval
-// inbox â€?same propose-confirm model as cloud_bash.
+// inbox â€” same propose-confirm model as cloud_bash.
 type InstallSkillProposer struct{ Usecase *managerbizapproval.Usecase }
 
 func (s InstallSkillProposer) ProposeInstall(ctx context.Context, url, sourceType, ref, sessionID string, userID uint64) (string, error) {
 	title := "install skill: " + url
 	if len(title) > 120 {
-		title = title[:120] + "â€?
+		title = title[:120] + "â€¦"
 	}
 	a, err := s.Usecase.Propose(ctx, managerbizapproval.ProposeInput{
 		RuntimeVersion: string(aiopschatruntime.VersionFromContext(ctx)),
@@ -304,7 +305,7 @@ func (s MCPCaller) CallMCPTool(ctx context.Context, server, tool string, args ma
 }
 
 // MCPProposer queues an MCP call into the human approval inbox (default,
-// untrusted path) â€?same propose-confirm model as cloud_bash.
+// untrusted path) â€” same propose-confirm model as cloud_bash.
 type MCPProposer struct {
 	Usecase *managerbizapproval.Usecase
 	MCP     *managerbizmcp.Usecase
@@ -325,7 +326,7 @@ func (s MCPProposer) ProposeMCPCallAndAwait(ctx context.Context, server, tool st
 	}
 	cmd := server + " / " + tool + " " + string(argsJSON)
 	if len(cmd) > 200 {
-		cmd = cmd[:200] + "â€?
+		cmd = cmd[:200] + "â€¦"
 	}
 	a, err := s.Usecase.Propose(ctx, managerbizapproval.ProposeInput{
 		RuntimeVersion: string(aiopschatruntime.VersionFromContext(ctx)),

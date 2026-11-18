@@ -37,7 +37,7 @@ func (a ChatMentionResolver) Resolve(ctx context.Context, in []contract.Mention)
 // chatruntime (chatruntime already depends on tools/basetool), so this
 // shim lives at the wiring site where both packages are visible.
 //
-// â€?the AgentTool / SendMessage / TaskStop trio talk
+// â€” the AgentTool / SendMessage / TaskStop trio talk
 // through this shim; the shim translates between the seam-side request
 // shape (tools.SpawnWorkerRequest) and the kernel's native shape
 // (chatruntime.SpawnRequest), and threads the per-request streaming
@@ -141,7 +141,7 @@ func workerToHandle(w *contract.Worker) *aiopstools.WorkerHandle {
 
 // AgentRegistry adapts *chatruntime.AgentRegistry to the local
 // tools.SubagentRegistry seam. AgentTool only needs to validate
-// that a subagent_type exists at args-parse time â€?see agent_tool.go.
+// that a subagent_type exists at args-parse time â€” see agent_tool.go.
 type AgentRegistry struct {
 	Inner *aiopschatruntime.AgentRegistry
 }

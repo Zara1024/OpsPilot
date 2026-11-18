@@ -1,7 +1,7 @@
 // Package mcp is the biz tier for external MCP server registrations
 // (HLD-018). It owns CRUD validation, credential resolution (it pulls the
 // referenced vault credential's fields and expands them into the HTTP header
-// template), and the connection probe (initialize �?tools/list) whose result
+// template), and the connection probe (initialize → tools/list) whose result
 // is cached back onto the row.
 package mcp
 
@@ -87,7 +87,9 @@ func NewUsecase(repo Repo, secrets SecretResolver, log *slog.Logger) *Usecase {
 		callSlots: make(chan struct{}, 2), commitGate: make(chan struct{}, 1), latestProbe: make(map[uint64]uint64), manualProbes: make(map[uint64]int)}
 }
 
-// RegistrationChanges 唤醒唯一的发�?supervisor。合并连续变更，由消费者重新读�?// 最新注册表；不�?HTTP 请求中等待远端连接，也不为每次保存启�?goroutine�?func (u *Usecase) RegistrationChanges() <-chan struct{} { return u.registrationChanges }
+// RegistrationChanges 唤醒唯一的发现 supervisor。合并连续变更，由消费者重新读取
+// 最新注册表；不在 HTTP 请求中等待远端连接，也不为每次保存启动 goroutine。
+func (u *Usecase) RegistrationChanges() <-chan struct{} { return u.registrationChanges }
 
 func (u *Usecase) notifyRegistrationChanged() {
 	select {
@@ -197,7 +199,7 @@ func (u *Usecase) Get(ctx context.Context, id uint64) (*model.Server, error) {
 // List returns all registered servers.
 func (u *Usecase) List(ctx context.Context) ([]*model.Server, error) { return u.repo.List(ctx) }
 
-// ListEnabled returns the enabled servers �?boot connects to these to pull
+// ListEnabled returns the enabled servers — boot connects to these to pull
 // tools and register them into the agent toolbag.
 func (u *Usecase) ListEnabled(ctx context.Context) ([]*model.Server, error) {
 	all, err := u.repo.List(ctx)
@@ -338,7 +340,7 @@ func (u *Usecase) BuildClient(ctx context.Context, s *model.Server) (*mcpclient.
 	return mcpclient.NewHTTP(s.Endpoint, headers, 0), nil
 }
 
-// TestConnection probes the server (initialize �?tools/list) and caches the
+// TestConnection probes the server (initialize → tools/list) and caches the
 // outcome. On success it stores the tools snapshot + status "ok"; on failure
 // it records status "error" with the error message and returns the error.
 func (u *Usecase) TestConnection(ctx context.Context, id uint64) ([]mcpclient.Tool, error) {
@@ -355,14 +357,16 @@ func (u *Usecase) refreshConnection(ctx context.Context, id uint64, forcePublish
 		return nil, err
 	}
 	// 后台刷新不能废弃用户正在执行的连接验证。手动验证负责发布结果，
-	// 后台稍后仍会轮询；重复手动请求继续沿用最新请求优先的语义�?	if !forcePublish && u.manualProbes[id] > 0 {
+	// 后台稍后仍会轮询；重复手动请求继续沿用最新请求优先的语义。
+	if !forcePublish && u.manualProbes[id] > 0 {
 		u.leaveCommit()
 		return nil, nil
 	}
 	if forcePublish {
 		u.manualProbes[id]++
 		defer func() {
-			// 这是内存锁的资源清理，不执行 IO；请求取消后也必须归还计数�?			u.commitGate <- struct{}{}
+			// 这是内存锁的资源清理，不执行 IO；请求取消后也必须归还计数。
+			u.commitGate <- struct{}{}
 			defer u.leaveCommit()
 			u.manualProbes[id]--
 			if u.manualProbes[id] == 0 {

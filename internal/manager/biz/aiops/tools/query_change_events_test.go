@@ -75,7 +75,7 @@ func TestQueryChangeEventsTool_Defaults(t *testing.T) {
 	anchor := time.Date(2026, 5, 22, 1, 0, 0, 0, time.UTC)
 	fake := &fakeAuditLister{}
 	tool := NewQueryChangeEventsTool(fake, nil)
-	// no window_minutes / limit �?defaults (±30m, 50)
+	// no window_minutes / limit → defaults (±30m, 50)
 	if _, err := tool.InvokableRun(context.Background(), `{"around_ts":"`+anchor.Format(time.RFC3339)+`"}`); err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}

@@ -17,7 +17,7 @@ import (
 // scriptedState is the shared mutable bookkeeping for scriptedChatModel
 // instances. eino's ToolCallingChatModel.WithTools returns a *new*
 // instance with tools bound, which means the test must share counters /
-// reply pointers between the original and any derived instance �?the
+// reply pointers between the original and any derived instance — the
 // inner ReAct agent calls .WithTools then dispatches to the new copy.
 type scriptedState struct {
 	mu            sync.Mutex
@@ -34,7 +34,7 @@ type scriptedState struct {
 // returns the last reply (so loops with MaxIterations work as expected).
 //
 // Multiple scriptedChatModel instances may share a single *scriptedState
-// (eino's WithTools copies the receiver) �?counters must therefore be
+// (eino's WithTools copies the receiver) — counters must therefore be
 // stored on the shared state, not the wrapping instance.
 type scriptedChatModel struct {
 	st *scriptedState
@@ -273,9 +273,9 @@ func TestAssembleMessages_AgentReminderAndDynamicHints(t *testing.T) {
 		SystemPrompt:     "agent rules",
 		UserText:         "继续诊断",
 		WebSearchEnabled: true,
-		AgentReminder:    "结论先于过程，最多列 3 条假�?,
+		AgentReminder:    "结论先于过程，最多列 3 条假设",
 		DynamicHints: []string{
-			"注意: query_logql 已连续失�?2 次，请换工具或要求用户澄�?,
+			"注意: query_logql 已连续失败 2 次，请换工具或要求用户澄清",
 			"已经跑了 22 轮，如不能在下一轮给出最终回答应当总结当前已知信息回答用户",
 		},
 	}
@@ -290,10 +290,10 @@ func TestAssembleMessages_AgentReminderAndDynamicHints(t *testing.T) {
 	if !strings.Contains(rem, "结论先于过程") {
 		t.Errorf("reminder missing AgentReminder bullet: %q", rem)
 	}
-	if !strings.Contains(rem, "query_logql 已连续失�?2 �?) {
+	if !strings.Contains(rem, "query_logql 已连续失败 2 次") {
 		t.Errorf("reminder missing dynamic-hint failure bullet: %q", rem)
 	}
-	if !strings.Contains(rem, "已经跑了 22 �?) {
+	if !strings.Contains(rem, "已经跑了 22 轮") {
 		t.Errorf("reminder missing dynamic-hint iteration bullet: %q", rem)
 	}
 	// web_search ON -> the disabled-note bullet must NOT be present.
@@ -319,17 +319,17 @@ func TestAssembleMessages_LocaleDirective(t *testing.T) {
 
 	// zh-CN: Chinese directive instead.
 	zh, _ := assembleMessages(&Input{SystemPrompt: "agent rules", UserText: "状态？", Locale: "zh-CN"})
-	if !strings.Contains(zh[0].Content, "用中文回�?) {
+	if !strings.Contains(zh[0].Content, "用中文回复") {
 		t.Errorf("zh system message should append the Chinese directive: %q", zh[0].Content)
 	}
 
 	// empty locale: no directive at all (back-compat for non-SPA callers
-	// like the IM bridge �?system prompt is left exactly as-is).
+	// like the IM bridge — system prompt is left exactly as-is).
 	none, _ := assembleMessages(&Input{SystemPrompt: "agent rules", UserText: "x"})
 	if none[0].Content != "agent rules" {
 		t.Errorf("empty locale must not alter the system prompt: %q", none[0].Content)
 	}
-	if strings.Contains(none[1].Content, "Respond in English") || strings.Contains(none[1].Content, "用中文回�?) {
+	if strings.Contains(none[1].Content, "Respond in English") || strings.Contains(none[1].Content, "用中文回复") {
 		t.Errorf("empty locale reminder must carry no language directive: %q", none[1].Content)
 	}
 }

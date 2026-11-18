@@ -107,7 +107,8 @@ func NewQueryPromQLTool(p PromQuerier, log *slog.Logger) *QueryPromQLTool {
 }
 
 // queryPromQLWhenToUse is the routing hint shown to the LLM under a
-// "When to use" header in the system prompt. + â€?// kept distinct from the Description field so skill manifests can
+// "When to use" header in the system prompt. + â€”
+// kept distinct from the Description field so skill manifests can
 // override one without rewriting the other.
 const queryPromQLWhenToUse = "When the user asks about metric values, time-series trends, " +
 	"per-edge resource usage, or anything that boils down to a Prometheus range query. " +
@@ -117,8 +118,8 @@ const queryPromQLWhenToUse = "When the user asks about metric values, time-serie
 	"Prefer query_promql over the narrower get_host_load / get_host_processes when the " +
 	"question spans more than one host or asks for derivatives / aggregates."
 
-// Info returns the tool metadata. â€?Info is pure (no I/O).
-// The Class field marks this as "read" â€?query_promql never mutates
+// Info returns the tool metadata. â€” Info is pure (no I/O).
+// The Class field marks this as "read" â€” query_promql never mutates
 // state, so it's exempt from any future destructive-action gating.
 func (t *QueryPromQLTool) Info(_ context.Context) (*basetool.ToolInfo, error) {
 	return &basetool.ToolInfo{

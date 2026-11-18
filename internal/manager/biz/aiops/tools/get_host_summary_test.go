@@ -174,7 +174,8 @@ func TestHostSummaryKeepsHostIncidentIdentityAcrossInstallations(t *testing.T) {
 	}
 }
 
-// 在线/离线都不能把未查询的插件状态解释成不支持；版本只能归属�?Edge�?func TestGetHostSummaryTool_VersionAndPluginEvidence(t *testing.T) {
+// 在线/离线都不能把未查询的插件状态解释成不支持；版本只能归属于 Edge。
+func TestGetHostSummaryTool_VersionAndPluginEvidence(t *testing.T) {
 	for _, status := range []string{edgemodel.StatusOnline, edgemodel.StatusOffline} {
 		t.Run(string(status), func(t *testing.T) {
 			hostID := uint64(91)

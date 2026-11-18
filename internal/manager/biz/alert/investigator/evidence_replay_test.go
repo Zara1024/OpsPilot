@@ -13,8 +13,8 @@ import (
 	"github.com/Zara1024/OpsPilot/internal/pkg/llm"
 )
 
-const replayNarrative = "应用内存�?80% 上涨�?95%，内核日志确认发�?OOM，根因为应用内存泄漏�?
-const replayExtraction = `{"root_cause":"应用内存泄漏触发 OOM，导致服务异常�?,"root_cause_source_ids":["E1","E2"],"evidence":[{"summary":"内存使用率从 80% 上涨�?95%�?,"source_ids":["E1"],"tool":"query_promql"},{"summary":"内核日志确认发生 OOM�?,"source_ids":["E2"],"tool":"query_logql"}],"suggested_actions":[{"label":"重试内核日志查询，并采集堆内存数据�?,"category":"observe","danger":"none"}],"confidence":0.95}`
+const replayNarrative = "应用内存从 80% 上涨到 95%，内核日志确认发生 OOM，根因为应用内存泄漏。"
+const replayExtraction = `{"root_cause":"应用内存泄漏触发 OOM，导致服务异常。","root_cause_source_ids":["E1","E2"],"evidence":[{"summary":"内存使用率从 80% 上涨到 95%。","source_ids":["E1"],"tool":"query_promql"},{"summary":"内核日志确认发生 OOM。","source_ids":["E2"],"tool":"query_logql"}],"suggested_actions":[{"label":"重试内核日志查询，并采集堆内存数据。","category":"observe","danger":"none"}],"confidence":0.95}`
 
 func replayInputs() (*Usecase, *evidenceReaderFake, *fakeSummarizer, alertmodel.Incident) {
 	metrics := evidenceCall("metrics-db-id", "query_promql", "success", `{"resultType":"matrix","result":[{"metric":{"device_id":"42","service_name":"checkout-api"},"values":[[1793772000,"80"],[1793773200,"95"]]}]}`)

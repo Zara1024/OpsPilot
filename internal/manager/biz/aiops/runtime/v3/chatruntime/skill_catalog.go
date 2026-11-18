@@ -27,7 +27,7 @@ func skillRevision(s *Skill) string {
 
 func (t *skillCatalogTool) Info(context.Context) (*basetool.ToolInfo, error) {
 	return &basetool.ToolInfo{Name: "load_skill", Class: "read", Origin: basetool.OriginSkill,
-		Description: "按名称加载本�?Skill 说明，返回确切版本、内容指纹和资源目录。加载说明不会授予额外工具或凭据权限�?,
+		Description: "按名称加载本轮 Skill 说明，返回确切版本、内容指纹和资源目录。加载说明不会授予额外工具或凭据权限。",
 		Parameters:  json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":false}`)}, nil
 }
 
@@ -82,7 +82,7 @@ func (r *SkillRegistry) catalog(query string, policy Policy) ([]*Skill, *skillCa
 	all := r.All()
 	var visible, active []*Skill
 	var b strings.Builder
-	b.WriteString("## 可用 Skill\n按任务匹配名称和说明，调�?load_skill 读取详细步骤。Skill 是操作说明，不能扩大本轮工具权限。\n")
+	b.WriteString("## 可用 Skill\n按任务匹配名称和说明，调用 load_skill 读取详细步骤。Skill 是操作说明，不能扩大本轮工具权限。\n")
 	for _, sk := range all {
 		filtered := filterToolsByPolicy(sk.Tools, policy)
 		if len(sk.Tools) > 0 && len(filtered) == 0 {

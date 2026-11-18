@@ -18,7 +18,7 @@ import (
 // AuditDeps configures the audit handler. Logger is required (a nil
 // logger turns the handler into a no-op so the cutover layer can opt
 // in/out per environment). SessionID is the chat session this run
-// belongs to â€?included in every log line so operators can grep all
+// belongs to â€” included in every log line so operators can grep all
 // stages of one conversation. UserID is logged as a numeric scope.
 type AuditDeps struct {
 	Logger    *slog.Logger
@@ -28,7 +28,7 @@ type AuditDeps struct {
 
 // AuditHandler emits structured slog INFO records for every stage of
 // the graph: per-ChatModel turn (prompt token estimate + reply tokens),
-// per-tool call (name + duration + status). spec â€?and
+// per-tool call (name + duration + status). spec â€” and
 // / çº¢çº¿: the user's raw prompt content is NEVER
 // included in the log line; only counts and identifiers.
 //
@@ -104,7 +104,7 @@ func (h *AuditHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, inp
 		if tin := einotool.ConvCallbackInput(input); tin != nil {
 			args = tin.ArgumentsInJSON
 		}
-		// Log args size, not args content â€?the args may carry user-
+		// Log args size, not args content â€” the args may carry user-
 		// authored text (PromQL / LogQL queries) that
 		// forbids us from logging in cleartext.
 		h.deps.Logger.Info("graph stage start",

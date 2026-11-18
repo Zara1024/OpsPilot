@@ -112,7 +112,7 @@ func (s *fakeSpawner) SpawnWorker(ctx context.Context, req chatruntime.SpawnRequ
 
 func (s *fakeSpawner) StopWorker(_ context.Context, _ string) error { return nil }
 
-// TestEnqueue_DisabledByDefault â€?when cfg.Enabled is false, Enqueue
+// TestEnqueue_DisabledByDefault â€” when cfg.Enabled is false, Enqueue
 // does nothing: no repo writes, no spawner calls. Default-off is the
 // production contract.
 func TestEnqueue_DisabledByDefault(t *testing.T) {
@@ -144,7 +144,7 @@ func TestResolveLocaleFallsBackToRequestThenDeploymentDefault(t *testing.T) {
 	}
 }
 
-// TestEnqueue_SkipsBelowSeverityFloor â€?info-level alerts pass the
+// TestEnqueue_SkipsBelowSeverityFloor â€” info-level alerts pass the
 // disabled check (Enabled=true) but fail the severity gate.
 func TestEnqueue_SkipsBelowSeverityFloor(t *testing.T) {
 	repo := &fakeRepo{}
@@ -155,14 +155,14 @@ func TestEnqueue_SkipsBelowSeverityFloor(t *testing.T) {
 	}
 }
 
-// TestEnqueue_ParallelDistinctIncidents â€?distinct incident_ids on the
+// TestEnqueue_ParallelDistinctIncidents â€” distinct incident_ids on the
 // same (rule, device) tuple BOTH get rows. Replaces the prior
 // TestEnqueue_SkipsOnDedup: the per-(rule, device, window) gate was
 // removed 2026-05-19; each new incident_id is a fresh failure event
 // and gets its own analysis. DB uniqueness on incident_id still
 // prevents double-spawn for the same incident.
 func TestEnqueue_ParallelDistinctIncidents(t *testing.T) {
-	repo := &fakeRepo{recently: true} // simulated "recent" â€?should be ignored
+	repo := &fakeRepo{recently: true} // simulated "recent" â€” should be ignored
 	uc := NewUsecase(repo, &fakeSpawner{}, nil, Config{Enabled: true}, nil)
 	uc.Enqueue(context.Background(), &alertmodel.Incident{ID: 1, Rule: "cpu_high", Severity: "critical"})
 	uc.Enqueue(context.Background(), &alertmodel.Incident{ID: 2, Rule: "cpu_high", Severity: "critical"})
@@ -171,7 +171,7 @@ func TestEnqueue_ParallelDistinctIncidents(t *testing.T) {
 	}
 }
 
-// TestEnqueue_ConcurrencyCap â€?over the cap, surplus enqueues land as
+// TestEnqueue_ConcurrencyCap â€” over the cap, surplus enqueues land as
 // status=skipped rows with a reason rather than queueing. The
 // spawner.wait keeps the first batch in-flight long enough that the
 // next Enqueue trips the cap.
@@ -185,7 +185,7 @@ func TestEnqueue_ConcurrencyCap(t *testing.T) {
 		Enabled:       true,
 		MaxConcurrent: 2,
 	}, nil)
-	// Three incidents, cap = 2 â†?third should be skipped immediately.
+	// Three incidents, cap = 2 â†’ third should be skipped immediately.
 	for id := uint64(1); id <= 3; id++ {
 		uc.Enqueue(context.Background(), &alertmodel.Incident{
 			ID: id, Rule: "cpu_high", Severity: "critical",
@@ -208,7 +208,7 @@ func TestEnqueue_ConcurrencyCap(t *testing.T) {
 	}
 }
 
-// TestEnqueue_HappyPath â€?gate passes, row created, worker spawned,
+// TestEnqueue_HappyPath â€” gate passes, row created, worker spawned,
 // final answer is preserved; missing extraction never invents a root cause.
 func TestEnqueue_HappyPath(t *testing.T) {
 	repo := &fakeRepo{}
@@ -269,7 +269,7 @@ func TestEnqueue_HappyPath(t *testing.T) {
 	}
 }
 
-// TestEnqueue_WorkerError â€?when SpawnWorker returns an error the row
+// TestEnqueue_WorkerError â€” when SpawnWorker returns an error the row
 // flips to failed with the error string.
 func TestEnqueue_WorkerError(t *testing.T) {
 	repo := &fakeRepo{}
@@ -304,7 +304,7 @@ func TestEnqueue_WorkerError(t *testing.T) {
 	}
 }
 
-// TestSeverityRank â€?sanity for the severity floor logic. Unknown
+// TestSeverityRank â€” sanity for the severity floor logic. Unknown
 // values default to 'warning' rank so existing rules without an
 // explicit severity still trip a default-warning floor.
 func TestSeverityRank(t *testing.T) {

@@ -218,9 +218,9 @@ func NewRankHostsTool(promQuery PromQuerier, devices hostRankDevices, log *slog.
 	return &RankHostsTool{promQuery: promQuery, devices: devices, log: log}
 }
 
-// rankHostsWhenToUse �?top/bottom-N pivot for closed-set host metrics.
+// rankHostsWhenToUse — top/bottom-N pivot for closed-set host metrics.
 const rankHostsWhenToUse = "When the user wants the TOP-N or BOTTOM-N hosts ranked by a closed-set metric " +
-	"(cpu / mem / disk / load / composite). Example: '帮我找出最忙的 5 台机�?. " +
+	"(cpu / mem / disk / load / composite). Example: '帮我找出最忙的 5 台机器'. " +
 	"NOT for outlier detection / who's anomalously deviating (use find_outlier_hosts). " +
 	"NOT for general PromQL ranking on free-form metrics (use query_promql with topk/bottomk). " +
 	"NOT for a single host's stats (use get_host_load)."

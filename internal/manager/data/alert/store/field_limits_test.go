@@ -22,7 +22,7 @@ import (
 	"github.com/Zara1024/OpsPilot/internal/pkg/promquery"
 )
 
-func newFieldLimitsRepo(t *testing.T, dialect string) *Repo {
+func newDialectTestRepo(t *testing.T, dialect string) *Repo {
 	t.Helper()
 	if dialect == "sqlite" {
 		repo := newTestRepo(t)
@@ -33,24 +33,28 @@ func newFieldLimitsRepo(t *testing.T, dialect string) *Repo {
 	}
 	dsn := os.Getenv("ONGRID_TEST_MYSQL_DSN")
 	if dsn == "" {
-		t.Skip("set ONGRID_TEST_MYSQL_DSN to run MySQL field length regression")
+		t.Skip("set ONGRID_TEST_MYSQL_DSN to run MySQL alert store tests")
 	}
 	cfg, err := driver.ParseDSN(dsn)
 	require.NoError(t, err)
+	cfg.DBName = ""
 	cfg.ParseTime = true
-	adminDB, err := gorm.Open(mysql.Open(cfg.FormatDSN()), &gorm.Config{Logger: logger.Discard})
+	if cfg.Params == nil {
+		cfg.Params = map[string]string{}
+	}
+	cfg.Params["sql_mode"] = "'STRICT_ALL_TABLES,NO_ENGINE_SUBSTITUTION'"
+	quiet := &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)}
+	admin, err := gorm.Open(mysql.Open(cfg.FormatDSN()), quiet)
 	require.NoError(t, err)
-	schema := "ongrid_test_alert_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
-	require.NoError(t, adminDB.Exec("CREATE DATABASE `" + schema + "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci").Error)
+	adminSQL, err := admin.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, adminSQL.Close()) })
+	cfg.DBName = "ongrid_alert_test_" + uuid.New().String()
+	require.NoError(t, admin.Exec("CREATE DATABASE `"+cfg.DBName+"` CHARACTER SET utf8mb4").Error)
 	t.Cleanup(func() {
-		_ = adminDB.Exec("DROP DATABASE IF EXISTS `" + schema + "`").Error
-		sqlDB, _ := adminDB.DB()
-		if sqlDB != nil {
-			_ = sqlDB.Close()
-		}
+		require.NoError(t, admin.Exec("DROP DATABASE `"+cfg.DBName+"`").Error)
 	})
-	cfg.DBName = schema
-	db, err := gorm.Open(mysql.Open(cfg.FormatDSN()), &gorm.Config{Logger: logger.Discard})
+	db, err := gorm.Open(mysql.Open(cfg.FormatDSN()), quiet)
 	require.NoError(t, err)
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
@@ -62,14 +66,14 @@ func newFieldLimitsRepo(t *testing.T, dialect string) *Repo {
 func TestAlertFieldLimits(t *testing.T) {
 	for _, dialect := range []string{"sqlite", "mysql"} {
 		t.Run(dialect, func(t *testing.T) {
-			repo := newFieldLimitsRepo(t, dialect)
+			repo := newDialectTestRepo(t, dialect)
 			for _, tc := range []struct {
 				name, title, key, wantTitle string
 			}{
 				{"empty_title", "", "short", ""},
-				{"at_limits", strings.Repeat("ä¸?, 256), strings.Repeat("é”?, 191), strings.Repeat("ä¸?, 256)},
-				{"over_limits", strings.Repeat("è­?, 257), strings.Repeat("k", 191) + "a", strings.Repeat("è­?, 255) + "â€?},
-				{"distinct_suffix", strings.Repeat("ðŸš¨", 257), strings.Repeat("k", 191) + "b", strings.Repeat("ðŸš¨", 255) + "â€?},
+				{"at_limits", strings.Repeat("ä¸­", 256), strings.Repeat("é”®", 191), strings.Repeat("ä¸­", 256)},
+				{"over_limits", strings.Repeat("è­¦", 257), strings.Repeat("k", 191) + "a", strings.Repeat("è­¦", 255) + "â€¦"},
+				{"distinct_suffix", strings.Repeat("ðŸš¨", 257), strings.Repeat("k", 191) + "b", strings.Repeat("ðŸš¨", 255) + "â€¦"},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					ctx := t.Context()
@@ -99,12 +103,12 @@ func TestAlertFieldLimits(t *testing.T) {
 					require.NoError(t, err)
 					require.Len(t, events, 1)
 					require.Equal(t, tc.wantTitle, events[0].Title)
-					in.Title = strings.Repeat("æ–?, 257)
+					in.Title = strings.Repeat("æ–°", 257)
 					in.DedupeKey = tc.key
 					require.NoError(t, repo.UpdateIncident(ctx, in))
 					got, err := repo.GetIncidentByDedupeKey(ctx, tc.key)
 					require.NoError(t, err)
-					require.Equal(t, strings.Repeat("æ–?, 255)+"â€?, got.Title)
+					require.Equal(t, strings.Repeat("æ–°", 255)+"â€¦", got.Title)
 					require.Equal(t, fullSummary, got.Summary)
 				})
 			}
@@ -133,7 +137,7 @@ func (n *fieldLimitsNotifier) SendVia(ctx context.Context, msg notify.Message, _
 func TestPipelineLongLabelsLifecycle(t *testing.T) {
 	for _, dialect := range []string{"sqlite", "mysql"} {
 		t.Run(dialect, func(t *testing.T) {
-			repo := newFieldLimitsRepo(t, dialect)
+			repo := newDialectTestRepo(t, dialect)
 			uc := biz.NewUsecase(repo, nil)
 			now := time.Now().UTC()
 			// Synthetic GPU labels reproduce #510 without using production identifiers.
@@ -224,10 +228,10 @@ func TestPipelineLongLabelsLifecycle(t *testing.T) {
 }
 
 func TestLegacyLongDedupeKeyRemainsReachable(t *testing.T) {
-	repo := newFieldLimitsRepo(t, "sqlite")
+	repo := newDialectTestRepo(t, "sqlite")
 	ctx := t.Context()
 	key := "pipeline:gpu_xid:" + strings.Repeat("legacy-label", 30)
-	legacy := &model.Incident{Title: strings.Repeat("æ—?, 300), Rule: "gpu_xid", ScopeType: "global", Severity: "critical",
+	legacy := &model.Incident{Title: strings.Repeat("æ—§", 300), Rule: "gpu_xid", ScopeType: "global", Severity: "critical",
 		DedupeKey: key, Status: model.IncidentStatusOpen, EventCount: 1}
 	// Existing SQLite databases could store keys beyond MySQL's column limit.
 	require.NoError(t, repo.db.Create(legacy).Error)
@@ -242,6 +246,6 @@ func TestLegacyLongDedupeKeyRemainsReachable(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, events, 2)
 	for _, ev := range events {
-		require.Equal(t, strings.Repeat("æ—?, 255)+"â€?, ev.Title)
+		require.Equal(t, strings.Repeat("æ—§", 255)+"â€¦", ev.Title)
 	}
 }

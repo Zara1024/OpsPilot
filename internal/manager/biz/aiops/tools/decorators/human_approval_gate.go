@@ -95,7 +95,7 @@ func requiresHumanApproval(info *basetool.ToolInfo) bool {
 func approvalSummary(toolName, argsJSON string) string {
 	args := strings.TrimSpace(argsJSON)
 	if len(args) > 500 {
-		args = args[:500] + "â€?
+		args = args[:500] + "â€¦"
 	}
 	if args == "" {
 		args = "{}"

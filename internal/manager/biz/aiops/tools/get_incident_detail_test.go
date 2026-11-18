@@ -76,7 +76,7 @@ func TestGetIncidentDetailTool_BatchPartialSuccess(t *testing.T) {
 			42: {ID: 42, Title: "x", Severity: "warning", Status: "open",
 				DeviceID: &deviceID, FirstFiredAt: now, LastFiredAt: now,
 				LabelsJSON: "{}", AnnotationsJSON: "{}"},
-			// 99 absent â†?not found.
+			// 99 absent â†’ not found.
 		},
 	}
 	tool := NewGetIncidentDetailTool(uc, nil)

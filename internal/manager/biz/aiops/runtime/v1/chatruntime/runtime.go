@@ -1,5 +1,5 @@
 // runtime.go is the in-process orchestration entry the new graph-based
-// agent path goes through. PR-9 of �?the cutover layer that
+// agent path goes through. PR-9 of — the cutover layer that
 // pre-PR-9 callers (legacy agent.go) bypass entirely. After this PR
 // the manager's HTTP service can pick which path runs based on the
 // ONGRID_AGENT_KERNEL feature flag (default = legacy).
@@ -7,13 +7,13 @@
 // Responsibilities:
 //
 //  1. Ownership check (caller user_id == session.user_id; admin bypass
-//     happens upstream �?by the time Handle is called the service has
+//     happens upstream — by the time Handle is called the service has
 //     already resolved the owning user_id).
 //  2. Skill resolution against the user query (SkillRegistry.Resolve)
-//     �?the active skills shape the system prompt.
-//  3. System prompt assembly via ComposeSystemPrompt �?base prompt +
+//     — the active skills shape the system prompt.
+//  3. System prompt assembly via ComposeSystemPrompt — base prompt +
 //     active skill prompts + (optional) agent persona.
-//  4. @-mention inlining �?same markdown-bullet preamble the legacy
+//  4. @-mention inlining — same markdown-bullet preamble the legacy
 //     agent.go produces, so chat history replay is byte-identical
 //     across kernels (legacy mention text persists into the new path
 //     unchanged).
@@ -24,10 +24,10 @@
 //     (callbacks.NewDefaultHandlers) wired via compose.WithCallbacks.
 //     The callback chain handles persistence (assistant + tool rows),
 //     SSE streaming, audit, metrics, and budget gating.
-//  7. Reply translation �?a chatruntime.Reply that the service layer
+//  7. Reply translation — a chatruntime.Reply that the service layer
 //     translates back to agent.Reply for HTTP response shape parity.
 //
-// Behaviour parity with legacy agent.go is the explicit goal �?the
+// Behaviour parity with legacy agent.go is the explicit goal — the
 // SPA, the persistence schema, and downstream reports must not see
 // the kernel switch. Where exact parity isn't reachable (e.g. eino's
 // graph runs the loop internally so we don't see per-iteration
@@ -77,7 +77,7 @@ type MentionResolver interface {
 // SSE adapter at the service layer can route both kernels through
 // the same wire format. New event names introduced in PR-6
 // (assistant_start / assistant_delta / assistant_end) are NOT
-// surfaced through this enum yet �?the cutover keeps the legacy
+// surfaced through this enum yet — the cutover keeps the legacy
 // frame names so the SPA round-trips without changes.
 type EventType string
 
@@ -123,7 +123,7 @@ type ToolEvent struct {
 // Event is the streaming envelope. Mirrors legacy agent.Event so the
 // service-layer adapter can copy fields one-to-one without a switch.
 //
-// Notification carries the task_notification payload �?set when
+// Notification carries the task_notification payload — set when
 // Type == EventTaskNotification and a background worker reaches a
 // terminal state. The SPA / SSE adapter renders it as a separate frame
 // type next to assistant / tool / done.
@@ -144,7 +144,7 @@ type Request struct {
 	SessionID string
 	UserID    uint64
 	// Role is the caller's system role (admin | user | viewer).
-	// gates the toolbag against this �?viewer drops Class!=read so the
+	// gates the toolbag against this — viewer drops Class!=read so the
 	// LLM cannot reach mutating tools no matter what the persona allows.
 	Role             string
 	UserText         string
@@ -170,7 +170,7 @@ type Reply struct {
 }
 
 // Config tunes runtime behaviour. ToolBag is the wrapped (decorated)
-// tool list; the runtime does NOT wrap tools itself �?that's the
+// tool list; the runtime does NOT wrap tools itself — that's the
 // caller's job at construction time so the decorator deps (audit
 // sink, limiter, registerer) live exactly once per process.
 type Config struct {
@@ -202,7 +202,7 @@ type Config struct {
 	// executing the real query. Without them, the eino runtime
 	// aborts with "tool not found in toolsNode indexes" the moment
 	// the LLM picks a name not actually in the coordinator's filtered
-	// bag �?see internal/manager/biz/aiops/tools/redirect_stub.go.
+	// bag — see internal/manager/biz/aiops/tools/redirect_stub.go.
 	//
 	// Workers (specialists) never see this slice. They have the real
 	// tool under the same name in their own filtered bag.
@@ -216,7 +216,7 @@ type Config struct {
 	// system prompt. Empty = none.
 	BasePrompt string
 
-	// HistoryLimit caps how many past messages we replay. 0 �?50
+	// HistoryLimit caps how many past messages we replay. 0 → 50
 	// (legacy default).
 	HistoryLimit int
 
@@ -234,17 +234,18 @@ type Config struct {
 	Logger *slog.Logger
 }
 
-// ToolBagProvider is the local mirror of tools.DeferredToolBagProvider �?// chatruntime cannot import the tools package (cyclic: tools imports
+// ToolBagProvider is the local mirror of tools.DeferredToolBagProvider —
+// chatruntime cannot import the tools package (cyclic: tools imports
 // nothing from chatruntime, but cmd-side wiring goes the other
 // direction and would close the loop). The shape is intentionally
 // identical so a *tools.ToolBag value satisfies this interface
 // directly without an adapter.
 //
-// �?the runtime needs a handle on the unredacted tool
+// — the runtime needs a handle on the unredacted tool
 // universe so future code paths (e.g. logging the active toolBag at
 // boot, exposing a /metrics list of registered tools) can introspect
 // what the LLM has access to even when deferral is on. Today the
-// handle is read-only �?set once via SetToolBag, never mutated.
+// handle is read-only — set once via SetToolBag, never mutated.
 type ToolBagProvider interface {
 	DeferredTools() []basetool.BaseTool
 	AllTools() []basetool.BaseTool
@@ -254,7 +255,7 @@ type ToolBagProvider interface {
 // NewRuntime; call Handle per HTTP request.
 //
 // workers holds the in-process map of spawned sub-agents keyed by
-// worker id. Lifetime: bounded by the Runtime's lifetime �?there's no
+// worker id. Lifetime: bounded by the Runtime's lifetime — there's no
 // auto-eviction yet (a follow-up PR adds a TTL sweeper once we move
 // chat_sessions to track parent_session_id; until then workers persist
 // in memory until process restart, which matches a fresh sandbox per
@@ -267,13 +268,14 @@ type Runtime struct {
 	workers   map[string]*Worker
 
 	// bag is the unredacted ToolBag handle wired by SetToolBag. nil
-	// when the caller wires the runtime without calling SetToolBag �?	// not all code paths need it (legacy callers only feed
+	// when the caller wires the runtime without calling SetToolBag —
+	// not all code paths need it (legacy callers only feed
 	// cfg.ToolBag through the graph).
 	bag ToolBagProvider
 }
 
 // NewRuntime builds a Runtime. Returns an error when required deps
-// are missing �?Sessions and ChatModel.
+// are missing — Sessions and ChatModel.
 func NewRuntime(cfg Config) (*Runtime, error) {
 	if cfg.Sessions == nil {
 		return nil, errors.New("chatruntime: Sessions is required")
@@ -292,7 +294,7 @@ func NewRuntime(cfg Config) (*Runtime, error) {
 }
 
 // SetMentionResolver wires the @-mention hydrator post-construction.
-// Optional �?when unset the runtime runs with no mention inlining
+// Optional — when unset the runtime runs with no mention inlining
 // (matches the legacy agent's nil-resolver behaviour).
 func (rt *Runtime) SetMentionResolver(r MentionResolver) {
 	if rt == nil {
@@ -309,7 +311,7 @@ func (rt *Runtime) SetMentionResolver(r MentionResolver) {
 //
 // Note: the bag is INFORMATIONAL only. The graph still feeds the
 // LLM via cfg.ToolBag, which the caller assembles from
-// bag.SchemasForLLM() before calling NewRuntime �?see
+// bag.SchemasForLLM() before calling NewRuntime — see
 // cmd/ongrid/main.go's buildAIOpsRuntime for the wiring.
 func (rt *Runtime) SetToolBag(bag ToolBagProvider) {
 	if rt == nil {
@@ -319,11 +321,11 @@ func (rt *Runtime) SetToolBag(bag ToolBagProvider) {
 }
 
 // AppendToolBag appends extra BaseTools to the coordinator tool bag.
-// �?used by main.go to bolt the coordinator-only AgentTool
+// — used by main.go to bolt the coordinator-only AgentTool
 // / SendMessageTool / TaskStopTool onto the Runtime AFTER construction
 // (the chicken-and-egg: those tools need the Runtime as their spawner,
 // the Runtime needs the tool bag at NewRuntime time). Workers do NOT
-// observe these added tools �?filterToolsForAgent strips them
+// observe these added tools — filterToolsForAgent strips them
 // unconditionally via coordinatorOnlyTools (see worker.go).
 //
 // This is intentionally distinct from a generic "AddTool" method: it
@@ -347,7 +349,7 @@ func (rt *Runtime) AgentRegistry() *AgentRegistry {
 }
 
 // SkillRegistry exposes the skill registry for narrow read-only
-// callers �?today the marketplace usecase wires Reload calls
+// callers — today the marketplace usecase wires Reload calls
 // against it on install/uninstall. nil-safe.
 func (rt *Runtime) SkillRegistry() *SkillRegistry {
 	if rt == nil {
@@ -366,7 +368,7 @@ func (rt *Runtime) ToolCount() int {
 	return len(rt.cfg.ToolBag)
 }
 
-// ToolNames returns the resolved tool names (best-effort �?Info()
+// ToolNames returns the resolved tool names (best-effort — Info()
 // errors are skipped). Production wiring logs this at boot so the
 // operator sees what the LLM is exposed to.
 func (rt *Runtime) ToolNames(ctx context.Context) []string {
@@ -388,8 +390,8 @@ func (rt *Runtime) ToolNames(ctx context.Context) []string {
 }
 
 // Handle runs one user turn end-to-end. Mirrors legacy
-// agent.runInternal: ownership check �?mention inline �?user message
-// persistence �?graph invoke with callback chain �?reply.
+// agent.runInternal: ownership check → mention inline → user message
+// persistence → graph invoke with callback chain → reply.
 func (rt *Runtime) Handle(ctx context.Context, req *Request) (*Reply, error) {
 	if rt == nil || rt.cfg.Sessions == nil || rt.cfg.ChatModel == nil {
 		return nil, errs.ErrNotWiredYet
@@ -424,7 +426,7 @@ func (rt *Runtime) Handle(ctx context.Context, req *Request) (*Reply, error) {
 	if len(req.Mentions) > 0 && rt.cfg.MentionResolver != nil {
 		bullets := rt.cfg.MentionResolver.Resolve(ctx, req.Mentions)
 		if len(bullets) > 0 {
-			// Same prefix the legacy agent.go uses �?keeps history
+			// Same prefix the legacy agent.go uses — keeps history
 			// replay byte-identical across kernels.
 			mentionsRendered = "用户在消息中引用了以下平台对象，请在回答时考虑：\n" +
 				strings.Join(bullets, "\n")
@@ -432,7 +434,7 @@ func (rt *Runtime) Handle(ctx context.Context, req *Request) (*Reply, error) {
 		}
 	}
 
-	// 3. Persist the user message first (legacy invariant �?survives
+	// 3. Persist the user message first (legacy invariant — survives
 	//    a graph crash).
 	userContent := augmentedUserText
 	userMsg := &aiopsmodel.Message{
@@ -463,7 +465,7 @@ func (rt *Runtime) Handle(ctx context.Context, req *Request) (*Reply, error) {
 	// BasePrompt and filter the ToolBag through its allowed/disallowed
 	// list. Worker spawn already does this for sub-agents (see worker.go);
 	// the coordinator path now honors it too. Stale agent ids fall back
-	// to the global default with a log line �?never crash a session.
+	// to the global default with a log line — never crash a session.
 	basePrompt := rt.cfg.BasePrompt
 	sessionToolBag := rt.cfg.ToolBag
 	agentReminderForPersona := ""
@@ -471,7 +473,7 @@ func (rt *Runtime) Handle(ctx context.Context, req *Request) (*Reply, error) {
 	// AgentID at all. Specialist personas (= anything else in the
 	// registry) are workers, not coordinators.
 	isCoordinator := sess.AgentID == nil || *sess.AgentID == "" || *sess.AgentID == "default"
-	// viewer downgrade �?drop every Class!=read tool out of the
+	// viewer downgrade — drop every Class!=read tool out of the
 	// toolbag before persona / control filtering. This applies even when
 	// no persona is loaded, so the LLM never sees host_bash / AgentTool /
 	// restart_service via the viewer's chat session.
@@ -480,7 +482,7 @@ func (rt *Runtime) Handle(ctx context.Context, req *Request) (*Reply, error) {
 		sessionToolBag = filterToolsForAgentRole(rt.cfg.ToolBag, nil, isCoordinator, true)
 	}
 	// Resolve the active persona. Sessions with no AgentID still
-	// route through the "default" persona �?that's where the curated
+	// route through the "default" persona — that's where the curated
 	// coordinator toolbag lives. Without this lookup, a CreateSession
 	// without an explicit agent_id would see the full toolbag and
 	// the rule-1 dispatch policy becomes advisory again.
@@ -494,7 +496,7 @@ func (rt *Runtime) Handle(ctx context.Context, req *Request) (*Reply, error) {
 				basePrompt = persona.SystemPrompt
 			}
 			// Apply the persona's Tools whitelist even for the
-			// "default" coordinator �?so a curated coordinator
+			// "default" coordinator — so a curated coordinator
 			// toolbag (AgentTool + a handful of triage tools) can
 			// force dispatch instead of letting the LLM see and
 			// reach for every deep-dive tool itself. The
@@ -503,7 +505,7 @@ func (rt *Runtime) Handle(ctx context.Context, req *Request) (*Reply, error) {
 			sessionToolBag = filterToolsForAgentRole(rt.cfg.ToolBag, persona, isCoordinator, viewerOnly)
 			agentReminderForPersona = persona.CriticalReminder
 		} else if rt.log != nil && personaName != "default" {
-			rt.log.Info("chatruntime: session agent_id not in registry �?using default",
+			rt.log.Info("chatruntime: session agent_id not in registry — using default",
 				slog.String("session_id", sess.ID),
 				slog.String("agent_id", personaName))
 		}
@@ -517,7 +519,7 @@ func (rt *Runtime) Handle(ctx context.Context, req *Request) (*Reply, error) {
 	if isCoordinator && len(rt.cfg.CoordinatorStubs) > 0 {
 		sessionToolBag = append(sessionToolBag, rt.cfg.CoordinatorStubs...)
 	}
-	// AgentID="default" is the virtual top-level persona �?same wiring
+	// AgentID="default" is the virtual top-level persona — same wiring
 	// as the no-agent coordinator (BasePrompt + full toolBag + agent
 	// catalog), but the session keeps "default" so the SPA shows the
 	// persona badge and the user can see / pick it on /agents.
@@ -525,7 +527,7 @@ func (rt *Runtime) Handle(ctx context.Context, req *Request) (*Reply, error) {
 	// (no specific persona pinned), append a markdown list of available
 	// specialist personas so the LLM knows what subagent_type values
 	// AgentTool will accept. Workers don't get the catalog (they can't
-	// spawn nested workers �?see coordinatorOnlyTools).
+	// spawn nested workers — see coordinatorOnlyTools).
 	if isCoordinator && rt.cfg.AgentRegistry != nil {
 		if catalog := buildAgentCatalog(rt.cfg.AgentRegistry); catalog != "" {
 			basePrompt = basePrompt + "\n\n" + catalog
@@ -537,12 +539,12 @@ func (rt *Runtime) Handle(ctx context.Context, req *Request) (*Reply, error) {
 	//    schema.Message so the graph assembler can replay them.
 	einoHistory := buildEinoHistory(history)
 
-	// 7. Build the graph (per-request �?eino graphs are cheap to
+	// 7. Build the graph (per-request — eino graphs are cheap to
 	//    compose and the inner ReAct agent is rebuilt on every call
 	//    today; an in-memory cache keyed on (toolBag identity, cfg)
 	//    is a future optimisation).
 	graphCfg := rt.cfg.GraphCfg
-	// Persona-level MaxTurns override �?already honoured for workers
+	// Persona-level MaxTurns override — already honoured for workers
 	// via worker.go runWorker; mirror it here for the coordinator
 	// path so the default persona can have a tighter cap. Without
 	// this, the global 30-iteration cap lets a misbehaving
@@ -576,11 +578,11 @@ func (rt *Runtime) Handle(ctx context.Context, req *Request) (*Reply, error) {
 
 	// 9. Compute per-turn dynamic hints from history + persona's
 	//    critical_reminder (if a worker persona is active for this turn).
-	// �?these get inlined into the per-turn
+	// — these get inlined into the per-turn
 	//    <system-reminder> block by graph.assembleMessages.
 	dynamicHints := rt.calcDynamicHints(history)
 	// AgentReminder is populated when the session is pinned to a
-	// persona (Phase 2). �?anti-drift reminder gets
+	// persona (Phase 2). — anti-drift reminder gets
 	// inlined into the per-turn <system-reminder> block. Worker spawns
 	// have always passed CriticalReminder; the coordinator path now
 	// does too when sess.AgentID is set.
@@ -595,7 +597,7 @@ func (rt *Runtime) Handle(ctx context.Context, req *Request) (*Reply, error) {
 	//     options. RoutingChatModel.pick consumes WithProvider; the inner
 	//     clientChatModel honours WithModel. Without this the graph kernel
 	//     silently ignored the picker and always used the routing default
-	//     �?so a user who chose e.g. claude-opus still got the default
+	//     — so a user who chose e.g. claude-opus still got the default
 	//     model. When both are empty no option is added (default path
 	//     unchanged).
 	invokeOpts := []compose.Option{compose.WithCallbacks(handlers...)}
@@ -648,7 +650,7 @@ func (rt *Runtime) Handle(ctx context.Context, req *Request) (*Reply, error) {
 		return reply, nil
 	}
 
-	// 10. Translate Output �?Reply. The graph's Output owns the
+	// 10. Translate Output → Reply. The graph's Output owns the
 	//     assistant message and best-effort iterations + usage; the
 	//     persistence handler has already written the chat_messages
 	//     row, so we re-fetch the recently-persisted assistant message
@@ -672,7 +674,7 @@ func (rt *Runtime) Handle(ctx context.Context, req *Request) (*Reply, error) {
 		}
 	}
 
-	// EventDone �?keep parity with legacy agent.go's terminal
+	// EventDone — keep parity with legacy agent.go's terminal
 	// emission. PersistenceHandler may have already written the
 	// assistant row; the legacy contract is "Done frame fires
 	// exactly once at terminal success".
@@ -683,8 +685,8 @@ func (rt *Runtime) Handle(ctx context.Context, req *Request) (*Reply, error) {
 // toCallbackEmitter adapts a chatruntime.Emit into the
 // callbacks.SSEEmitter the persistence/SSE chain consumes. The
 // adapter normalises the new event names back to the legacy ones
-// (SSEEventAssistantStart / SSEEventAssistantEnd �?"assistant";
-// SSEEventAssistantDelta dropped �?see PR-9 spec note about
+// (SSEEventAssistantStart / SSEEventAssistantEnd → "assistant";
+// SSEEventAssistantDelta dropped — see PR-9 spec note about
 // IncludeDelta=false until the SPA catches up).
 func (rt *Runtime) toCallbackEmitter(emit Emit, sessionID string) callbacks.SSEEmitter {
 	return func(ev callbacks.SSEEvent) {
@@ -709,7 +711,7 @@ func (rt *Runtime) toCallbackEmitter(emit Emit, sessionID string) callbacks.SSEE
 			return
 		case callbacks.SSEEventAssistantDelta:
 			// Token-level streaming is gated behind a feature flag
-			// pending SPA support. Drop for now �?see PR-9 spec.
+			// pending SPA support. Drop for now — see PR-9 spec.
 			return
 		case callbacks.SSEEventToolStart:
 			if ev.Tool == nil {
@@ -756,7 +758,7 @@ func (rt *Runtime) toCallbackEmitter(emit Emit, sessionID string) callbacks.SSEE
 
 // buildEinoHistory translates persisted aiopsmodel.Message rows into
 // schema.Message. Tool-only assistant rows (Content == nil) are
-// dropped �?same rule legacy agent.go's buildMessages applies. Tool
+// dropped — same rule legacy agent.go's buildMessages applies. Tool
 // result messages keep their tool_call_id + name so the model can
 // thread them back to the original call.
 func buildEinoHistory(rows []*aiopsmodel.Message) []*schema.Message {
@@ -785,7 +787,7 @@ func buildEinoHistory(rows []*aiopsmodel.Message) []*schema.Message {
 			})
 		case aiopsmodel.RoleAssistant:
 			if m.Content == nil {
-				// Legacy parity �?tool-only assistant rows are not
+				// Legacy parity — tool-only assistant rows are not
 				// replayable from our persistence schema and the
 				// following role=tool rows already capture the
 				// outcome.
@@ -843,43 +845,45 @@ func chatModelOpts(req *Request) []model.Option {
 // on the persisted history rows; no LLM, no I/O. Returns nil when no
 // hint applies for this turn.
 //
-// Current heuristics (kept intentionally narrow �?false positives on a
+// Current heuristics (kept intentionally narrow — false positives on a
 // reminder we re-show every turn corrode the LLM's trust in the block):
 //
-//	(a) consecutive same-tool failures �?2 �?"switch tools or ask user"
-//	(b) �?8 assistant turns �?"give a partial conclusion now"
-//	(c) �?15 assistant turns �?"you must summarize next turn"
-//	(d) �?25 assistant turns �?"stop tool calls, answer directly"
-//	(e) repeated (tool, args) call �?3 times �?"stop repeating the same call"
+//	(a) consecutive same-tool failures ≥ 2 → "switch tools or ask user"
+//	(b) ≥ 8 assistant turns → "give a partial conclusion now"
+//	(c) ≥ 15 assistant turns → "you must summarize next turn"
+//	(d) ≥ 25 assistant turns → "stop tool calls, answer directly"
+//	(e) repeated (tool, args) call ≥ 3 times → "stop repeating the same call"
 func (rt *Runtime) calcDynamicHints(history []*aiopsmodel.Message) []string {
 	if rt == nil {
 		return nil
 	}
 	var hints []string
 	if name, n := consecutiveFailedTool(history, 2); n >= 2 {
-		hints = append(hints, fmt.Sprintf("%s 已连续失�?%d 次：换工具，或问用户澄清", name, n))
+		hints = append(hints, fmt.Sprintf("%s 已连续失败 %d 次：换工具，或问用户澄清", name, n))
 	}
-	// Repeat-call detection �?same tool with similar args �?3 times in
+	// Repeat-call detection — same tool with similar args ≥ 3 times in
 	// the trailing window. This was the dominant failure mode in the
 	// "self-loop diagnose" 30-iter loop: query_promql kept getting called
 	// with slightly different metric names but no narrative progress.
 	if name, args, n := repeatedToolCall(history, 3); n >= 3 {
-		hints = append(hints, fmt.Sprintf("%s 已重复调�?%d 次（args: %s）：从你已有的数据下结论，不要再调用同款工具", name, n, args))
+		hints = append(hints, fmt.Sprintf("%s 已重复调用 %d 次（args: %s）：从你已有的数据下结论，不要再调用同款工具", name, n, args))
 	}
 	iter := countAssistantTurns(history)
 	switch {
 	case iter >= 25:
-		hints = append(hints, fmt.Sprintf("已经 %d 轮：停止调用工具，下一轮直接给最终回�?, iter))
+		hints = append(hints, fmt.Sprintf("已经 %d 轮：停止调用工具，下一轮直接给最终回答", iter))
 	case iter >= 15:
 		hints = append(hints, fmt.Sprintf("已经 %d 轮：下一轮必须给最终回答，不再调用工具", iter))
 	case iter >= 8:
 		hints = append(hints, fmt.Sprintf(`已经 %d 轮：现在给一段阶段性结论（"目前看到 X / Y，初步判断是 Z"），再决定是否继续`, iter))
 	}
-	// "Promise-without-execution" detection �?see ongridBasePrompt()
-	// 中等档位�?LLM (e.g. glm-4-plus) 偶尔�?"让我..." / "我先..." 这种
-	// 计划句但没真发出 tool_call，导�?graph 提前 END，用户体验是消息
-	// 戛然而止。这�?hint 在下一轮把 LLM 重新拽回�?�?但只在用户给�?	// 续聊指令（如 "继续"）的时候触发，避免在用户主动终止对话时打扰�?	if excerpt, found := detectUnfollowedPromise(history); found {
-		hints = append(hints, fmt.Sprintf(`上一轮你�?%s"但没真发 tool_call。如要继续探索请直接�?tool_call，不要再写计划句；如已有结论请直接给用户答复`, excerpt))
+	// "Promise-without-execution" detection — see ongridBasePrompt()
+	// 中等档位的 LLM (e.g. glm-4-plus) 偶尔写 "让我..." / "我先..." 这种
+	// 计划句但没真发出 tool_call，导致 graph 提前 END，用户体验是消息
+	// 戛然而止。这条 hint 在下一轮把 LLM 重新拽回来 — 但只在用户给了
+	// 续聊指令（如 "继续"）的时候触发，避免在用户主动终止对话时打扰。
+	if excerpt, found := detectUnfollowedPromise(history); found {
+		hints = append(hints, fmt.Sprintf(`上一轮你说"%s"但没真发 tool_call。如要继续探索请直接发 tool_call，不要再写计划句；如已有结论请直接给用户答复`, excerpt))
 	}
 	return hints
 }
@@ -940,19 +944,19 @@ func repeatedToolCall(history []*aiopsmodel.Message, minN int) (string, string, 
 // content carries a failure marker. n < minN is reported as 0.
 //
 // Failure marker (deliberately simple): the persisted Content JSON
-// contains the substring `"error"` �?every tool decorator (PR-3) writes
+// contains the substring `"error"` — every tool decorator (PR-3) writes
 // `{"error":"..."}` on tool failure (timeout, panic, returned error),
 // and successful payloads do not happen to ship an `"error"` field. We
 // keep the parse loose so a future tool that reports partial failures
 // inside a richer JSON still gets caught.
 //
 // Boundary cases this honours:
-//   - the trailing tool block must be unbroken �?interleaved
+//   - the trailing tool block must be unbroken — interleaved
 //     user/assistant turns reset the counter (n = 0)
 //   - if the trailing tool block has mixed tool names, only the
 //     most-recent tool's run is counted (we walk backwards; on a
 //     name-mismatch we stop)
-//   - a single failure (n == 1) returns ("", 0) when minN == 2 �?we do
+//   - a single failure (n == 1) returns ("", 0) when minN == 2 — we do
 //     NOT want to nag on every transient error
 func consecutiveFailedTool(history []*aiopsmodel.Message, minN int) (string, int) {
 	if minN <= 0 {
@@ -968,7 +972,7 @@ func consecutiveFailedTool(history []*aiopsmodel.Message, minN int) (string, int
 		if m.Role != aiopsmodel.RoleTool {
 			break
 		}
-		// Tool message �?extract name + check failure.
+		// Tool message — extract name + check failure.
 		curName := ""
 		if m.ToolName != nil {
 			curName = *m.ToolName
@@ -979,7 +983,7 @@ func consecutiveFailedTool(history []*aiopsmodel.Message, minN int) (string, int
 		if name == "" {
 			name = curName
 		} else if curName != name {
-			// different tool �?stop counting; we only flag a single
+			// different tool — stop counting; we only flag a single
 			// stuck-loop tool, not a pattern across multiple tools.
 			break
 		}
@@ -1000,23 +1004,23 @@ func consecutiveFailedTool(history []*aiopsmodel.Message, minN int) (string, int
 
 // looksLikeToolFailure is the heuristic used by consecutiveFailedTool.
 // True when the persisted tool message Content carries an "error" JSON
-// key �?the decorator chain's standard failure shape.
+// key — the decorator chain's standard failure shape.
 func looksLikeToolFailure(content string) bool {
 	if content == "" {
 		return false
 	}
-	// Cheap substring scan �?JSON validity is enforced by the
+	// Cheap substring scan — JSON validity is enforced by the
 	// decorator path, and we only need a yes/no signal here.
 	return strings.Contains(content, `"error"`)
 }
 
 // promiseMarkers are the substrings that indicate the assistant wrote a
-// plan�?("let me...") but did not actually emit a tool_call. Detected
+// plan句 ("let me...") but did not actually emit a tool_call. Detected
 // in the most recent assistant message; if matched + no tool message
 // follows before the next user, calcDynamicHints injects a nudge for
 // the next turn (see ongridBasePrompt).
 var promiseMarkers = []string{
-	"让我", "我先", "我来", "我会", "我将", "接下�?, "首先", "先让�?, "让我�?,
+	"让我", "我先", "我来", "我会", "我将", "接下来", "首先", "先让我", "让我先",
 }
 
 // detectUnfollowedPromise walks history backwards looking for the last
@@ -1054,7 +1058,7 @@ func detectUnfollowedPromise(history []*aiopsmodel.Message) (string, bool) {
 		case aiopsmodel.RoleTool:
 			return "", false // promise WAS executed
 		case aiopsmodel.RoleUser:
-			// User came in before any tool ran �?promise unfollowed.
+			// User came in before any tool ran — promise unfollowed.
 			break
 		}
 	}
@@ -1081,7 +1085,7 @@ func containsAnyPromiseMarker(content string) bool {
 // style of legacy agent.go's MaxIterations fallback.
 func buildGraphErrorApology(err error) string {
 	if err == nil {
-		return "抱歉，处理消息时遇到未知错误。请换个问法再问一次�?
+		return "抱歉，处理消息时遇到未知错误。请换个问法再问一次。"
 	}
 	msg := err.Error()
 	low := strings.ToLower(msg)
@@ -1089,56 +1093,57 @@ func buildGraphErrorApology(err error) string {
 	// LLM hallucinated a tool name not in its actual schema (e.g.
 	// model "remembers" `get_host_load` from training even though
 	// only `query_devices / query_knowledge / ...` were presented).
-	// Eino's tool router can't dispatch �?whole graph aborts. Map
+	// Eino's tool router can't dispatch → whole graph aborts. Map
 	// to a friendly retry message that nudges toward the right
 	// flow (AgentTool dispatch).
 	case strings.Contains(low, "not found in toolsnode"),
 		strings.Contains(low, "tool") && strings.Contains(low, "not found"):
-		return "这个问题需要的深度查询能力不在我（协调员）的工具范围内 �?那些工具都在专家手里。请直接告诉我你的具体诉求（例如「看 CPU/内存」「检查磁盘容量」「网络连通性」），我会派对应�?specialist 处理�?
+		return "这个问题需要的深度查询能力不在我（协调员）的工具范围内 — 那些工具都在专家手里。请直接告诉我你的具体诉求（例如「看 CPU/内存」「检查磁盘容量」「网络连通性」），我会派对应的 specialist 处理。"
 	// Match both eino's wording shapes: "exceeds max steps" (current
 	// runtime) and the legacy "exceeded max iterations" / "maxsteps"
 	// variants. The bug we ate before: matcher said "exceeded" (past
 	// tense) but eino emits "exceeds" (present tense), so every
-	// max-steps abort dumped raw "[GraphRunError]�? to the user.
+	// max-steps abort dumped raw "[GraphRunError]…" to the user.
 	case strings.Contains(low, "exceeds max"),
 		strings.Contains(low, "exceeded max"),
 		strings.Contains(low, "max steps"),
 		strings.Contains(low, "maxstep"),
 		strings.Contains(low, "max iterations"):
-		return "我跑了很多轮工具调用还是没收�?�?大概率是搜索路径走偏了。上面工具调用区已经有阶段性数据，可以直接看；也可以这样收敛：\n�?把问题缩小成「看 X 指标�?Y 现象」——给具体 metric / device 让我聚焦\n�?或者告诉我「已经看�?A / B / C，下一步从 D 这条线索查」\n�?也可以直�?@ 一�?specialist（如 @specialist-compute �?CPU/内存）让专家接手"
+		return "我跑了很多轮工具调用还是没收敛 — 大概率是搜索路径走偏了。上面工具调用区已经有阶段性数据，可以直接看；也可以这样收敛：\n• 把问题缩小成「看 X 指标的 Y 现象」——给具体 metric / device 让我聚焦\n• 或者告诉我「已经看到 A / B / C，下一步从 D 这条线索查」\n• 也可以直接 @ 一个 specialist（如 @specialist-compute 看 CPU/内存）让专家接手"
 	case strings.Contains(low, "context canceled"), strings.Contains(low, "context deadline"):
-		return "本次请求超时或被取消。一般是上游 LLM / 设备响应慢。请稍后重试，或换简单的问法�?
+		return "本次请求超时或被取消。一般是上游 LLM / 设备响应慢。请稍后重试，或换简单的问法。"
 	case strings.Contains(low, "budget"):
-		return "今日 LLM 预算已用完。请联系 admin 调整配额或明天再试�?
+		return "今日 LLM 预算已用完。请联系 admin 调整配额或明天再试。"
 	// LLM provider quota / rate-limit / insufficient balance. Substring
 	// covers OpenAI ("rate limit reached"), Zhipu ("余额不足"), generic
 	// "429 Too Many Requests" wording. All of these are operator-side
-	// (refill / change provider), not user-side �?make that clear.
+	// (refill / change provider), not user-side — make that clear.
 	case strings.Contains(low, "429"),
 		strings.Contains(low, "too many requests"),
 		strings.Contains(low, "余额不足"),
 		strings.Contains(low, "insufficient"),
 		strings.Contains(low, "rate limit"),
 		strings.Contains(low, "quota"):
-		return "LLM provider 当前不可用——可能是配额用尽 / 限流 / 余额不足。请到「设�?�?模型」检�?provider 的状态和余额；问题在配置层面，重试不会解决�?
+		return "LLM provider 当前不可用——可能是配额用尽 / 限流 / 余额不足。请到「设置 → 模型」检查 provider 的状态和余额；问题在配置层面，重试不会解决。"
 	// Other LLM provider errors (auth failure, model not found, etc.)
 	// land here so the user gets a hint to check provider config
 	// instead of a 200-char raw API error dump.
 	case strings.Contains(low, "llm: chat completion"),
 		strings.Contains(low, "openai api"),
 		strings.Contains(low, "api error"):
-		return "LLM provider 报错（可能是 API key / 模型�?/ 网络）。请到「设�?�?模型」检�?provider 配置；详�?raw 错误请看 manager 日志�?
+		return "LLM provider 报错（可能是 API key / 模型名 / 网络）。请到「设置 → 模型」检查 provider 配置；详细 raw 错误请看 manager 日志。"
 	default:
-		// 非已�?class：给一段保守的原文摘要，让用户能截图反馈�?		short := msg
+		// 非已知 class：给一段保守的原文摘要，让用户能截图反馈。
+		short := msg
 		if len(short) > 200 {
 			short = short[:200] + "..."
 		}
-		return "抱歉，处理消息时遇到错误：\n```\n" + short + "\n```\n请换个问法再试，或截图反馈给我们�?
+		return "抱歉，处理消息时遇到错误：\n```\n" + short + "\n```\n请换个问法再试，或截图反馈给我们。"
 	}
 }
 
 // countAssistantTurns returns the number of assistant role rows in
-// history. Tool-only assistant rows (Content == nil) still count �?they
+// history. Tool-only assistant rows (Content == nil) still count — they
 // represent a ChatModel turn the loop took.
 func countAssistantTurns(history []*aiopsmodel.Message) int {
 	n := 0

@@ -75,7 +75,8 @@ func TestGraphCatalogDoesNotReimportInventoryExports(t *testing.T) {
 
 func TestGraphCatalogAdaptsExternalSubprocessSkill(t *testing.T) {
 	const key = "test_catalog_subprocess"
-	// 使用真实 manifest loader 校验加载到调用之间的链路�?	dir := t.TempDir()
+	// 使用真实 manifest loader 校验加载到调用之间的链路。
+	dir := t.TempDir()
 	writeCatalogFixture(t, dir)
 	n, err := skillcore.LoadDirs(skillcore.LoaderConfig{Dirs: []string{dir}})
 	if err != nil || n != 1 {
@@ -283,13 +284,13 @@ func TestBridge_ManagerScope_PreservesDeclaredBusinessFields(t *testing.T) {
 	}
 }
 
-// unregisterSkillForTest is a tiny escape hatch �?the production
+// unregisterSkillForTest is a tiny escape hatch — the production
 // registry doesn't expose Unregister but tests need to clean up.
 func unregisterSkillForTest(key string) {
 	// We can't reach into skillcore.globalRegistry from here (different
 	// package) without an exported helper, and we don't want to ship
 	// one for production. Instead, the test relies on each subtest
-	// using a unique key �?the duplicate-key panic would only fire if
+	// using a unique key — the duplicate-key panic would only fire if
 	// two tests in the same process used the same key. Leave this as
 	// a no-op; the registered skill stays in the global registry for
 	// the lifetime of the test binary, which is fine.

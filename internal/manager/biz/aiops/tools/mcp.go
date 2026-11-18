@@ -1,6 +1,6 @@
 package tools
 
-// mcp.go �?adapts one tool of one external MCP server (HLD-018) into
+// mcp.go — adapts one tool of one external MCP server (HLD-018) into
 // an ongrid BaseTool. Wire name: mcp__<server>__<tool>. The runtime bolts
 // these onto the toolbag at boot after connecting each enabled server. A
 // trusted server's tools run synchronously; otherwise the call is queued to
@@ -85,7 +85,7 @@ func sanitizeMCPSeg(s string) string {
 // MCPToolClass infers an MCP tool's risk class from its name. MCP servers
 // rarely set the readOnlyHint annotation, so we read the verb: pure-read
 // queries (k8s list/get/log/top/stats/view/...) are "read" and can be
-// single-node test-run; anything naming a mutating verb �?or unknown �?stays
+// single-node test-run; anything naming a mutating verb — or unknown — stays
 // "destructive" so it is gated to full-flow runs / approval. Decoupled from the
 // server's `trusted` flag, which governs only the sync-vs-approval run path.
 func MCPToolClass(bareName string) string {
@@ -116,11 +116,11 @@ func (t *MCPTool) Info(_ context.Context) (*basetool.ToolInfo, error) {
 	return &basetool.ToolInfo{
 		Name:         t.wireName,
 		Description:  desc,
-		WhenToUse:    "外部 MCP 服务�? + t.server + "」提供的能力�?,
+		WhenToUse:    "外部 MCP 服务「" + t.server + "」提供的能力。",
 		Parameters:   schema,
 		Class:        class,
 		Confirmation: basetool.ConfirmationSelfManaged,
-		Origin:       basetool.OriginMCP, // runtime-discovered �?routed to specialists, not the coordinator
+		Origin:       basetool.OriginMCP, // runtime-discovered → routed to specialists, not the coordinator
 	}, nil
 }
 

@@ -2,7 +2,7 @@
 // (HLD-017). Producers (agent cloud-shell, restart_service, flow approval
 // nodes) call Propose to queue a dangerous action; a human Approves/Rejects
 // in the inbox UI; on Approve the registered executor for that Kind runs the
-// action and the result is recorded. Strictly additive â€?nothing executes
+// action and the result is recorded. Strictly additive â€” nothing executes
 // here unless a producer explicitly proposed it.
 package approval
 
@@ -88,7 +88,7 @@ type ProposeInput struct {
 	ProposedBy          uint64
 }
 
-// Propose records a pending action. Producer-facing (not admin-gated â€?the
+// Propose records a pending action. Producer-facing (not admin-gated â€” the
 // producer already ran under the caller's auth).
 func (u *Usecase) Propose(ctx context.Context, in ProposeInput) (*model.Approval, error) {
 	if strings.TrimSpace(in.Kind) == "" || strings.TrimSpace(in.Title) == "" {
@@ -118,7 +118,7 @@ func (u *Usecase) Propose(ctx context.Context, in ProposeInput) (*model.Approval
 	return a, nil
 }
 
-// List / Get / CountPending â€?inbox reads.
+// List / Get / CountPending â€” inbox reads.
 func (u *Usecase) List(ctx context.Context, status string, limit int) ([]*model.Approval, error) {
 	return u.repo.List(ctx, status, limit)
 }

@@ -113,7 +113,7 @@ func TestRuntimeK8sActionToolCallPassesReviewGateAndController(t *testing.T) {
 		SessionID: sess.ID,
 		UserID:    sess.UserID,
 		Role:      "admin",
-		UserText:  "�?default/api Deployment 扩到 2 个副本，�?dry-run",
+		UserText:  "把 default/api Deployment 扩到 2 个副本，先 dry-run",
 		Emit: func(ev Event) {
 			events = append(events, ev)
 		},

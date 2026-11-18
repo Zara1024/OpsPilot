@@ -32,7 +32,8 @@ func wrapBudgetStopModel(inner einomodel.ToolCallingChatModel, limits ...int) ei
 }
 
 func (m *budgetStopModel) Generate(ctx context.Context, input []*schema.Message, opts ...einomodel.Option) (*schema.Message, error) {
-	// 回调只能标记预算拒绝；在普通推理和工具熔断总结之前终止模型调用�?	if err := llm.BudgetRejectionFromContext(ctx); err != nil {
+	// 回调只能标记预算拒绝；在普通推理和工具熔断总结之前终止模型调用。
+	if err := llm.BudgetRejectionFromContext(ctx); err != nil {
 		return nil, err
 	}
 	if m.shouldFinalize(input) {
@@ -161,7 +162,7 @@ func guardUnresolvedDeviceTarget(history []*schema.Message, msg *schema.Message)
 	if wantsEnglishResponse(history) {
 		cp.Content = "I could not find device `" + target + "` in the fleet. I will not substitute another online device automatically. Please confirm the correct device or select it with @ before I run host-level checks."
 	} else {
-		cp.Content = "没有在设备清单中找到 `" + target + "`。我不会自动改用其他在线设备执行主机检查；请确认正确设备，或使�?@ 选择目标设备后我再继续�?
+		cp.Content = "没有在设备清单中找到 `" + target + "`。我不会自动改用其他在线设备执行主机检查；请确认正确设备，或使用 @ 选择目标设备后我再继续。"
 	}
 	return &cp
 }
@@ -246,7 +247,7 @@ func budgetPrunedFinalContent(messages []*schema.Message, tool string) string {
 	if wantsEnglishResponse(messages) {
 		return "This turn reached the per-tool safety limit for `" + tool + "`, and the model did not produce a usable synthesis. No raw tool output is shown. Send a narrower target or time window to continue in a new turn."
 	}
-	return "本轮 `" + tool + "` 已达到单工具安全上限，模型未能生成可用的归纳结论。这里不会展示工具原始结果；请在下一条消息给出更窄的目标或时间窗后继续�?
+	return "本轮 `" + tool + "` 已达到单工具安全上限，模型未能生成可用的归纳结论。这里不会展示工具原始结果；请在下一条消息给出更窄的目标或时间窗后继续。"
 }
 
 func pendingConfigDraftContent(messages []*schema.Message) string {
@@ -285,17 +286,17 @@ func pendingConfigDraftContent(messages []*schema.Message) string {
 					scope = "monitoring platform"
 				}
 			}
-			return "One alert-rule draft is ready and has not been applied.\n\nSummary: " + draft.Summary + "\nScope: " + scope + "\n\nReview this draft and reply “ok�?to apply it, or describe the changes you need. Drafts are handled one at a time; for multiple rules, confirm this draft first, then continue in a later message."
+			return "One alert-rule draft is ready and has not been applied.\n\nSummary: " + draft.Summary + "\nScope: " + scope + "\n\nReview this draft and reply “ok” to apply it, or describe the changes you need. Drafts are handled one at a time; for multiple rules, confirm this draft first, then continue in a later message."
 		}
-		scope := "未提�?
+		scope := "未提供"
 		if draft.Scope != nil && strings.TrimSpace(draft.Scope.Label) != "" {
 			scope = draft.Scope.Label
 		}
 		confirmation := strings.TrimSpace(draft.ConfirmationPrompt)
 		if confirmation == "" {
-			confirmation = "请检查草案，确认无误后回复“ok”应用，或说明需要修改的内容�?
+			confirmation = "请检查草案，确认无误后回复“ok”应用，或说明需要修改的内容。"
 		}
-		return "已生成一条告警规则草案，尚未应用。\n\n摘要�? + draft.Summary + "\n告警范围�? + scope + "\n\n" + confirmation + "\n\n每轮处理一条草案；如需多条，请先确认当前草案，再在后续消息中继续�?
+		return "已生成一条告警规则草案，尚未应用。\n\n摘要：" + draft.Summary + "\n告警范围：" + scope + "\n\n" + confirmation + "\n\n每轮处理一条草案；如需多条，请先确认当前草案，再在后续消息中继续。"
 	}
 	return ""
 }
@@ -352,7 +353,7 @@ func summarizeToolMessage(toolName, content string) string {
 			return summarizeHostBashPayload(toolName, payload)
 		}
 		if count, ok := jsonNumber(payload["count"]); ok {
-			return toolName + ": 返回 " + formatNumber(count) + " 条结果�?
+			return toolName + ": 返回 " + formatNumber(count) + " 条结果。"
 		}
 	}
 	compact := strings.Join(strings.Fields(content), " ")
@@ -384,9 +385,9 @@ func summarizeIncidentPayload(toolName string, payload map[string]any) string {
 		}
 	}
 	if len(titles) == 0 {
-		return toolName + ": 返回 " + formatNumber(count) + " 条告警�?
+		return toolName + ": 返回 " + formatNumber(count) + " 条告警。"
 	}
-	return toolName + ": 返回 " + formatNumber(count) + " 条告警，代表项：" + strings.Join(titles, "�?)
+	return toolName + ": 返回 " + formatNumber(count) + " 条告警，代表项：" + strings.Join(titles, "；")
 }
 
 func summarizeCorrelationPayload(toolName string, payload map[string]any) string {
@@ -415,9 +416,9 @@ func summarizeCorrelationPayload(toolName string, payload map[string]any) string
 		}
 	}
 	if len(parts) == 0 {
-		return toolName + ": 返回关联分析结果�?
+		return toolName + ": 返回关联分析结果。"
 	}
-	return toolName + ": " + strings.Join(parts, "�?)
+	return toolName + ": " + strings.Join(parts, "；")
 }
 
 func summarizeDiskUsagePayload(toolName string, payload map[string]any) string {
@@ -449,9 +450,9 @@ func summarizeDiskUsagePayload(toolName string, payload map[string]any) string {
 		}
 	}
 	if len(parts) == 0 {
-		return toolName + ": 返回磁盘占用分析结果�?
+		return toolName + ": 返回磁盘占用分析结果。"
 	}
-	return toolName + ": " + strings.Join(parts, "�?)
+	return toolName + ": " + strings.Join(parts, "；")
 }
 
 func summarizeLargeFilesPayload(toolName string, payload map[string]any) string {
@@ -479,14 +480,14 @@ func summarizeLargeFilesPayload(toolName string, payload map[string]any) string 
 				parts = append(parts, path)
 			}
 			if len(parts) >= 5 {
-				return toolName + ": 大文�?" + strings.Join(parts, "�?)
+				return toolName + ": 大文件 " + strings.Join(parts, "；")
 			}
 		}
 	}
 	if len(parts) == 0 {
-		return toolName + ": 返回大文件扫描结果�?
+		return toolName + ": 返回大文件扫描结果。"
 	}
-	return toolName + ": 大文�?" + strings.Join(parts, "�?)
+	return toolName + ": 大文件 " + strings.Join(parts, "；")
 }
 
 func summarizeHostBashPayload(toolName string, payload map[string]any) string {
@@ -505,7 +506,7 @@ func summarizeHostBashPayload(toolName string, payload map[string]any) string {
 		}
 	}
 	if len(stdouts) == 0 {
-		return toolName + ": 命令 `" + trimRunes(cmd, 60) + "` 无有效输出�?
+		return toolName + ": 命令 `" + trimRunes(cmd, 60) + "` 无有效输出。"
 	}
 	joined := strings.Join(stdouts, "\n")
 	if strings.Contains(cmd, "df ") {
@@ -517,14 +518,14 @@ func summarizeHostBashPayload(toolName string, payload map[string]any) string {
 	if strings.Contains(cmd, "du ") {
 		tops := topOutputLines(joined, 4)
 		if len(tops) > 0 {
-			return toolName + ": `du` Top �?" + strings.Join(tops, "�?)
+			return toolName + ": `du` Top 项 " + strings.Join(tops, "；")
 		}
 	}
 	lines := topOutputLines(joined, 3)
 	if len(lines) == 0 {
-		return toolName + ": 命令 `" + trimRunes(cmd, 60) + "` 已执行�?
+		return toolName + ": 命令 `" + trimRunes(cmd, 60) + "` 已执行。"
 	}
-	return toolName + ": `" + trimRunes(cmd, 60) + "` 输出 " + strings.Join(lines, "�?)
+	return toolName + ": `" + trimRunes(cmd, 60) + "` 输出 " + strings.Join(lines, "；")
 }
 
 func firstDataLine(output string) string {
@@ -598,7 +599,7 @@ func finalAnswerAfterToolBudget(messages []*schema.Message) (*schema.Message, bo
 	if tool == "" {
 		tool = "the tool"
 	}
-	content := "我已收敛本轮排查，没有继续反复调�?`" + tool + "`。基于本轮已经拿到的结果：如果上面的数据已经出现异常信号，就按这些信号给出结论和下一步；如果结果为空或报错，本轮缺少可判定证据，请在下一条消息补充更具体的时间窗、service �?device_id 后再查�?
+	content := "我已收敛本轮排查，没有继续反复调用 `" + tool + "`。基于本轮已经拿到的结果：如果上面的数据已经出现异常信号，就按这些信号给出结论和下一步；如果结果为空或报错，本轮缺少可判定证据，请在下一条消息补充更具体的时间窗、service 或 device_id 后再查。"
 	if wantsEnglishResponse(messages) {
 		content = "I have converged this investigation instead of repeatedly calling `" + tool + "`. Based on the evidence already collected: if the earlier results show an abnormal signal, use that signal for the conclusion and next step; if they were empty or errored, this turn lacks decisive evidence, so send a narrower time window, service, or device_id in the next message and I can query again."
 	}
@@ -656,7 +657,8 @@ func wantsEnglishResponse(messages []*schema.Message) bool {
 	return false
 }
 
-// 根据本轮历史计数，不在可复用模型上保存回合计数，避免并发会话互相消耗预算�?func (m *budgetStopModel) shouldFinalize(input []*schema.Message) bool {
+// 根据本轮历史计数，不在可复用模型上保存回合计数，避免并发会话互相消耗预算。
+func (m *budgetStopModel) shouldFinalize(input []*schema.Message) bool {
 	if m.maxIterations <= 0 {
 		return false
 	}
@@ -699,7 +701,8 @@ func (m *budgetStopModel) finalizeTurn(ctx context.Context, input []*schema.Mess
 	} else {
 		prompt = append([]*schema.Message{schema.SystemMessage(instruction)}, prompt...)
 	}
-	// 明确结束调查阶段，避免部分模型沿历史工具协议继续生成调用标记�?	prompt = append(prompt, schema.UserMessage("<system-reminder>The investigation phase has ended. Produce the final user-facing answer now using the tool results above. Summarize the concrete observations and state which requested checks were not performed. Do not announce another query, output tool-call markup, or ask the user to read raw tool output. No further actions are available in this turn. Follow the user's response language.</system-reminder>"))
+	// 明确结束调查阶段，避免部分模型沿历史工具协议继续生成调用标记。
+	prompt = append(prompt, schema.UserMessage("<system-reminder>The investigation phase has ended. Produce the final user-facing answer now using the tool results above. Summarize the concrete observations and state which requested checks were not performed. Do not announce another query, output tool-call markup, or ask the user to read raw tool output. No further actions are available in this turn. Follow the user's response language.</system-reminder>"))
 	finalOpts := append([]einomodel.Option(nil), opts...)
 	finalOpts = append(finalOpts, einomodel.WithTools(nil), einomodel.WithToolChoice(schema.ToolChoiceForbidden))
 	msg, err := finalModel.Generate(ctx, prompt, finalOpts...)
@@ -709,7 +712,7 @@ func (m *budgetStopModel) finalizeTurn(ctx context.Context, input []*schema.Mess
 	if msg != nil && len(msg.ToolCalls) == 0 && strings.TrimSpace(msg.Content) != "" && !containsToolProtocolMarkup(msg.Content) {
 		return msg, nil
 	}
-	content := "本轮已达到调查轮次上限，现有证据尚不足以形成可靠结论。已停止继续执行工具；请根据已返回的结果缩小目标或补充时间范围�?
+	content := "本轮已达到调查轮次上限，现有证据尚不足以形成可靠结论。已停止继续执行工具；请根据已返回的结果缩小目标或补充时间范围。"
 	if wantsEnglishResponse(input) {
 		content = "The investigation reached its turn limit, but the available evidence is insufficient for a reliable conclusion. No further tools were executed."
 	}
@@ -720,7 +723,8 @@ func (m *budgetStopModel) finalizeTurn(ctx context.Context, input []*schema.Mess
 	return fallback, nil
 }
 
-// 工具协议标记不是用户可读的调查结论，不能作为成功总结展示�?func containsToolProtocolMarkup(content string) bool {
+// 工具协议标记不是用户可读的调查结论，不能作为成功总结展示。
+func containsToolProtocolMarkup(content string) bool {
 	lower := strings.ToLower(content)
 	return strings.Contains(lower, "<｜｜dsml｜｜") || strings.Contains(lower, "<|dsml|") || strings.Contains(lower, "<tool_call>") || strings.Contains(lower, "<function_calls>")
 }

@@ -21,7 +21,7 @@ import (
 //     unless the coordinator itself is also persona-driven)
 //  3. for each active skill, a `[能力: <name>]` header + skill PromptBody
 //
-// Pure string assembly �?no per-turn system-reminder injection. That
+// Pure string assembly — no per-turn system-reminder injection. That
 // happens in the graph layer (graph.buildSystemReminder is called by
 // graph.assembleMessages on every turn so the block survives long-
 // session attention drift), not here.
@@ -30,8 +30,10 @@ import (
 // (b) fall back to an uninstalled `kubectl` for a genuine k8s question instead
 // of the MCP tools. Injected only into the coordinator prompt (agentProfile==nil).
 const coordinatorToolRouting = `## 工具选型补充
-- ongrid device/edge �?k8s node。问 ongrid 设备�?ongrid 工具；问 k8s 集群�?` +
-	"`mcp__k8s__*`" + `，不要猜 ` + "`kubectl`" + `�?- 产品行为、交互设计、页�?产物关联、ToolSearch/Operation/AgentLoop 策略解释，默认直接解释；不要为了这类问题发散调用 ` + "`host_bash`" + ` / 拓扑 / 源码工具。若缺少运行时产物索引，直接说明能力缺口�?- 复杂跨域任务可同轮并行多�?` + "`AgentTool`" + `；简�?topN / 快照 / 列表仍直接查。错误来源连�?2 次不匹配就换路或说明缺口。`
+- ongrid device/edge ≠ k8s node。问 ongrid 设备用 ongrid 工具；问 k8s 集群用 ` +
+	"`mcp__k8s__*`" + `，不要猜 ` + "`kubectl`" + `。
+- 产品行为、交互设计、页面/产物关联、ToolSearch/Operation/AgentLoop 策略解释，默认直接解释；不要为了这类问题发散调用 ` + "`host_bash`" + ` / 拓扑 / 源码工具。若缺少运行时产物索引，直接说明能力缺口。
+- 复杂跨域任务可同轮并行多个 ` + "`AgentTool`" + `；简单 topN / 快照 / 列表仍直接查。错误来源连续 2 次不匹配就换路或说明缺口。`
 
 func ComposeSystemPrompt(basePrompt string, activeSkills []*Skill, agentProfile *Agent) string {
 	var parts []string
@@ -51,7 +53,7 @@ func ComposeSystemPrompt(basePrompt string, activeSkills []*Skill, agentProfile 
 			parts = append(parts, body)
 		}
 		if reminder := strings.TrimSpace(agentProfile.CriticalReminder); reminder != "" {
-			// �?the per-turn injection wraps this in
+			// — the per-turn injection wraps this in
 			// <system-reminder>...</system-reminder>; here we just plant
 			// it once into the system prompt as the persona-level
 			// constant. The graph layer will additionally re-inject
@@ -222,7 +224,7 @@ func compactOneLine(s string, max int) string {
 	if max <= 0 || len(s) <= max {
 		return s
 	}
-	return strings.TrimSpace(s[:max-1]) + "�?
+	return strings.TrimSpace(s[:max-1]) + "…"
 }
 
 func firstNonEmpty(values ...string) string {
@@ -257,19 +259,19 @@ func buildAgentCatalog(reg *AgentRegistry) string {
 		return ""
 	}
 	var sb strings.Builder
-	sb.WriteString("## 可选专家能力（AgentTool �?subagent_type）\n\n")
-	sb.WriteString("默认助理负责最终答复并可直接使用本轮工具。需要独立复核、额外领域证据或并行分析时，才调�?AgentTool 请求以下专家工作会话：\n\n")
+	sb.WriteString("## 可选专家能力（AgentTool 的 subagent_type）\n\n")
+	sb.WriteString("默认助理负责最终答复并可直接使用本轮工具。需要独立复核、额外领域证据或并行分析时，才调用 AgentTool 请求以下专家工作会话：\n\n")
 	for _, r := range rows {
 		sb.WriteString("- `")
 		sb.WriteString(r.agent)
 		sb.WriteString("` (`")
 		sb.WriteString(r.id)
-		sb.WriteString("`) �?")
+		sb.WriteString("`) — ")
 		if r.desc != "" {
 			sb.WriteString(r.desc)
 		}
 		sb.WriteString("\n")
 	}
-	sb.WriteString("\n派活时：�?prompt 里写�?incident_id / device_id / 用户原话——worker 看不到你的上下文�?)
+	sb.WriteString("\n派活时：在 prompt 里写清 incident_id / device_id / 用户原话——worker 看不到你的上下文。")
 	return sb.String()
 }

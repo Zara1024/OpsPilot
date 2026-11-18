@@ -57,7 +57,8 @@ func TestRuntimeConcurrentToolRefreshAndSnapshot(t *testing.T) {
 					return
 				}
 				for _, entry := range rt.toolBagSnapshot() {
-					// 并发替换允许明确拒绝旧引用，不能数据竞争或执行已撤销版本�?					_, err := entry.InvokableRun(context.Background(), `{}`)
+					// 并发替换允许明确拒绝旧引用，不能数据竞争或执行已撤销版本。
+					_, err := entry.InvokableRun(context.Background(), `{}`)
 					if err != nil {
 						continue
 					}
@@ -97,7 +98,8 @@ func TestRuntimeWebSearchToggleControlsActualDispatch(t *testing.T) {
 			if tool.calls.Load() != want {
 				t.Fatalf("calls=%d want=%d", tool.calls.Load(), want)
 			}
-			// 即使持有�?schema 或直接调用工具引用，也不能越过执行边界�?			if _, err := rt.toolBagSnapshot()[0].InvokableRun(context.Background(), `{}`); err == nil {
+			// 即使持有旧 schema 或直接调用工具引用，也不能越过执行边界。
+			if _, err := rt.toolBagSnapshot()[0].InvokableRun(context.Background(), `{}`); err == nil {
 				t.Fatal("missing execution gate")
 			}
 		})

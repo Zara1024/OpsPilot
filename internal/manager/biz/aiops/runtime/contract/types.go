@@ -10,7 +10,8 @@ import (
 	"github.com/Zara1024/OpsPilot/internal/pkg/llm"
 )
 
-// Mention 是运行时�?mention 输入；Service �?chatprotocol 转换�?type Mention struct {
+// Mention 是运行时的 mention 输入；Service 从 chatprotocol 转换。
+type Mention struct {
 	Type  string
 	ID    string
 	Label string
@@ -26,7 +27,7 @@ type MentionResolver interface {
 // SSE adapter at the service layer can route both kernels through
 // the same wire format. New event names introduced in PR-6
 // (assistant_start / assistant_delta / assistant_end) are NOT
-// surfaced through this enum yet �?the cutover keeps the legacy
+// surfaced through this enum yet — the cutover keeps the legacy
 // frame names so the SPA round-trips without changes.
 type EventType string
 
@@ -72,7 +73,7 @@ type ToolEvent struct {
 // Event is the streaming envelope. Mirrors legacy agent.Event so the
 // service-layer adapter can copy fields one-to-one without a switch.
 //
-// Notification carries the task_notification payload �?set when
+// Notification carries the task_notification payload — set when
 // Type == EventTaskNotification and a background worker reaches a
 // terminal state. The SPA / SSE adapter renders it as a separate frame
 // type next to assistant / tool / done.
@@ -83,7 +84,7 @@ type Event struct {
 	Done         *Reply
 	Error        string
 	Notification *TaskNotification
-	// Approval carries the approval_pending payload �?set when
+	// Approval carries the approval_pending payload — set when
 	// Type == EventApprovalPending and a blocking tool (cloud_bash) has
 	// queued a proposal and is awaiting the human decision (HLD-021).
 	Approval *ApprovalPending
@@ -98,7 +99,7 @@ type Request struct {
 	SessionID       string
 	UserID          uint64
 	// Role is the caller's system role (admin | user | viewer).
-	// gates the toolbag against this �?viewer drops Class!=read so the
+	// gates the toolbag against this — viewer drops Class!=read so the
 	// LLM cannot reach mutating tools no matter what the persona allows.
 	Role             string
 	UserText         string
@@ -127,26 +128,26 @@ type Reply struct {
 type WorkerStatus string
 
 const (
-	// WorkerStatusPending �?accepted but not yet started. Observable
+	// WorkerStatusPending — accepted but not yet started. Observable
 	// only in tests that intercept between SpawnWorker accept and goroutine
 	// scheduling; in production this state is essentially transient.
 	WorkerStatusPending WorkerStatus = "pending"
-	// WorkerStatusRunning �?graph.Invoke is in flight.
+	// WorkerStatusRunning — graph.Invoke is in flight.
 	WorkerStatusRunning WorkerStatus = "running"
-	// WorkerStatusCompleted �?graph.Invoke returned a final assistant
+	// WorkerStatusCompleted — graph.Invoke returned a final assistant
 	// message with no error.
 	WorkerStatusCompleted WorkerStatus = "completed"
-	// WorkerStatusFailed �?graph.Invoke returned an error, or the agent
+	// WorkerStatusFailed — graph.Invoke returned an error, or the agent
 	// name was unknown.
 	WorkerStatusFailed WorkerStatus = "failed"
-	// WorkerStatusKilled �?explicitly stopped via StopWorker.
+	// WorkerStatusKilled — explicitly stopped via StopWorker.
 	WorkerStatusKilled WorkerStatus = "killed"
 )
 
 // Worker tracks a spawned sub-agent. Unique by ID within a Runtime
 // instance.
 type Worker struct {
-	// ID is "agent-<8 hex>" �?unique per Runtime, stable for the
+	// ID is "agent-<8 hex>" — unique per Runtime, stable for the
 	// worker's lifetime.
 	ID string
 	// AgentName is the persona name (frontmatter `name` field).
@@ -158,7 +159,7 @@ type Worker struct {
 	SessionID string
 	// ParentSessionID is the coordinator session that requested the
 	// spawn. Tracked here so a future audit query can rebuild the parent
-	// �?worker tree without a schema change.
+	// → worker tree without a schema change.
 	ParentSessionID string
 	// Prompt is the initial user message handed to the worker.
 	Prompt string
@@ -206,7 +207,7 @@ type SpawnRequest struct {
 	SessionKind string
 	// OwnerUserID overrides the persisted chat_sessions.user_id when
 	// the worker has no ParentSession to inherit from. The investigator
-	// usecase passes 0 to mark these rows as "system-owned" �?they
+	// usecase passes 0 to mark these rows as "system-owned" — they
 	// don't belong to any operator and the internal audience prevents
 	// them from appearing in the primary chat list.
 	OwnerUserID uint64
@@ -218,7 +219,7 @@ type SpawnRequest struct {
 	Locale string
 	// Provider + Model are the coordinator's resolved LLM choice. Threaded
 	// into runWorker's g.Invoke as chatModelOpts so the sub-agent runs
-	// against the same LLM the user picked for the coordinator �?without
+	// against the same LLM the user picked for the coordinator — without
 	// this, runWorker falls through to the RoutingChatModel default and
 	// installs without an OpenAI key see specialists fail with
 	// `provider "openai" not configured`. Empty = no override; the worker
@@ -228,7 +229,7 @@ type SpawnRequest struct {
 }
 
 // TaskNotification is the payload of a task_notification streaming
-// frame. Mirrors the schema laid out in �?coordinator's
+// frame. Mirrors the schema laid out in — coordinator's
 // SSE listener fans this back through the legacy SSE envelope so the
 // SPA only needs to learn one new event type.
 type TaskNotification struct {
@@ -249,7 +250,7 @@ const EventTaskNotification EventType = "task_notification"
 // EventApprovalPending fires when a synchronous-blocking tool (HLD-021,
 // e.g. cloud_bash) has queued a human-approval proposal and is about to
 // block waiting for the decision. The frame surfaces the inline approve/
-// reject card LIVE �?the tool no longer returns a pending_approval result
+// reject card LIVE — the tool no longer returns a pending_approval result
 // blob (it blocks, then returns the real executor result), so the card
 // must be driven by this frame instead. ToolCallID ties the card to the
 // tool call's existing streaming card so the UI shows a single card.
