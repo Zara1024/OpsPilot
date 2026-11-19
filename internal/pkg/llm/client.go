@@ -72,7 +72,8 @@ type Config struct {
 //     ToolName is an optional hint for logs.
 //   - "system" : system prompt; Content is required.
 type Message struct {
-	// ReasoningContent ä¿�ç•™æ¨¡åž‹è¿”å›žçš„å��è®®å­—æ®µï¼Œä¾›å�Žç»­å·¥å…·è°ƒç”¨å›žä¼ ï¼›ä¸�ä½œä¸ºç”¨æˆ·å�¯è§�æ­£æ–‡ã€?	ReasoningContent string
+	// ReasoningContent 保留模型返回的协议字段，供后续工具调用回传；不作为用户可见正文。
+	ReasoningContent string
 	Role             string
 	Content          string
 	ToolCalls        []ToolCall

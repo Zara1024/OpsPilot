@@ -18,8 +18,6 @@ import (
 // A versioned envelope keeps Responses items out of visible text and other APIs.
 const responsesHistoryPrefix = "opspilot:responses:v1:"
 const legacyResponsesHistoryPrefix = "ongrid:responses:v1:"
-const legacyAnthropicHistoryPrefix = "ongrid:anthropic:v1:"
-const legacyChatExtrasPrefix = "ongrid:chat-extras:v1:"
 
 type responsesHistory struct {
 	Model  string            `json:"model"`
