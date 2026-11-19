@@ -30,7 +30,7 @@ type SessionRepo struct {
 func NewSessionRepo(db *gorm.DB) *SessionRepo {
 	root := strings.TrimSpace(os.Getenv("OPSPILOT_CHAT_ATTACHMENT_DIR"))
 	if root == "" {
-		root = "/var/lib/ongrid/chat-attachments"
+		root = "/var/lib/opspilot/chat-attachments"
 	}
 	return &SessionRepo{db: db, attachmentRoot: filepath.Clean(root)}
 }

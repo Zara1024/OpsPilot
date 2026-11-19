@@ -91,7 +91,7 @@ func bootstrapExtensions(rootCtx context.Context, cfg *config.Config, log *slog.
 	// before that block runs.
 	builtinSkillsRoot := os.Getenv("OPSPILOT_BUILTIN_SKILLS_ROOT")
 	builtinAgentsRoot := firstNonEmpty(os.Getenv("OPSPILOT_BUILTIN_AGENTS_ROOT"), "./agents")
-	marketplaceSkillsRoot := firstNonEmpty(os.Getenv("OPSPILOT_SKILLS_ROOT"), "/var/lib/ongrid/skills")
+	marketplaceSkillsRoot := firstNonEmpty(os.Getenv("OPSPILOT_SKILLS_ROOT"), "/var/lib/opspilot/skills")
 	if err := os.MkdirAll(marketplaceSkillsRoot, 0o755); err != nil {
 		log.Warn("create marketplace skills root", slog.String("path", marketplaceSkillsRoot), slog.Any("err", err))
 	}
@@ -99,7 +99,7 @@ func bootstrapExtensions(rootCtx context.Context, cfg *config.Config, log *slog.
 		SystemSkillsRoot:     marketplaceSkillsRoot,
 		BuiltinSkillsRoots:   []string{builtinSkillsRoot},
 		BuiltinAgentsRoots:   []string{builtinAgentsRoot},
-		StagingDir:           filepath.Join(os.TempDir(), "ongrid-marketplace-staging"),
+		StagingDir:           filepath.Join(os.TempDir(), "opspilot-marketplace-staging"),
 		AllowedSources:       []string{"ongrid-official", "local"},
 		RequireSignedSources: mpRequireSigned,
 		SignaturePinnedKey:   mpPinnedKey,
@@ -150,7 +150,7 @@ func bootstrapExtensions(rootCtx context.Context, cfg *config.Config, log *slog.
 	// a persistent volume; empty disables it (falls back to today's temp dir).
 	workspaceRoot := os.Getenv("OPSPILOT_WORKSPACE_ROOT")
 	if workspaceRoot == "" {
-		workspaceRoot = "/var/lib/ongrid/workspace"
+		workspaceRoot = "/var/lib/opspilot/workspace"
 	}
 	wsMgr := workspace.New(workspaceRoot)
 	(managersvcaiops.ApprovalExecutors{
@@ -182,7 +182,7 @@ func bootstrapExtensions(rootCtx context.Context, cfg *config.Config, log *slog.
 	// serve_page: the assistant can host a generated HTML report at an
 	// internal /pages/<token> URL. Pages live on the persistent volume; the
 	// route is registered on the mux below.
-	pagesDir := "/var/lib/ongrid/pages"
+	pagesDir := "/var/lib/opspilot/pages"
 	if d := os.Getenv("OPSPILOT_PAGES_DIR"); d != "" {
 		pagesDir = d
 	}

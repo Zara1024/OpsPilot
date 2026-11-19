@@ -84,6 +84,7 @@ services:
       # tools get redacted schemas (LLM must call ToolSearch to expand).
       # Default 30 is fine until marketplace grows the bag past it.
       OPSPILOT_TOOLBAG_DEFERRAL_THRESHOLD: ${OPSPILOT_TOOLBAG_DEFERRAL_THRESHOLD:-30}
+      OPSPILOT_TOOL_RESULTS_MAX_BYTES: ${OPSPILOT_TOOL_RESULTS_MAX_BYTES:-10737418240}
       # ADR-009: cloud-side Prometheus. Manager remote_writes open-set
       # samples here and the aiops query_promql tool reads from it.
       OPSPILOT_PROM_ENABLED: ${OPSPILOT_PROM_ENABLED:-true}
@@ -190,6 +191,7 @@ services:
       # Packet capture raw PCAP objects for local dev.
       - ../.cache/opspilot-packet-captures:/var/lib/opspilot/packet-captures
       - ../.cache/opspilot-chat-attachments:/var/lib/opspilot/chat-attachments
+      - ../.cache/opspilot-tool-results:/var/lib/opspilot/tool-results
     # ADR-008: HTTP API (8080) is no longer published to host in the
     # production-shape stack — nginx fronts it on 443/80. Metrics port
     # 9100 stays exposed for the host's Prometheus.

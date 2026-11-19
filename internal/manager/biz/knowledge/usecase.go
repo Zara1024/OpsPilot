@@ -120,7 +120,7 @@ func (u *Usecase) WithRepoDeleteHook(h func(ctx context.Context, url string)) *U
 	return u
 }
 
-// New returns a Usecase. cloneDir defaults to /var/lib/ongrid/repos.
+// New returns a Usecase. cloneDir defaults to /var/lib/opspilot/repos.
 // Synchronously calls EnsureCollection at boot when an embedder is
 // configured — without one we accept reads against any pre-existing
 // qdrant collection and reject writes (CreateManualDoc / Sync) with
@@ -129,7 +129,7 @@ func (u *Usecase) WithRepoDeleteHook(h func(ctx context.Context, url string)) *U
 // what's there before configuring the embedder.
 func New(ctx context.Context, repo RepoStore, vec QdrantClient, embed embedding.Embedder, cloneDir string, log *slog.Logger) (*Usecase, error) {
 	if cloneDir == "" {
-		cloneDir = "/var/lib/ongrid/repos"
+		cloneDir = "/var/lib/opspilot/repos"
 	}
 	if log == nil {
 		log = slog.Default()

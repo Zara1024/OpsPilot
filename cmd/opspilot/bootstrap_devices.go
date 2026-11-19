@@ -116,7 +116,7 @@ func bootstrapDevices(rootCtx context.Context, cfg *config.Config, log *slog.Log
 	// degraded boots without the mount; package-upgrade handlers return 503.
 	edgeBundleDir := os.Getenv("OPSPILOT_EDGE_BUNDLE_DIR")
 	if edgeBundleDir == "" {
-		edgeBundleDir = "/usr/share/ongrid/edge-bundles"
+		edgeBundleDir = "/usr/share/opspilot/edge-bundles"
 	}
 	var edgeBundleResolver *managerserveredge.FileBundleResolver
 	if _, err := os.Stat(edgeBundleDir); err == nil {

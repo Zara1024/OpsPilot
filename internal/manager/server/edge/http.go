@@ -58,8 +58,8 @@ type EdgeService interface {
 // triple. The HTTP handler's upgrade-package endpoint queries this to
 // auto-fill (url, sha256) before dispatching the RPC.
 //
-// Implementation lives at the wiring site (cmd/ongrid/main.go) and reads
-// from the host-mounted /usr/share/ongrid/edge-bundles/ directory; nginx
+// Implementation lives at the wiring site (cmd/opspilot/bootstrap_devices.go) and reads
+// from the host-mounted /usr/share/opspilot/edge-bundles/ directory; nginx
 // serves the corresponding host files through /edge/.
 type PackageResolver interface {
 	ResolveBundle(arch, version string) (url, sha256, resolvedVersion string, err error)

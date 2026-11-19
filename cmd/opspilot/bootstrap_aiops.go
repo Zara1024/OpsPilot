@@ -91,7 +91,7 @@ func bootstrapAIOps(cfg *config.Config, log *slog.Logger, notifyRouter *notify.R
 			quota = parsed
 		}
 	}
-	resultRepo := resultdata.New(storage.db, firstNonEmpty(os.Getenv("OPSPILOT_TOOL_RESULTS_DIR"), "/var/lib/ongrid/tool-results"), quota)
+	resultRepo := resultdata.New(storage.db, firstNonEmpty(os.Getenv("OPSPILOT_TOOL_RESULTS_DIR"), "/var/lib/opspilot/tool-results"), quota)
 	results := resultbiz.New(resultRepo, aiopsRepo, []byte("tool-result-cursors:"+cfg.JWT.Secret), log)
 	analyzer, err := resultanalysis.NewClient()
 	if err != nil {

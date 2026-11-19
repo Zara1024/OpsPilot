@@ -147,7 +147,7 @@ func runWorkers(rootCtx context.Context, cfg *config.Config, log *slog.Logger, n
 		log.Error("shutdown with error", slog.Any("err", err))
 		return err
 	}
-	log.Info("ongrid shutdown complete")
+	log.Info("opspilot shutdown complete")
 
 	return nil
 }

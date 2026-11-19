@@ -79,7 +79,7 @@ func resolveModel(name string) (fastembed.EmbeddingModel, error) {
 // model string (resolveModel above). cfg.BaseURL / cfg.APIKey are
 // ignored — local inference doesn't talk to any endpoint. Cache
 // location comes from OPSPILOT_EMBEDDING_CACHE_DIR (default
-// /var/lib/ongrid/embeddings).
+// /var/lib/opspilot/embeddings).
 func newLocal(cfg Config) (*localEmbedder, error) {
 	model, err := resolveModel(cfg.Model)
 	if err != nil {
@@ -87,7 +87,7 @@ func newLocal(cfg Config) (*localEmbedder, error) {
 	}
 	cacheDir := strings.TrimSpace(os.Getenv("OPSPILOT_EMBEDDING_CACHE_DIR"))
 	if cacheDir == "" {
-		cacheDir = "/var/lib/ongrid/embeddings"
+		cacheDir = "/var/lib/opspilot/embeddings"
 	}
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return nil, fmt.Errorf("embedding: mkdir cache: %w", err)

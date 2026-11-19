@@ -125,6 +125,7 @@ services:
       # tools get redacted schemas (LLM must call ToolSearch to expand).
       # Default 30 is fine until marketplace grows the bag past it.
       OPSPILOT_TOOLBAG_DEFERRAL_THRESHOLD: ${OPSPILOT_TOOLBAG_DEFERRAL_THRESHOLD:-30}
+      OPSPILOT_TOOL_RESULTS_MAX_BYTES: ${OPSPILOT_TOOL_RESULTS_MAX_BYTES:-10737418240}
       # Knowledge base / RAG: qdrant vector store + embedding provider.
       # OPSPILOT_QDRANT_URL is the qdrant HTTP endpoint (in-cluster, no
       # external port). OPSPILOT_EMBEDDING_PROVIDER picks the embedding
@@ -277,6 +278,7 @@ services:
       # private parser fetches from the same durable path.
       - ${OPSPILOT_DATA_DIR:-/var/lib/opspilot}/packet-captures:/var/lib/opspilot/packet-captures
       - ${OPSPILOT_DATA_DIR:-/var/lib/opspilot}/chat-attachments:/var/lib/opspilot/chat-attachments
+      - ${OPSPILOT_DATA_DIR:-/var/lib/opspilot}/tool-results:/var/lib/opspilot/tool-results
       - ${OPSPILOT_DATA_DIR:-/var/lib/opspilot}/pcap-parser/manager:/var/lib/opspilot/pcap-parser:ro
     logging:
       driver: json-file

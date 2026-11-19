@@ -33,11 +33,11 @@ import (
 //
 //	OPSPILOT_BUILTIN_AGENTS_ROOT  default ./agents
 //	OPSPILOT_BUILTIN_SKILLS_ROOT  optional extra skills directory (no default)
-//	OPSPILOT_SKILLS_ROOT          default /var/lib/ongrid/skills (marketplace mutable root)
+//	OPSPILOT_SKILLS_ROOT          default /var/lib/opspilot/skills (marketplace mutable root)
 func loadV2BootstrapRegistries(log *slog.Logger) (*aiopschatruntime.SkillRegistry, *aiopschatruntime.AgentRegistry) {
 	builtinSkillsRoot := os.Getenv("OPSPILOT_BUILTIN_SKILLS_ROOT")
 	builtinAgentsRoot := firstNonEmpty(os.Getenv("OPSPILOT_BUILTIN_AGENTS_ROOT"), "./agents")
-	marketplaceSkillsRoot := firstNonEmpty(os.Getenv("OPSPILOT_SKILLS_ROOT"), "/var/lib/ongrid/skills")
+	marketplaceSkillsRoot := firstNonEmpty(os.Getenv("OPSPILOT_SKILLS_ROOT"), "/var/lib/opspilot/skills")
 	skillReg := aiopschatruntime.NewSkillRegistry()
 	agentReg := aiopschatruntime.NewAgentRegistry()
 	loadRes, loadErr := aiopschatruntime.LoadAll(aiopschatruntime.LoadAllConfig{

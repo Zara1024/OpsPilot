@@ -1,6 +1,6 @@
 // bundle.go — edge upgrade bundle resolver + static HTTP file
 // server. The installer places bundles at
-// /usr/share/ongrid/edge-bundles/edge-bundle-<arch>-<version>.tar.gz
+// /usr/share/opspilot/edge-bundles/edge-bundle-<arch>-<version>.tar.gz
 // through the manager container's read-only host mount (plus a .sha256
 // companion); nginx exposes the host directory at /edge/<filename> so the
 // Edge can pull them over the same HTTPS endpoint it already trusts.
@@ -54,7 +54,7 @@ type BundleInfo struct {
 }
 
 // NewFileBundleResolver builds the resolver. dir is typically the
-// /usr/share/ongrid/edge-bundles host mount. publicURL
+// /usr/share/opspilot/edge-bundles host mount. publicURL
 // is the manager's externally-reachable origin (no trailing slash);
 // resolver constructs `{publicURL}/edge/<file>`.
 func NewFileBundleResolver(dir, managerVersion, publicURL string) *FileBundleResolver {

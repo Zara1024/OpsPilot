@@ -75,7 +75,7 @@ const cloudBashSystemPATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/
 // the host in docker-compose, so tools survive container recreation and never
 // touch the image. An installed tool's command still routes through the human
 // approval card, which is the security boundary (HLD-017/021).
-const cloudBashToolsDir = "/var/lib/ongrid/tools"
+const cloudBashToolsDir = "/var/lib/opspilot/tools"
 
 // skillBinPATH returns a PATH that prepends every installed skill's bin dir
 // (skillsRoot/<pack>/bin) to the system default, so a CLI an extension ships
