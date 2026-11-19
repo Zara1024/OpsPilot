@@ -36,7 +36,7 @@ func main() {
 }
 
 func run() (runErr error) {
-	fmt.Fprintf(os.Stderr, "ongrid %s starting\n", version)
+	fmt.Fprintf(os.Stderr, "opspilot %s starting\n", version)
 
 	cfg, err := config.Load()
 	if err != nil {

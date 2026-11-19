@@ -7,7 +7,8 @@ require (
 	github.com/arran4/golang-ical v0.3.2
 	github.com/casbin/casbin/v2 v2.103.0
 	github.com/casbin/gorm-adapter/v3 v3.32.0
-	github.com/cloudwego/eino v0.8.7
+	github.com/cloudwego/eino v0.9.14
+	github.com/cloudwego/eino-ext/callbacks/langfuse/v2 v2.0.2
 	github.com/cloudwego/eino-ext/components/document/transformer/splitter/markdown v0.0.0-20260724103301-c9a5dc923462
 	github.com/cloudwego/eino-ext/components/document/transformer/splitter/recursive v0.0.0-20260724103301-c9a5dc923462
 	github.com/creack/pty v1.1.24
@@ -17,7 +18,6 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang/snappy v0.0.4
 	github.com/google/jsonschema-go v0.4.3
-	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/gosnmp/gosnmp v1.41.0
 	github.com/itchyny/gojq v0.12.17
@@ -30,6 +30,7 @@ require (
 	github.com/prometheus/client_model v0.6.1
 	github.com/prometheus/procfs v0.15.1
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1
 	github.com/sashabaranov/go-openai v1.41.2
 	github.com/shirou/gopsutil/v3 v3.23.6
 	github.com/singchia/geminio v1.3.0-rc.2
@@ -176,7 +177,7 @@ require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/jumboframes/armorigo v0.4.1 // indirect
-	github.com/klauspost/compress v1.18.5 // indirect
+	github.com/klauspost/compress v1.18.5
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/prometheus/common v0.59.1
