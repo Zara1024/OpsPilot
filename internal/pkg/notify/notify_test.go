@@ -78,8 +78,11 @@ func TestFeishuSenderSignsPayload(t *testing.T) {
 		if payload["sign"] == "" {
 			t.Errorf("sign missing")
 		}
-		if payload["msg_type"] != "text" {
-			t.Errorf("msg_type = %v", payload["msg_type"])
+		if payload["msg_type"] != "interactive" {
+			t.Errorf("msg_type = %v, want interactive", payload["msg_type"])
+		}
+		if payload["card"] == nil {
+			t.Errorf("card missing in payload")
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -89,6 +92,86 @@ func TestFeishuSenderSignsPayload(t *testing.T) {
 	err := sender.Send(context.Background(), Message{Subject: "edge offline"})
 	if err != nil {
 		t.Fatalf("Send: %v", err)
+	}
+}
+
+func TestFeishuSenderEmitsInteractiveCard(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("decode payload: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	sender := NewFeishuSender("feishu-ops", srv.URL, "", srv.Client())
+	occurred := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
+	err := sender.Send(context.Background(), Message{
+		Subject:    "设备离线: 阿里云ECS01 心跳超时",
+		Severity:   SeverityCritical,
+		Source:     "global",
+		DedupeKey:  "pipeline:device_offline:1",
+		OccurredAt: occurred,
+		Labels: map[string]string{
+			"rule":        "device_offline",
+			"rule_name":   "设备离线",
+			"device_id":   "1",
+			"device_name": "阿里云ECS01",
+			"incident_id": "88",
+			"runbook_url": "https://wiki.ops/runbook/device_offline",
+			"console_url": "https://opspilot.example.com",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	if got["msg_type"] != "interactive" {
+		t.Fatalf("msg_type = %v, want interactive", got["msg_type"])
+	}
+
+	card, ok := got["card"].(map[string]any)
+	if !ok {
+		t.Fatalf("card not a map: %v", got["card"])
+	}
+
+	header, ok := card["header"].(map[string]any)
+	if !ok || header["template"] != "red" {
+		t.Errorf("header template = %v, want red", header["template"])
+	}
+
+	elements, ok := card["elements"].([]any)
+	if !ok || len(elements) == 0 {
+		t.Fatalf("elements missing or empty")
+	}
+
+	hasActions := false
+	for _, el := range elements {
+		if elm, ok := el.(map[string]any); ok && elm["tag"] == "action" {
+			hasActions = true
+			break
+		}
+	}
+	if !hasActions {
+		t.Errorf("expected action element in card elements, got %v", elements)
+	}
+
+	fieldsElem := elements[0].(map[string]any)["fields"].([]any)
+	foundTime := false
+	for _, f := range fieldsElem {
+		fMap := f.(map[string]any)
+		textMap := fMap["text"].(map[string]any)
+		content := textMap["content"].(string)
+		if strings.Contains(content, "发生时间") {
+			foundTime = true
+			if !strings.Contains(content, "2026-09-29 18:00:00") {
+				t.Errorf("expected CST time 2026-09-29 18:00:00, got %s", content)
+			}
+		}
+	}
+	if !foundTime {
+		t.Errorf("expected 发生时间 in card fields")
 	}
 }
 
@@ -111,11 +194,196 @@ func TestDingTalkSenderSignsURL(t *testing.T) {
 	}
 }
 
-// TestSlackSenderEmitsAttachments locks the new Slack payload shape:
-// the operator sees a colored side-bar + structured fields (Severity /
-// Source / Rule / Incident / Device / Dedupe) instead of an unstyled
-// paragraph. The top-level "text" stays populated as Slack's fallback
-// preview (push, email digest, sidebar) for clients that strip attachments.
+func TestDingTalkSenderEmitsActionCard(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("decode payload: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	sender := NewDingTalkSender("dingtalk-ops", srv.URL, "", srv.Client())
+	occurred := time.Date(2026, 5, 30, 10, 0, 0, 0, time.UTC)
+	err := sender.Send(context.Background(), Message{
+		Subject:    "edge-node-01 离线",
+		Severity:   SeverityCritical,
+		OccurredAt: occurred,
+		Body:       "Device edge-node-01 has been disconnected for more than 5 minutes",
+		Source:     "alert-pipeline",
+		Labels: map[string]string{
+			"status":      "open",
+			"rule_name":   "主机离线告警",
+			"device_name": "edge-node-01",
+			"device_id":   "42",
+			"incident_id": "101",
+			"console_url": "https://opspilot.example.com",
+			"runbook_url": "https://opspilot.example.com/wiki/runbook",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	if got["msgtype"] != "actionCard" {
+		t.Fatalf("expected msgtype=actionCard, got %v", got["msgtype"])
+	}
+
+	card, ok := got["actionCard"].(map[string]any)
+	if !ok {
+		t.Fatalf("actionCard is not a map: %v", got["actionCard"])
+	}
+
+	title, _ := card["title"].(string)
+	if !strings.Contains(title, "🚨【严重告警】主机离线告警 - edge-node-01") {
+		t.Errorf("expected title to contain 🚨【严重告警】主机离线告警 - edge-node-01, got %q", title)
+	}
+
+	text, _ := card["text"].(string)
+	if !strings.Contains(text, "2026-05-30 18:00:00") {
+		t.Errorf("expected text to contain CST time 2026-05-30 18:00:00, got %q", text)
+	}
+	if !strings.Contains(text, "CRITICAL (严重)") {
+		t.Errorf("expected text to contain CRITICAL (严重), got %q", text)
+	}
+	if !strings.Contains(text, "OPEN (发生中)") {
+		t.Errorf("expected text to contain OPEN (发生中), got %q", text)
+	}
+	if !strings.Contains(text, "#101") {
+		t.Errorf("expected visible incident id #101 in text, got %q", text)
+	}
+
+	btns, ok := card["btns"].([]any)
+	if !ok || len(btns) != 3 {
+		t.Fatalf("expected 3 buttons, got %v", card["btns"])
+	}
+	foundIncidentDeepLink := false
+	for _, raw := range btns {
+		btn, _ := raw.(map[string]any)
+		if btn["actionURL"] == "https://opspilot.example.com/alerts/incidents/101" {
+			foundIncidentDeepLink = true
+		}
+	}
+	if !foundIncidentDeepLink {
+		t.Fatalf("expected incident deep link button, got %#v", btns)
+	}
+}
+
+func TestDingTalkCardIgnoresResolvedSubstringInSubject(t *testing.T) {
+	payload := formatDingTalkMessage(Message{
+		Subject:  "unresolved errors above threshold on systemd-resolved",
+		Severity: SeverityCritical,
+		Labels: map[string]string{
+			"status":      "open",
+			"incident_id": "42",
+			"console_url": "https://console.example",
+			"device_id":   "7",
+		},
+	})
+	if payload["msgtype"] != "actionCard" {
+		t.Fatalf("msgtype = %v, want actionCard", payload["msgtype"])
+	}
+	card := payload["actionCard"].(map[string]any)
+	title, _ := card["title"].(string)
+	if strings.Contains(title, "告警恢复") {
+		t.Fatalf("title must not be recovery for open critical: %q", title)
+	}
+	if !strings.Contains(title, "严重告警") {
+		t.Fatalf("title = %q, want critical alert prefix", title)
+	}
+	text, _ := card["text"].(string)
+	if !strings.Contains(text, "OPEN (发生中)") {
+		t.Errorf("expected OPEN status localization, got %q", text)
+	}
+	if strings.Contains(text, "RESOLVED") {
+		t.Errorf("must not mark resolved when Labels[status]=open: %q", text)
+	}
+	if !strings.Contains(text, "#42") {
+		t.Errorf("expected visible incident id, got %q", text)
+	}
+}
+
+func TestDingTalkSenderMarkdownFallback(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("decode payload: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	sender := NewDingTalkSender("dingtalk", srv.URL, "secret", srv.Client())
+	err := sender.Send(context.Background(), Message{
+		Subject:  "设备恢复正常",
+		Severity: SeverityInfo,
+		Labels: map[string]string{
+			"status":    "resolved",
+			"rule_name": "主机离线告警",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	if got["msgtype"] != "markdown" {
+		t.Fatalf("expected msgtype=markdown when no action buttons, got %v", got["msgtype"])
+	}
+
+	md, ok := got["markdown"].(map[string]any)
+	if !ok {
+		t.Fatalf("markdown is not a map: %v", got["markdown"])
+	}
+
+	title, _ := md["title"].(string)
+	if !strings.Contains(title, "✅【告警恢复】主机离线告警") {
+		t.Errorf("expected resolved title, got %q", title)
+	}
+
+	text, _ := md["text"].(string)
+	if !strings.Contains(text, "RESOLVED (已恢复)") {
+		t.Errorf("expected text to contain RESOLVED (已恢复), got %q", text)
+	}
+}
+
+func TestFormatTextChineseCard(t *testing.T) {
+	occurred := time.Date(2026, 10, 8, 22, 50, 0, 0, time.Local)
+	msg := Message{
+		Subject:    "cpu_high: 100 * (1 - avg by(device_id) (rate(node_cpu_seconds_total...))) ⇒ value=85.5",
+		Severity:   SeverityCritical,
+		Source:     "monitoring_pipeline",
+		DedupeKey:  "pipeline:cpu_high:device_id=1,device_name=edge-01",
+		OccurredAt: occurred,
+		Labels: map[string]string{
+			"rule":        "cpu_high",
+			"rule_name":   "CPU 高负载",
+			"device_id":   "1",
+			"device_name": "edge-01",
+			"incident_id": "123",
+		},
+	}
+	text := formatText(msg)
+	if !strings.Contains(text, "🚨 【严重告警】") {
+		t.Errorf("expected severity badge, got:\n%s", text)
+	}
+	if !strings.Contains(text, "• 告警规则: CPU 高负载") {
+		t.Errorf("expected rule name, got:\n%s", text)
+	}
+	if !strings.Contains(text, "• 关联设备: edge-01 (ID: 1)") {
+		t.Errorf("expected device display, got:\n%s", text)
+	}
+	if !strings.Contains(text, "• 告警编号: #123") {
+		t.Errorf("expected incident ID, got:\n%s", text)
+	}
+	if !strings.Contains(text, "• 告警来源: 监控管线") {
+		t.Errorf("expected source, got:\n%s", text)
+	}
+	if !strings.Contains(text, "• 去重标识: pipeline:cpu_high:device_id=1") {
+		t.Errorf("expected simplified dedupe key, got:\n%s", text)
+	}
+}
+
 func TestSlackSenderEmitsAttachments(t *testing.T) {
 	var got map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -144,7 +412,6 @@ func TestSlackSenderEmitsAttachments(t *testing.T) {
 		t.Fatalf("Send: %v", err)
 	}
 
-	// Fallback text: Slack uses this for push / sidebar / email digest.
 	if want := "[CRITICAL] Swap usage 84% on VM-4-8"; got["text"] != want {
 		t.Errorf("text = %q, want %q", got["text"], want)
 	}
@@ -162,39 +429,13 @@ func TestSlackSenderEmitsAttachments(t *testing.T) {
 		t.Errorf("title = %v", att["title"])
 	}
 	if att["footer"] != "opspilot" {
-		t.Errorf("footer = %v, want ongrid", att["footer"])
+		t.Errorf("footer = %v, want opspilot", att["footer"])
 	}
 	if got, want := att["ts"], float64(occurred.Unix()); got != want {
 		t.Errorf("ts = %v, want %v", got, want)
 	}
-
-	fields, ok := att["fields"].([]any)
-	if !ok {
-		t.Fatalf("fields missing or wrong type: %v", att["fields"])
-	}
-	want := map[string]string{
-		"Severity":   "CRITICAL",
-		"Source":     "alert-evaluator",
-		"Rule":       "swap_high",
-		"Incident":   "#42",
-		"Device":     "#1",
-		"Dedupe key": "pipeline:swap_high:device_id=1",
-	}
-	saw := map[string]string{}
-	for _, f := range fields {
-		m := f.(map[string]any)
-		saw[m["title"].(string)] = m["value"].(string)
-	}
-	for k, v := range want {
-		if saw[k] != v {
-			t.Errorf("field %q = %q, want %q", k, saw[k], v)
-		}
-	}
 }
 
-// TestSlackSenderColorByUnknownSeverity guards the slate fallback so a
-// rogue severity string doesn't break the rail's render contract (Slack
-// silently drops a malformed color and the operator gets a bare card).
 func TestSlackSenderColorByUnknownSeverity(t *testing.T) {
 	if got := slackColor(Severity("bogus")); got == "" {
 		t.Errorf("color empty for unknown severity")

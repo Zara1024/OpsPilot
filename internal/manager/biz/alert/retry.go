@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/alert"
@@ -23,6 +24,7 @@ type RetryWorkerOpts struct {
 	MaxAttempts       uint32
 	BackoffPerAttempt time.Duration
 	Tick              time.Duration
+	ConsoleURL        string
 	Log               *slog.Logger
 	Now               func() time.Time
 }
@@ -38,6 +40,7 @@ type RetryWorker struct {
 	maxAttempts       uint32
 	backoffPerAttempt time.Duration
 	tick              time.Duration
+	consoleURL        string
 	log               *slog.Logger
 	now               func() time.Time
 }
@@ -67,6 +70,7 @@ func NewRetryWorker(opts RetryWorkerOpts) *RetryWorker {
 		maxAttempts:       opts.MaxAttempts,
 		backoffPerAttempt: opts.BackoffPerAttempt,
 		tick:              opts.Tick,
+		consoleURL:        strings.TrimRight(strings.TrimSpace(opts.ConsoleURL), "/"),
 		log:               opts.Log,
 		now:               opts.Now,
 	}
@@ -158,7 +162,7 @@ func (w *RetryWorker) retryOne(ctx context.Context, d *model.Delivery, now time.
 		return
 	}
 
-	msg := buildIncidentMessage(incident, now)
+	msg := w.buildIncidentMessage(incident, now)
 	sentAt := now
 	finished := now
 	sendErr := w.notifier.Send(ctx, msg, channel.Name)
@@ -200,7 +204,7 @@ func (w *RetryWorker) retryOne(ctx context.Context, d *model.Delivery, now time.
 	}
 }
 
-func buildIncidentMessage(incident *model.Incident, now time.Time) notify.Message {
+func (w *RetryWorker) buildIncidentMessage(incident *model.Incident, now time.Time) notify.Message {
 	severity := notify.Severity(incident.Severity)
 	if severity == "" {
 		severity = notify.SeverityWarning
@@ -209,12 +213,25 @@ func buildIncidentMessage(incident *model.Incident, now time.Time) notify.Messag
 		"rule":        incident.Rule,
 		"incident_id": fmt.Sprintf("%d", incident.ID),
 	}
+	if incident.RuleName != "" {
+		labels["rule_name"] = incident.RuleName
+	}
 	if incident.DeviceID != nil {
 		labels["device_id"] = fmt.Sprintf("%d", *incident.DeviceID)
 	}
-	subject := incident.Summary
+	if incident.RunbookURL != "" {
+		labels["runbook_url"] = incident.RunbookURL
+	}
+	if w.consoleURL != "" {
+		labels["console_url"] = w.consoleURL
+	}
+	subject := incident.Title
 	if subject == "" {
-		subject = incident.Title
+		subject = incident.Summary
+	}
+	body := incident.Summary
+	if body == subject {
+		body = incident.Description
 	}
 	occurredAt := incident.LastFiredAt
 	if occurredAt.IsZero() {
@@ -222,6 +239,7 @@ func buildIncidentMessage(incident *model.Incident, now time.Time) notify.Messag
 	}
 	return notify.Message{
 		Subject:    subject,
+		Body:       body,
 		Severity:   severity,
 		Source:     incident.ScopeType,
 		DedupeKey:  incident.DedupeKey,

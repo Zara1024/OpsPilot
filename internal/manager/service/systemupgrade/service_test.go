@@ -28,7 +28,7 @@ func TestCheckDetectsNewerRelease(t *testing.T) {
 	svc := New(Config{
 		CurrentVersion: "v0.8.4",
 		ReleaseAPIURL:  srv.URL + "/latest",
-		DownloadBase:   "https://ongrid.cloud/dl",
+		DownloadBase:   "https://github.com/Zara1024/OpsPilot/releases/download",
 	}, srv.Client())
 	info, err := svc.Check(context.Background())
 	if err != nil {
@@ -50,14 +50,14 @@ func TestCheckDetectsNewerRelease(t *testing.T) {
 		t.Fatalf("commands = %+v, want amd64, arm64, auto-detect", info.Commands)
 	}
 	wantAMD64Command := strings.Join([]string{
-		"curl -fL -O https://ongrid.cloud/dl/ongrid-v0.8.10-linux-amd64.tar.xz || wget https://ongrid.cloud/dl/ongrid-v0.8.10-linux-amd64.tar.xz",
-		"tar xf ongrid-v0.8.10-linux-amd64.tar.xz && cd ongrid-v0.8.10-linux-amd64",
+		"curl -fL -O https://github.com/Zara1024/OpsPilot/releases/download/v0.8.10/opspilot-v0.8.10-linux-amd64.tar.xz || wget https://github.com/Zara1024/OpsPilot/releases/download/v0.8.10/opspilot-v0.8.10-linux-amd64.tar.xz",
+		"tar xf opspilot-v0.8.10-linux-amd64.tar.xz && cd opspilot-v0.8.10-linux-amd64",
 		"sudo ./upgrade.sh",
 	}, "\n")
 	if info.Commands[0].Command != wantAMD64Command {
 		t.Fatalf("amd64 command = %q, want %q", info.Commands[0].Command, wantAMD64Command)
 	}
-	if !strings.Contains(info.Commands[2].Command, `PKG="ongrid-v0.8.10-linux-${ARCH}"`) {
+	if !strings.Contains(info.Commands[2].Command, `PKG="opspilot-v0.8.10-linux-${ARCH}"`) {
 		t.Fatalf("auto command does not select an architecture-specific package: %s", info.Commands[2].Command)
 	}
 }
@@ -223,5 +223,86 @@ func TestCheckAcceptsPlainTextVersionMetadata(t *testing.T) {
 	}
 	if info.LatestVersion != "v0.8.6" {
 		t.Fatalf("LatestVersion = %q, want v0.8.6", info.LatestVersion)
+	}
+}
+
+func TestCheckSanitizesLegacyOpspilotCloudDownloadBase(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write([]byte(`{
+			"version":"v1.0.7",
+			"release_url":"https://opspilot.cloud/release",
+			"download_base":"https://opspilot.cloud/dl"
+		}`)); err != nil {
+			t.Fatalf("write response: %v", err)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	svc := New(Config{
+		CurrentVersion: "v1.0.6",
+		ReleaseAPIURL:  srv.URL,
+	}, srv.Client())
+	info, err := svc.Check(context.Background())
+	if err != nil {
+		t.Fatalf("Check returned error: %v", err)
+	}
+	if !info.UpdateAvailable {
+		t.Fatalf("UpdateAvailable = false, want true")
+	}
+	wantURL := "https://github.com/Zara1024/OpsPilot/releases/tag/v1.0.7"
+	if info.ReleaseURL != wantURL {
+		t.Fatalf("ReleaseURL = %q, want %q", info.ReleaseURL, wantURL)
+	}
+	wantPrefix := "curl -fL -O https://github.com/Zara1024/OpsPilot/releases/download/v1.0.7/opspilot-v1.0.7-linux-amd64.tar.xz"
+	if !strings.HasPrefix(info.Commands[0].Command, wantPrefix) {
+		t.Fatalf("command = %q, want prefix %q", info.Commands[0].Command, wantPrefix)
+	}
+}
+
+func TestNormalizeDownloadBase(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		base     string
+		version  string
+		expected string
+	}{
+		{
+			name:     "empty base",
+			base:     "",
+			version:  "v1.0.7",
+			expected: "https://github.com/Zara1024/OpsPilot/releases/download/v1.0.7",
+		},
+		{
+			name:     "legacy opspilot.cloud",
+			base:     "https://opspilot.cloud/dl",
+			version:  "v1.0.7",
+			expected: "https://github.com/Zara1024/OpsPilot/releases/download/v1.0.7",
+		},
+		{
+			name:     "github base without tag",
+			base:     "https://github.com/Zara1024/OpsPilot/releases/download",
+			version:  "v1.0.7",
+			expected: "https://github.com/Zara1024/OpsPilot/releases/download/v1.0.7",
+		},
+		{
+			name:     "github base already with tag",
+			base:     "https://github.com/Zara1024/OpsPilot/releases/download/v1.0.7",
+			version:  "v1.0.7",
+			expected: "https://github.com/Zara1024/OpsPilot/releases/download/v1.0.7",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := normalizeDownloadBase(tt.base, tt.version)
+			if got != tt.expected {
+				t.Fatalf("normalizeDownloadBase(%q, %q) = %q, want %q", tt.base, tt.version, got, tt.expected)
+			}
+		})
 	}
 }

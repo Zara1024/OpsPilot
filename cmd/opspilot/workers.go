@@ -113,6 +113,7 @@ func runWorkers(rootCtx context.Context, cfg *config.Config, log *slog.Logger, n
 			LogQuerier:             telemetry.lokiLogClient,
 			LogSearcher:            telemetry.logsBackendSvc,
 			DeviceIdentityResolver: managersvcalert.DeviceIdentityResolver(devices.deviceUC),
+			ConsoleURL:             cfg.PublicURL,
 			Log:                    log.With(slog.String("comp", "alert-pipeline")),
 		})
 		eg.Go(func() error { return pipelineEval.Loop(egCtx) })
@@ -126,6 +127,7 @@ func runWorkers(rootCtx context.Context, cfg *config.Config, log *slog.Logger, n
 			Usecase:     alerts.alertUC,
 			MaxAttempts: 5,
 			Tick:        cfg.Alert.EvaluatorInterval,
+			ConsoleURL:  cfg.PublicURL,
 			Log:         log.With(slog.String("comp", "alert-retry")),
 		})
 		eg.Go(func() error { return retryWorker.Loop(egCtx) })

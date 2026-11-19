@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -167,6 +168,17 @@ func TestLoginRejectsWrongPassword(t *testing.T) {
 	}
 	if pair.Role != model.RoleAdmin {
 		t.Errorf("role = %q, want admin", pair.Role)
+	}
+}
+
+func TestLogin_RejectsLongPassword(t *testing.T) {
+	uc := newTestUsecase(t)
+	ctx := context.Background()
+
+	longPass := strings.Repeat("a", 129)
+	_, err := uc.Login(ctx, "test@example.com", longPass)
+	if !errors.Is(err, errs.ErrUnauthorized) {
+		t.Fatalf("want ErrUnauthorized for long password, got %v", err)
 	}
 }
 

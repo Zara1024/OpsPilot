@@ -62,8 +62,13 @@ func (e *PipelineEvaluator) evaluateLogSearch(ctx context.Context, now time.Time
 			groupKey := logSearchGroupKey(rule.GroupBy, group.Labels)
 			dedupeKey := fmt.Sprintf("pipeline:%s:%s", rule.RuleKey, groupKey)
 			fired[dedupeKey] = struct{}{}
-			summary := fmt.Sprintf("%s: log count %d %s %g in %s (labels=%s)",
-				rule.RuleKey, group.Count, rule.Operator, rule.Threshold, rule.WindowText, groupKey)
+			name := strings.TrimSpace(rule.Name)
+			if name == "" {
+				name = rule.RuleKey
+			}
+			title := fmt.Sprintf("%s (匹配日志 %d 条)", name, group.Count)
+			summary := fmt.Sprintf("%s: 日志匹配数达到 %d 条 (阈值: %s %g, 时间窗口: %s)",
+				name, group.Count, rule.Operator, rule.Threshold, rule.WindowText)
 			threshold := rule.Threshold
 			var devID *uint64
 			if scope == model.RuleScopeHost {
@@ -78,7 +83,7 @@ func (e *PipelineEvaluator) evaluateLogSearch(ctx context.Context, now time.Time
 				DeviceID:   devID,
 				DedupeKey:  dedupeKey,
 				OccurredAt: now,
-				Title:      summary,
+				Title:      title,
 				Summary:    summary,
 				RunbookURL: rule.RunbookURL,
 				Value:      &value,

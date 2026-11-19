@@ -39,6 +39,27 @@ func TestPipelineNotificationPreservesApplicationIdentity(t *testing.T) {
 	}
 }
 
+func TestPipelineNotificationInjectsConsoleURL(t *testing.T) {
+	repo, notifier := newFakeRepo(), &fakeNotifier{}
+	prom := &fakePromQuerier{result: &promquery.InstantResult{ResultType: "vector", Result: json.RawMessage(`[{"metric":{"device_id":"9"},"value":[1,"1"]}]`)}}
+	rules := NewStaticRulesProvider(WithMetricRawRules([]MetricRawRule{{ID: 1, RuleKey: "cpu_high", Name: "CPU high", ScopeType: "global", Expr: "up > 0", Severity: "critical"}}))
+	evaluator := newPipelineEvaluator(t, repo, notifier, rules, PipelineEvaluatorOpts{
+		PromQuerier: prom,
+		ConsoleURL:  "https://opspilot.example.com/",
+	})
+	evaluator.EvaluateOnce(t.Context())
+	if len(notifier.msgs) != 1 {
+		t.Fatalf("notifications=%d", len(notifier.msgs))
+	}
+	labels := notifier.msgs[0].Labels
+	if labels["console_url"] != "https://opspilot.example.com" {
+		t.Fatalf("console_url = %q, want trimmed public URL", labels["console_url"])
+	}
+	if labels["rule_name"] != "CPU high" {
+		t.Fatalf("rule_name = %q", labels["rule_name"])
+	}
+}
+
 func (f *fakeEdgeLister) List(_ context.Context, _ edgebiz.ListFilter) ([]*edgemodel.Edge, error) {
 	return f.edges, f.err
 }
