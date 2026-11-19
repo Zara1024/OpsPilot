@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Zara1024/OpsPilot/internal/pkg/tunnel"
 	"github.com/gosnmp/gosnmp"
+	"github.com/Zara1024/OpsPilot/internal/pkg/tunnel"
 )
 
 const (

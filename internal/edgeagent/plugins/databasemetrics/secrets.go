@@ -518,7 +518,7 @@ func stageManagedSecretWrite(plan managedSecretWritePlan) (stagedManagedSecretWr
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return stagedManagedSecretWrite{}, fmt.Errorf("write database metrics secret: mkdir: %w", err)
 	}
-	f, err := os.CreateTemp(dir, ".opspilot-secret-*")
+	f, err := os.CreateTemp(dir, ".ongrid-secret-*")
 	if err != nil {
 		return stagedManagedSecretWrite{}, fmt.Errorf("write database metrics secret: create temp: %w", err)
 	}
@@ -637,7 +637,7 @@ func commitManagedSecretWrites(ctx context.Context, staged []stagedManagedSecret
 }
 
 func reserveManagedSecretBackupPath(dir string) (string, error) {
-	f, err := os.CreateTemp(dir, ".opspilot-secret-backup-*")
+	f, err := os.CreateTemp(dir, ".ongrid-secret-backup-*")
 	if err != nil {
 		return "", fmt.Errorf("write database metrics secret: reserve backup: %w", err)
 	}

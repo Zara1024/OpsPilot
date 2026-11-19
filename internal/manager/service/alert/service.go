@@ -526,8 +526,8 @@ func (s *Service) TestChannel(ctx context.Context, _ Caller, id uint64) (*Channe
 		return nil, err
 	}
 	msg := notify.Message{
-		Subject:    fmt.Sprintf("[opspilot] 测试投递 — %s", channel.Name),
-		Body:       "这是一条来自 opspilot 通知渠道测试的消息，收到即视为渠道投递链路正常。",
+		Subject:    fmt.Sprintf("[ongrid] 测试投递 — %s", channel.Name),
+		Body:       "这是一条来自 ongrid 通知渠道测试的消息，收到即视为渠道投递链路正常。",
 		Severity:   notify.SeverityInfo,
 		Source:     "channel_test",
 		DedupeKey:  fmt.Sprintf("channel-test-%d", channel.ID),

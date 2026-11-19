@@ -7,7 +7,7 @@ import (
 )
 
 // NewBizWriter returns the biz.Writer interface value, used at wire time
-// (cmd/opspilot) to construct the biz.Ingester without exposing the
+// (cmd/ongrid) to construct the biz.Ingester without exposing the
 // concrete *Writer type to the wiring layer.
 func NewBizWriter(db *gorm.DB) biz.Writer { return NewWriter(db) }
 

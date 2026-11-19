@@ -156,7 +156,7 @@ func (HostNetnsInspect) Execute(ctx context.Context, params json.RawMessage) (js
 		includeRoutes = *p.IncludeRoutes
 	}
 
-	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	var names []string
@@ -308,7 +308,7 @@ func readLinks(ctx context.Context, ns string) ([]netnsLink, error) {
 		return nil, fmt.Errorf("ip -j -n %s link show: %w", ns, err)
 	}
 	var raw []struct {
-		IfName    string `json:"ifname"`
+		IfName   string `json:"ifname"`
 		Operstate string `json:"operstate"`
 		Address   string `json:"address"`
 	}

@@ -13,7 +13,7 @@ import (
 
 // Opt-in: synthetic data only; providers may omit visible reasoning content.
 func TestToolCompatibilityLive(t *testing.T) {
-	if os.Getenv("ONGRID_TOOL_COMPAT_SMOKE") != "1" {
+	if os.Getenv("OPSPILOT_TOOL_COMPAT_SMOKE") != "1" {
 		t.Skip("opt-in live provider smoke")
 	}
 	cfg := Config{Provider: os.Getenv("SMOKE_PROVIDER"), APIKey: os.Getenv("SMOKE_API_KEY"), BaseURL: os.Getenv("SMOKE_BASE_URL"), Model: os.Getenv("SMOKE_MODEL")}

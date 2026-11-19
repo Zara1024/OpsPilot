@@ -139,4 +139,3 @@ func From(ctx context.Context) (Identity, bool) {
 	i, ok := ctx.Value(contextKey{}).(Identity)
 	return i, ok
 }
-

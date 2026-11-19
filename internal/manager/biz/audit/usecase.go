@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"time"
 
-	store "github.com/Zara1024/OpsPilot/internal/manager/data/audit/store"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/audit"
 	"github.com/Zara1024/OpsPilot/internal/pkg/auditctx"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
@@ -25,9 +24,8 @@ type Repo interface {
 	DeleteOlderThan(ctx context.Context, cutoff time.Time) (int64, error)
 }
 
-// ListFilters is an alias to the store-level filter struct so handlers
-// can depend only on biz/audit without importing data/audit/store.
-type ListFilters = store.ListFilters
+// ListFilters shares the model contract without depending on persistence.
+type ListFilters = model.ListFilters
 
 // Event is the input shape for Emit. Caller fills what it knows; the
 // usecase stamps OccurredAt and serialises Payload.

@@ -14,7 +14,7 @@ import (
 )
 
 // Migrate registers the installed_skills table with GORM's AutoMigrate.
-// Composed from cmd/opspilot via dbx.RunMigrations like the other BC
+// Composed from cmd/ongrid via dbx.RunMigrations like the other BC
 // migrations.
 func Migrate(db *gorm.DB) error {
 	if dbx.NeedsDeleteMarkerMigration(db, model.InstalledPack{}.TableName()) {

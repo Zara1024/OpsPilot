@@ -5,7 +5,7 @@ tags: [alerting, rules, severities]
 
 # Alerting Model
 
-OpsPilot uses a two-dimensional taxonomy for alert rules, plus a small set
+Ongrid uses a two-dimensional taxonomy for alert rules, plus a small set
 of operational primitives (severity, suppression, runbook). Understanding
 the taxonomy is what stops your alert tree from becoming spaghetti.
 
@@ -53,7 +53,7 @@ Every rule should set `runbook_url` to a doc in `alerts/`. The link uses
 a fragment matching the `rule_key`, e.g.:
 
 ```
-https://github.com/zara1024/vault/blob/main/alerts/host-metrics.md#cpu_high
+https://github.com/ongridio/vault/blob/main/alerts/host-metrics.md#cpu_high
 ```
 
 If a rule has no runbook, the on-call experience is "alert fired, now

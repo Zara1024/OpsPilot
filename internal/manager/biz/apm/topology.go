@@ -20,7 +20,7 @@ func (s *Service) ServiceDeployments(ctx context.Context, now time.Time) ([]mode
 	// Tempo keeps flushing idle counters: require recent changes or a newly
 	// observed series, rather than interpreting each flush as a fresh span.
 	const expression = `topk(5001, max by (service,service_namespace,deployment_environment_name,device_id) (
-label_replace(timestamp(label_replace({service_name!="",__name__!~"traces_.*"}, "opspilot_metric", "$1", "__name__", "(.+)")), "service", "$1", "service_name", "(.+)")
+label_replace(timestamp(label_replace({service_name!="",__name__!~"traces_.*"}, "ongrid_metric", "$1", "__name__", "(.+)")), "service", "$1", "service_name", "(.+)")
 or timestamp((traces_spanmetrics_calls_total{service!=""} > 0) and (
   (changes(traces_spanmetrics_calls_total{service!=""}[5m]) > 0)
   or (traces_spanmetrics_calls_total{service!=""} unless traces_spanmetrics_calls_total{service!=""} offset 5m)

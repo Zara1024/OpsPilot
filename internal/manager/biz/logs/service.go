@@ -35,7 +35,7 @@ const (
 	SecretSlotESAPIKey      = "elasticsearch_api_key"
 	SecretSlotESBasicAuth   = "elasticsearch_basic_auth"
 	SecretSlotLokiBasicAuth = "loki_basic_auth"
-	managedLogsSecretPrefix = "opspilot-managed-logs-es-"
+	managedLogsSecretPrefix = "ongrid-managed-logs-es-"
 	elasticsearchCredType   = "elasticsearch"
 	maxAPIKeyBytes          = 16 << 10
 	maxCAPEMBytes           = 256 << 10
@@ -44,7 +44,7 @@ const (
 )
 
 var (
-	datasetRE   = regexp.MustCompile(`^opspilot\.[a-z0-9][a-z0-9._-]{0,91}$`)
+	datasetRE   = regexp.MustCompile(`^ongrid\.[a-z0-9][a-z0-9._-]{0,91}$`)
 	namespaceRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,99}$`)
 )
 
@@ -69,7 +69,7 @@ type SecretResolver interface {
 
 // ManagedSecretStore is implemented by Manager's encrypted credential vault.
 // It is intentionally an in-process capability rather than an HTTP API: direct
-// API keys submitted with a log backend are write-only request fields and are
+// credentials submitted with a log backend are write-only request fields and are
 // converted to ordinary credential references before the backend is persisted.
 type ManagedSecretStore interface {
 	SecretResolver
@@ -422,8 +422,8 @@ func (s *Service) Get(ctx context.Context) (*BackendView, error) {
 	return s.view(ctx, backend)
 }
 
-// Test validates the saved Elasticsearch query/write endpoints and their API
-// key privileges without notifying Edge or changing the
+// Test validates the saved Elasticsearch query/write endpoints and credential
+// privileges without notifying Edge or changing the
 // selected log backend. Select repeats these checks before switching the global
 // read/write backend. Edge connectivity is checked independently after selection.
 func (s *Service) Test(ctx context.Context, id uint64) (*BackendTestResult, error) {
@@ -471,7 +471,6 @@ func (s *Service) TestDraft(ctx context.Context, input SaveInput) (*BackendTestR
 		caPEM = previous.CAPEM
 	}
 	backend := &model.Backend{
-		AuthType:           normalized.AuthType,
 		WriteEndpointsJSON: string(endpointsJSON), QueryEndpoint: normalized.QueryEndpoint,
 		IndexPattern: indexPattern(normalized.Namespace), CAPEM: caPEM, TLSInsecure: normalized.TLSInsecure,
 	}
@@ -793,7 +792,7 @@ func (s *Service) SelectedElasticsearchDatasource(ctx context.Context) (*pkggraf
 }
 
 // PluginRuntimeOverlay implements edge.PluginRuntimeOverlayProvider without
-// importing the edge bounded context. Values are non-sensitive; the API key is
+// importing the edge bounded context. Values are non-sensitive; the credential is
 // fetched separately by the authenticated Edge and materialized as a file.
 func (s *Service) PluginRuntimeOverlay(ctx context.Context, edgeID uint64, plugin string) (map[string]interface{}, error) {
 	if plugin != "logs" {
@@ -1412,7 +1411,7 @@ func newProbeID() (string, error) {
 	if _, err := rand.Read(raw); err != nil {
 		return "", fmt.Errorf("generate Edge log probe id: %w", err)
 	}
-	return "opspilot-log-probe-" + base64.RawURLEncoding.EncodeToString(raw), nil
+	return "ongrid-log-probe-" + base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
 func newConnectionCheckGeneration() (uint64, error) {
@@ -1508,7 +1507,7 @@ func (s *Service) storeManagedCredential(ctx context.Context, role string, crede
 	if err != nil {
 		return "", fmt.Errorf("generate managed Elasticsearch credential name: %w", err)
 	}
-	description := fmt.Sprintf("Managed by OpsPilot logs backend (%s credential, generation %d)", role, generation)
+	description := fmt.Sprintf("Managed by Ongrid logs backend (%s credential, generation %d)", role, generation)
 	if err := store.CreateManaged(ctx, name, elasticsearchCredType, description, credential.fields()); err != nil {
 		return "", fmt.Errorf("store managed Elasticsearch %s credential: %w", role, err)
 	}
@@ -1521,9 +1520,9 @@ func (s *Service) deleteManagedCredentials(ctx context.Context, refs []string) e
 		return errors.New("encrypted log backend credential storage is unavailable")
 	}
 	var cleanupErr error
-	for _, ref := range refs {
-		if err := store.DeleteManaged(ctx, ref); err != nil && !errors.Is(err, errs.ErrNotFound) {
-			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("delete %s: %w", ref, err))
+	for i := len(refs) - 1; i >= 0; i-- {
+		if err := store.DeleteManaged(ctx, refs[i]); err != nil && !errors.Is(err, errs.ErrNotFound) {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("delete managed credential: %w", err))
 		}
 	}
 	return cleanupErr
@@ -1610,7 +1609,7 @@ func (s *Service) view(ctx context.Context, backend *model.Backend) (*BackendVie
 	}
 	return &BackendView{
 		AuthType: backendAuthType(backend),
-		ID: backend.ID, Name: backend.Name, Type: backend.Type, CurrentBackend: currentBackend, CurrentBackendID: currentBackendID, Status: backend.Status,
+		ID:       backend.ID, Name: backend.Name, Type: backend.Type, CurrentBackend: currentBackend, CurrentBackendID: currentBackendID, Status: backend.Status,
 		Generation: backend.Generation, WriteEndpoints: endpoints, QueryEndpoint: backend.QueryEndpoint,
 		Dataset: backend.Dataset, Namespace: backend.Namespace, IndexPattern: backend.IndexPattern,
 		WriteCredentialRef: backend.WriteCredentialRef, QueryCredentialRef: backend.QueryCredentialRef,
@@ -1674,10 +1673,10 @@ func normalizeSaveInput(input SaveInput) (SaveInput, error) {
 	input.QueryEndpoint = queryEndpoint
 	input.Dataset = strings.ToLower(strings.TrimSpace(input.Dataset))
 	if input.Dataset == "" {
-		input.Dataset = "opspilot.generic"
+		input.Dataset = "ongrid.generic"
 	}
 	if !datasetRE.MatchString(input.Dataset) {
-		return SaveInput{}, fmt.Errorf("%w: dataset must match opspilot.<safe-slug>", errs.ErrInvalid)
+		return SaveInput{}, fmt.Errorf("%w: dataset must match ongrid.<safe-slug>", errs.ErrInvalid)
 	}
 	input.Namespace = strings.ToLower(strings.TrimSpace(input.Namespace))
 	if input.Namespace == "" {
@@ -1787,7 +1786,7 @@ func decodeEndpoints(raw string) ([]string, error) {
 	return endpoints, nil
 }
 
-func indexPattern(namespace string) string { return "logs-opspilot.*.otel-" + namespace }
+func indexPattern(namespace string) string { return "logs-ongrid.*.otel-" + namespace }
 
 func safeProbeError(err error) string {
 	if err == nil {

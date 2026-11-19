@@ -17,7 +17,7 @@ import (
 	"github.com/Zara1024/OpsPilot/internal/pkg/tenantctx"
 )
 
-const promTicketCookie = "opspilot_prom_ticket"
+const promTicketCookie = "ongrid_prom_ticket"
 
 // maxExprBytes caps the PromQL expression so an authenticated user can't
 // pin Prom with a multi-MB query body. 4 KiB matches the existing
@@ -38,8 +38,8 @@ type PromQuerier interface {
 }
 
 type Handler struct {
-	svc  Service
-	prom PromQuerier // may be nil when OPSPILOT_PROM_ENABLED=false
+	svc   Service
+	prom  PromQuerier // may be nil when OPSPILOT_PROM_ENABLED=false
 }
 
 func NewHandler(s Service) *Handler { return &Handler{svc: s} }

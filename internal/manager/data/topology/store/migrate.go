@@ -63,7 +63,7 @@ func seedBuiltinNodeTypes(db *gorm.DB) error {
 // any schema change there should update this query too.
 //
 // Cleanly skips when the `devices` table doesn't exist yet (fresh DB
-// before device migration has ever run). The cmd/opspilot migration
+// before device migration has ever run). The cmd/ongrid migration
 // order puts device.Migrate before topology.Migrate so on a real
 // boot we always see the table.
 func backfillDeviceNodes(db *gorm.DB) error {

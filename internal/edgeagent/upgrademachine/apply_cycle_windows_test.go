@@ -45,7 +45,7 @@ var (
 func buildSleeper(t *testing.T) string {
 	t.Helper()
 	sleeperOnce.Do(func() {
-		out := filepath.Join(os.TempDir(), "opspilot-sleeper.exe")
+		out := filepath.Join(os.TempDir(), "ongrid-sleeper.exe")
 		src := filepath.Join("testdata", "sleeper_main.go")
 		cmd := exec.Command("go", "build", "-o", out, src)
 		if out, err := cmd.CombinedOutput(); err != nil {

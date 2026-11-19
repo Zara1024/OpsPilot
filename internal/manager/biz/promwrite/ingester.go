@@ -4,7 +4,7 @@
 // the cloud Prom instance.
 //
 // Responsibilities:
-//   - merge the device_id + opspilot_source labels onto every sample (the
+//   - merge the device_id + ongrid_source labels onto every sample (the
 //     edge does not know its own numeric ID; only the cloud does, and
 //     keeping the source as a label is how multi-collector deployments
 //     stay distinguishable in PromQL)
@@ -89,7 +89,7 @@ func (i *Ingester) HealthSnapshot() (int, time.Time) {
 }
 
 // Push converts each tunnel.PromSample to a promwrite.Sample with the
-// device_id + opspilot_source labels merged in, sorts the label set, and
+// device_id + ongrid_source labels merged in, sorts the label set, and
 // forwards the result to the Writer in one call. Empty input is a no-op.
 //
 // the source string is opaque to the manager: examples are
@@ -116,7 +116,7 @@ func (i *Ingester) Push(ctx context.Context, deviceID uint64, source string, sam
 	}
 	fixedLabels := map[string]string{"device_id": strconv.FormatUint(deviceID, 10)}
 	if source != "" {
-		fixedLabels["opspilot_source"] = source
+		fixedLabels["ongrid_source"] = source
 	}
 	out := buildPromSamples(samples, fixedLabels, reservedHostLabels)
 	if err := i.write(ctx, "device_id", deviceID, source, out); err != nil {
@@ -141,7 +141,7 @@ func (i *Ingester) PushKubernetes(ctx context.Context, clusterID uint64, source 
 	}
 	fixedLabels := map[string]string{"cluster_id": strconv.FormatUint(clusterID, 10)}
 	if source != "" {
-		fixedLabels["opspilot_source"] = source
+		fixedLabels["ongrid_source"] = source
 	}
 	out := buildPromSamples(samples, fixedLabels, reservedKubernetesLabels)
 	if err := i.write(ctx, "cluster_id", clusterID, source, out); err != nil {
@@ -152,16 +152,16 @@ func (i *Ingester) PushKubernetes(ctx context.Context, clusterID uint64, source 
 
 var (
 	reservedHostLabels = map[string]struct{}{
-		"__name__":        {},
-		"device_id":       {},
-		"opspilot_source": {},
+		"__name__":      {},
+		"device_id":     {},
+		"ongrid_source": {},
 	}
 	reservedKubernetesLabels = map[string]struct{}{
-		"__name__":        {},
-		"cluster_id":      {},
-		"device_id":       {},
-		"edge_id":         {},
-		"opspilot_source": {},
+		"__name__":      {},
+		"cluster_id":    {},
+		"device_id":     {},
+		"edge_id":       {},
+		"ongrid_source": {},
 	}
 )
 

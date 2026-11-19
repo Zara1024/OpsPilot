@@ -34,7 +34,7 @@ func TestDecryptLegacyPlaintextPassesThrough(t *testing.T) {
 
 func TestDeriveKeyUsesPersistedJWTWithoutDedicatedKey(t *testing.T) {
 	got, weak := deriveKey("", "random-persisted-jwt-secret")
-	want := sha256.Sum256([]byte("opspilot-secretbox-v1:random-persisted-jwt-secret"))
+	want := sha256.Sum256([]byte("ongrid-secretbox-v1:random-persisted-jwt-secret"))
 	if weak || got != want {
 		t.Fatalf("deriveKey() = %x, weak=%v; want %x, false", got, weak, want)
 	}

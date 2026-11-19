@@ -3,7 +3,7 @@
 // /loki/* through nginx for queries (the data plane /loki/api/v1/push
 // route is auth_request-gated for ingest only —).
 //
-// Routes mounted under /api/v1 by cmd/opspilot/main.go:
+// Routes mounted under /api/v1 by cmd/ongrid/main.go:
 //
 //	GET /v1/logs/query_range — proxy /loki/api/v1/query_range
 //	GET /v1/logs/labels — proxy /loki/api/v1/labels

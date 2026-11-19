@@ -11,7 +11,7 @@ import (
 // INTEGER AUTOINCREMENT on SQLite, VARCHAR(N) vs TEXT for sized strings, and
 // respects the declarative `check:` constraints on both backends.
 //
-// cmd/opspilot composes this with the other data packages' Migrate functions
+// cmd/ongrid composes this with the other data packages' Migrate functions
 // via dbx.RunMigrations at startup.
 func Migrate(db *gorm.DB) error {
 	if err := db.AutoMigrate(&model.User{}); err != nil {

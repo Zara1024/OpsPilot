@@ -48,7 +48,7 @@ func TestEvidenceReplay(t *testing.T) {
 	}
 	t.Logf("fixed replay: model_calls=%d catalog_bytes=%d source_reads=%d local_elapsed=%s", sum.calls, len(set.Prompt), reader.reads, time.Since(start))
 	writeReplayArtifact(t, "new", fields)
-	if dir := os.Getenv("ONGRID_EVIDENCE_REPLAY_DIR"); dir != "" {
+	if dir := os.Getenv("OPSPILOT_EVIDENCE_REPLAY_DIR"); dir != "" {
 		root := "investigation"
 		rep := &alertmodel.InvestigationReport{ID: "replay-report", AuditSessionID: &root, ReadyAt: reader.records.Calls[0].EndedAt, EvidenceCheckJSON: fields.EvidenceCheckJSON}
 		for _, source := range check.Sources {
@@ -105,7 +105,7 @@ func TestEvidencePipelineKeepsIndependentExtractionTimeout(t *testing.T) {
 
 func writeReplayArtifact(t *testing.T, version string, fields ReadyFields) {
 	t.Helper()
-	dir := os.Getenv("ONGRID_EVIDENCE_REPLAY_DIR")
+	dir := os.Getenv("OPSPILOT_EVIDENCE_REPLAY_DIR")
 	if dir == "" {
 		return
 	}

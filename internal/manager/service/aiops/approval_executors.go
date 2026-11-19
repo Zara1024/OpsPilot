@@ -149,7 +149,7 @@ func (e ApprovalExecutors) Register(approvalUC *managerbizapproval.Usecase) {
 		// Optional pip index mirror — tccli + deps from pypi.org can take many
 		// minutes from a China-based host; a mirror cuts it to seconds. Generic
 		// (empty default = pypi); the test env sets it to a Tsinghua mirror.
-		if idx := strings.TrimSpace(os.Getenv("ONGRID_PIP_INDEX_URL")); idx != "" {
+		if idx := strings.TrimSpace(os.Getenv("OPSPILOT_PIP_INDEX_URL")); idx != "" {
 			env["PIP_INDEX_URL"] = idx
 		}
 		// Resolve the session's persistent workspace as cwd (HLD-019). Empty

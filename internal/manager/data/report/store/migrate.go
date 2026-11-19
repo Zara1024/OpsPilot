@@ -12,7 +12,7 @@ import (
 // Migrate registers the report tables with gorm AutoMigrate. AutoMigrate
 // adds new columns/indexes but never drops or narrows existing ones, so
 // re-running on every boot is safe. Wired into the manager startup
-// migration list in cmd/opspilot/main.go.
+// migration list in cmd/ongrid/main.go.
 func Migrate(db *gorm.DB) error {
 	if dbx.NeedsDeleteMarkerMigration(db, model.Report{}.TableName()) {
 		if err := dbx.DropIndexes(

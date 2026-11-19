@@ -23,7 +23,7 @@ const (
 	logsLokiSecretSlot    = "loki_basic_auth"
 )
 
-var logsProbeIDPattern = regexp.MustCompile(`^opspilot-log-probe-[A-Za-z0-9_-]{20,64}$`)
+var logsProbeIDPattern = regexp.MustCompile(`^ongrid-log-probe-[A-Za-z0-9_-]{20,64}$`)
 var logsManagedRuntimeFilePattern = regexp.MustCompile(`^(elasticsearch_(api_key|authorization)\.g[1-9][0-9]*(\.generation)?|loki_authorization\.g[1-9][0-9]*(\.generation)?|elasticsearch_ca\.g[1-9][0-9]*\.pem|logs_probe\.g[1-9][0-9]*\.[0-9a-f]{16}\.log)$`)
 
 func (t *TunnelConfigFetcher) materializeLogsRuntime(ctx context.Context, cfg PluginConfig) (PluginConfig, error) {
@@ -335,7 +335,7 @@ func atomicWriteRestricted(dir, path string, content []byte, mode os.FileMode) e
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, ".opspilot-secret-*")
+	tmp, err := os.CreateTemp(dir, ".ongrid-secret-*")
 	if err != nil {
 		return err
 	}

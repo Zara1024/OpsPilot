@@ -2,6 +2,7 @@ package tracequery
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
@@ -11,8 +12,27 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 	"golang.org/x/sync/errgroup"
 )
+
+func TestClientResponseSizeBoundary(t *testing.T) {
+	for _, size := range []int{MaxResponseBytes, MaxResponseBytes + 1} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(strings.Repeat(" ", size)))
+		}))
+		c := New(srv.URL, nil)
+		result, err := c.GetTrace(t.Context(), "abc")
+		srv.Close()
+		if size > MaxResponseBytes {
+			if !errors.Is(err, ErrResponseTooLarge) {
+				t.Fatalf("expected explicit capacity error, got %v", err)
+			}
+		} else if err != nil || len(result.Body) != size {
+			t.Fatalf("limit boundary rejected: %v", err)
+		}
+	}
+}
 
 func TestClientReusesParallelTraceConnections(t *testing.T) {
 	var connections, requests atomic.Int32
@@ -137,8 +157,8 @@ func TestClient_GetTrace_NotFound(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := New(srv.URL, slog.Default())
-	if _, err := c.GetTrace(context.Background(), "deadbeef"); err == nil {
-		t.Errorf("expected not-found error")
+	if _, err := c.GetTrace(context.Background(), "deadbeef"); !errors.Is(err, errs.ErrNotFound) {
+		t.Errorf("expected not-found sentinel, got %v", err)
 	}
 }
 

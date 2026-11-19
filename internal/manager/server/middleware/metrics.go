@@ -1,6 +1,6 @@
 // Package middleware contains cross-cutting HTTP middleware for the
 // manager's chi router. The metrics middleware emits ADR-026 self-obs
-// histograms (opspilot_http_requests_total + opspilot_http_request_duration_seconds)
+// histograms (ongrid_http_requests_total + ongrid_http_request_duration_seconds)
 // labelled by chi's compiled RoutePattern so cardinality is bounded by
 // the route table at compile time.
 package middleware

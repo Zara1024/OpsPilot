@@ -12,7 +12,7 @@ import (
 func TestElasticsearchDatasourceBasicAuthUsesSecureHeader(t *testing.T) {
 	const password = " test:$password "
 	ds, err := elasticsearchDatasource(pkggrafana.ElasticsearchDatasourceConfig{
-		URL: "https://es.example.com", IndexPattern: "logs-opspilot.*", BasicUser: "reader", BasicPassword: password,
+		URL: "https://es.example.com", IndexPattern: "logs-ongrid.*", BasicUser: "reader", BasicPassword: password,
 	})
 	if err != nil {
 		t.Fatal(err)

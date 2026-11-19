@@ -80,7 +80,7 @@ func stripCodeFences(s string) string {
 
 func genSystemPrompt(tools []ToolMeta) string {
 	var b strings.Builder
-	b.WriteString(`你是 opspilot 工作流生成器。把用户的自然语言需求转成一个可运行的工作流图。
+	b.WriteString(`你是 ongrid 工作流生成器。把用户的自然语言需求转成一个可运行的工作流图。
 
 只输出一个 JSON 对象，不要任何解释、不要 markdown 代码围栏：
 {"name":"<简短工作流名>","description":"<一句话说明>","graph":{"nodes":[...],"edges":[...]}}

@@ -558,7 +558,7 @@ func TestUsecaseCreateDispatchesEdgeAndPersistsState(t *testing.T) {
 	out, err := uc.Create(context.Background(), CreateInput{
 		DeviceID:         3,
 		Interface:        "eth0",
-		NetworkNamespace: "opspilot-netdev-a",
+		NetworkNamespace: "ongrid-netdev-a",
 		Filter:           "tcp and port 443",
 		DurationSeconds:  10,
 		Source:           SourceChat,
@@ -585,7 +585,7 @@ func TestUsecaseCreateDispatchesEdgeAndPersistsState(t *testing.T) {
 	if out.Edge.Request.DurationSeconds != 10 {
 		t.Fatalf("edge duration = %d", out.Edge.Request.DurationSeconds)
 	}
-	if out.Capture.NetworkNamespace != "opspilot-netdev-a" || out.Edge.Request.NetworkNamespace != "opspilot-netdev-a" {
+	if out.Capture.NetworkNamespace != "ongrid-netdev-a" || out.Edge.Request.NetworkNamespace != "ongrid-netdev-a" {
 		t.Fatalf("network namespace capture=%q edge=%q", out.Capture.NetworkNamespace, out.Edge.Request.NetworkNamespace)
 	}
 }

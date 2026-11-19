@@ -43,7 +43,7 @@ type ServiceController interface {
 	// reset=86400（24h window），actions=restart/60000×3（3 次 retry，60s 延迟）。
 	ConfigureRecovery() error
 
-	// ConfigureDefenderExclusion 为 opspilot 目录添加 Windows Defender exclusion。
+	// ConfigureDefenderExclusion 为 ongrid 目录添加 Windows Defender exclusion。
 	// 仅在 Windows Server with Defender 时生效；
 	// 第三方 AV 或 Defender 已禁用时静默失败（返回 error 但调用方仅 warn）。
 	ConfigureDefenderExclusion() error

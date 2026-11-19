@@ -49,7 +49,7 @@ const CategoryObservability = "observability"
 
 // Well-known keys under CategoryObservability. The integration cards persist
 // these values before an explicitly enabled test-environment applicator updates
-// the matching ONGRID_* variables and recreates the selected built-in service.
+// the matching OPSPILOT_* variables and recreates the selected built-in service.
 const (
 	KeyPrometheusRetentionTime = "prometheus_retention_time"
 	KeyPrometheusRetentionSize = "prometheus_retention_size"
@@ -215,7 +215,7 @@ const (
 // Well-known keys under CategoryLoki. The PluginConfigUC reads these on
 // every FetchForEdge call so a UI edit takes effect on the edge's next
 // reload (push or 60s safety-net poll). When the URL is empty the
-// manager falls back to its env-seeded default (ONGRID_LOG_URL), which
+// manager falls back to its env-seeded default (OPSPILOT_LOG_URL), which
 // in built-in deployments points at the docker-internal loki:3100 (the
 // edge then pushes to manager nginx /loki/api/v1/push, which proxies on).
 const (

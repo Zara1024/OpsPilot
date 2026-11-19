@@ -93,11 +93,11 @@ type User struct {
 	// Role is the legacy column; new permission decisions go through
 	// memberships + casbin. Kept for JWT compat — the boot migration
 	// copies Role="admin" rows into IsSuperuser=true.
-	Role        string `gorm:"size:32;default:user;check:role IN ('admin','user','viewer')"`
-	IsSuperuser bool   `gorm:"not null;default:false;column:is_superuser"`
-	Status      string `gorm:"size:32;default:active;check:status IN ('active','disabled')"`
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	Role         string    `gorm:"size:32;default:user;check:role IN ('admin','user','viewer')"`
+	IsSuperuser  bool      `gorm:"not null;default:false;column:is_superuser"`
+	Status       string    `gorm:"size:32;default:active;check:status IN ('active','disabled')"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // TableName pins the table name to the one created by the SQL migrations.
@@ -115,9 +115,9 @@ type Org struct {
 	// ParentID is nil for top-level orgs. References Org.ID; on the
 	// data-layer side we don't FK-constrain (gorm migrations + sqlite
 	// dialect drift make FKs flaky); biz layer guards integrity.
-	ParentID  *uint64 `gorm:"column:parent_id;index"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ParentID    *uint64 `gorm:"column:parent_id;index"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // TableName pins the table name.
@@ -127,10 +127,10 @@ func (Org) TableName() string { return "orgs" }
 // Same user can be in multiple orgs with different roles. The biz
 // layer's Authorizer mirrors every row into casbin's grouping table.
 type OrgMembership struct {
-	ID        uint64 `gorm:"primaryKey;autoIncrement"`
-	UserID    uint64 `gorm:"not null;column:user_id;uniqueIndex:idx_user_org,priority:1"`
-	OrgID     uint64 `gorm:"not null;column:org_id;uniqueIndex:idx_user_org,priority:2"`
-	Role      string `gorm:"size:32;not null;check:role IN ('org_admin','member','viewer')"`
+	ID        uint64    `gorm:"primaryKey;autoIncrement"`
+	UserID    uint64    `gorm:"not null;column:user_id;uniqueIndex:idx_user_org,priority:1"`
+	OrgID     uint64    `gorm:"not null;column:org_id;uniqueIndex:idx_user_org,priority:2"`
+	Role      string    `gorm:"size:32;not null;check:role IN ('org_admin','member','viewer')"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

@@ -357,10 +357,10 @@ func TestIsHostBashWriteCommand(t *testing.T) {
 		{"sudo rm /tmp/a", true},
 		{"/usr/bin/touch /tmp/a", true},
 		{"docker system prune -af", true},
-		{"systemctl restart ongrid-edge", true},
+		{"systemctl restart opspilot-edge", true},
 		{"df -h", false},
 		{"docker images", false},
-		{"systemctl status ongrid-edge", false},
+		{"systemctl status opspilot-edge", false},
 		// 重定向：目标文件一定被改
 		{"echo hi > /etc/hosts", true},
 		{"echo hi >> /var/log/app.log", true},

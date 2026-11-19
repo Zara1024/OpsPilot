@@ -77,34 +77,34 @@ type k8sTelemetryConfig struct {
 // EnsureEnrollment discovers cluster identity and loads or enrolls Edge credentials.
 // A true second result requires RetryNodeEnrollment while the cached identity runs.
 func EnsureEnrollment(ctx context.Context, cfg *config.Config, version string, log *slog.Logger) (*tunnel.KubernetesInfo, bool, error) {
-	edgeMode := strings.TrimSpace(os.Getenv("ONGRID_EDGE_MODE"))
-	clusterIDRaw := strings.TrimSpace(os.Getenv("ONGRID_K8S_CLUSTER_ID"))
-	bootstrapToken := strings.TrimSpace(os.Getenv("ONGRID_K8S_BOOTSTRAP_TOKEN"))
+	edgeMode := strings.TrimSpace(os.Getenv("OPSPILOT_EDGE_MODE"))
+	clusterIDRaw := strings.TrimSpace(os.Getenv("OPSPILOT_K8S_CLUSTER_ID"))
+	bootstrapToken := strings.TrimSpace(os.Getenv("OPSPILOT_K8S_BOOTSTRAP_TOKEN"))
 	if clusterIDRaw == "" && bootstrapToken == "" && !strings.HasPrefix(edgeMode, "k8s-") {
 		return nil, false, nil
 	}
 	if clusterIDRaw == "" {
-		return nil, false, fmt.Errorf("ONGRID_K8S_CLUSTER_ID is required in Kubernetes mode")
+		return nil, false, fmt.Errorf("OPSPILOT_K8S_CLUSTER_ID is required in Kubernetes mode")
 	}
 	clusterID, err := strconv.ParseUint(clusterIDRaw, 10, 64)
 	if err != nil || clusterID == 0 {
 		if err == nil {
 			err = errors.New("cluster id must be non-zero")
 		}
-		return nil, false, fmt.Errorf("parse ONGRID_K8S_CLUSTER_ID: %w", err)
+		return nil, false, fmt.Errorf("parse OPSPILOT_K8S_CLUSTER_ID: %w", err)
 	}
-	role := strings.TrimSpace(os.Getenv("ONGRID_K8S_ROLE"))
+	role := strings.TrimSpace(os.Getenv("OPSPILOT_K8S_ROLE"))
 	if role == "" {
 		role = defaultK8sRole(edgeMode)
 	}
 	info := &tunnel.KubernetesInfo{
-		Mode:      strings.TrimSpace(os.Getenv("ONGRID_K8S_MODE")),
+		Mode:      strings.TrimSpace(os.Getenv("OPSPILOT_K8S_MODE")),
 		ClusterID: clusterID,
 		Role:      role,
-		NodeName:  strings.TrimSpace(os.Getenv("ONGRID_K8S_NODE_NAME")),
-		NodeUID:   strings.TrimSpace(os.Getenv("ONGRID_K8S_NODE_UID")),
-		Namespace: strings.TrimSpace(os.Getenv("ONGRID_K8S_POD_NAMESPACE")),
-		PodName:   strings.TrimSpace(os.Getenv("ONGRID_K8S_POD_NAME")),
+		NodeName:  strings.TrimSpace(os.Getenv("OPSPILOT_K8S_NODE_NAME")),
+		NodeUID:   strings.TrimSpace(os.Getenv("OPSPILOT_K8S_NODE_UID")),
+		Namespace: strings.TrimSpace(os.Getenv("OPSPILOT_K8S_POD_NAMESPACE")),
+		PodName:   strings.TrimSpace(os.Getenv("OPSPILOT_K8S_POD_NAME")),
 	}
 	identityCtx, cancelIdentity := context.WithTimeout(ctx, 10*time.Second)
 	clusterUID, err := DiscoverClusterUID(identityCtx)
@@ -124,10 +124,10 @@ func EnsureEnrollment(ctx context.Context, cfg *config.Config, version string, l
 		log.Warn("load kubernetes edge credentials failed; falling back to bootstrap enrollment", slog.Any("err", err))
 	}
 	if loaded != nil && !IsNode(info) {
-		if IsController(info) && strings.TrimSpace(os.Getenv("ONGRID_K8S_TELEMETRY_SECRET")) != "" {
+		if IsController(info) && strings.TrimSpace(os.Getenv("OPSPILOT_K8S_TELEMETRY_SECRET")) != "" {
 			refreshErr := refreshAndStoreK8sTelemetryConfig(ctx, cfg, info)
 			if refreshErr != nil {
-				if edgeconfig.EnvBool("ONGRID_K8S_TELEMETRY_REQUIRED", false) {
+				if edgeconfig.EnvBool("OPSPILOT_K8S_TELEMETRY_REQUIRED", false) {
 					return nil, false, fmt.Errorf("refresh required kubernetes telemetry config: %w", refreshErr)
 				}
 				log.Warn("refresh kubernetes telemetry config failed; control plane will continue", slog.Any("err", refreshErr))
@@ -259,9 +259,9 @@ func retryableK8sEnrollmentError(err error) bool {
 }
 
 func requestK8sEnrollment(ctx context.Context, cfg *config.Config, info *tunnel.KubernetesInfo, version, bootstrapToken string, cachedEdgeID uint64) (k8sEnrollResponse, error) {
-	managerURL := strings.TrimRight(edgeconfig.EnvOr("ONGRID_MANAGER_PUBLIC_URL", cfg.PublicURL), "/")
+	managerURL := strings.TrimRight(edgeconfig.EnvOr("OPSPILOT_MANAGER_PUBLIC_URL", cfg.PublicURL), "/")
 	if managerURL == "" {
-		return k8sEnrollResponse{}, fmt.Errorf("ONGRID_MANAGER_PUBLIC_URL is required for Kubernetes enrollment")
+		return k8sEnrollResponse{}, fmt.Errorf("OPSPILOT_MANAGER_PUBLIC_URL is required for Kubernetes enrollment")
 	}
 	enrollPath := "/internal/k8s/enroll"
 	if cachedEdgeID != 0 {
@@ -279,12 +279,12 @@ func requestK8sEnrollment(ctx context.Context, cfg *config.Config, info *tunnel.
 		Role:         info.Role,
 		NodeName:     info.NodeName,
 		NodeUID:      info.NodeUID,
-		ProviderID:   strings.TrimSpace(os.Getenv("ONGRID_K8S_PROVIDER_ID")),
+		ProviderID:   strings.TrimSpace(os.Getenv("OPSPILOT_K8S_PROVIDER_ID")),
 		Namespace:    info.Namespace,
 		AgentVersion: version,
 		Capabilities: k8sCapabilities(info.Role),
 	}
-	if edgeconfig.EnvBool("ONGRID_K8S_TELEMETRY_GATEWAY_ENABLED", false) {
+	if edgeconfig.EnvBool("OPSPILOT_K8S_TELEMETRY_GATEWAY_ENABLED", false) {
 		reqBody.Capabilities = append(reqBody.Capabilities, "otel_gateway")
 	}
 	payload, err := json.Marshal(reqBody)
@@ -374,7 +374,7 @@ func refreshAndStoreK8sTelemetryConfig(ctx context.Context, cfg *config.Config, 
 	if err != nil {
 		return err
 	}
-	managerURL := strings.TrimRight(edgeconfig.EnvOr("ONGRID_MANAGER_PUBLIC_URL", cfg.PublicURL), "/")
+	managerURL := strings.TrimRight(edgeconfig.EnvOr("OPSPILOT_MANAGER_PUBLIC_URL", cfg.PublicURL), "/")
 	telemetry, err := refreshK8sTelemetryConfig(ctx, cfg, managerURL, accessKey, secretKey)
 	if err != nil {
 		return err
@@ -387,7 +387,7 @@ func refreshAndStoreK8sTelemetryConfig(ctx context.Context, cfg *config.Config, 
 
 // RunTelemetryConfigSync refreshes the controller telemetry Secret until cancellation.
 func RunTelemetryConfigSync(ctx context.Context, cfg *config.Config, info *tunnel.KubernetesInfo, log *slog.Logger) error {
-	interval := edgeconfig.EnvDuration("ONGRID_K8S_TELEMETRY_CONFIG_REFRESH_INTERVAL", time.Minute)
+	interval := edgeconfig.EnvDuration("OPSPILOT_K8S_TELEMETRY_CONFIG_REFRESH_INTERVAL", time.Minute)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -406,7 +406,7 @@ func RunTelemetryConfigSync(ctx context.Context, cfg *config.Config, info *tunne
 
 func k8sManagerHTTPClient() *http.Client {
 	hc := &http.Client{Timeout: 30 * time.Second}
-	if strings.EqualFold(os.Getenv("ONGRID_K8S_ENROLL_TLS_INSECURE"), "true") {
+	if strings.EqualFold(os.Getenv("OPSPILOT_K8S_ENROLL_TLS_INSECURE"), "true") {
 		transport := http.DefaultTransport.(*http.Transport).Clone()
 		transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: true}
 		hc.Transport = transport

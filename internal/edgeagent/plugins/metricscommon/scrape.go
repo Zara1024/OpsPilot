@@ -47,8 +47,8 @@ const (
 	// Edge-side scrapers push it because these targets are not scraped by the
 	// central Prometheus server directly.
 	ScrapeUpMetricName              = "up"
-	ScrapePartialMetricName         = "opspilot_scrape_partial"
-	ScrapeAcceptedSamplesMetricName = "opspilot_scrape_samples_accepted"
+	ScrapePartialMetricName         = "ongrid_scrape_partial"
+	ScrapeAcceptedSamplesMetricName = "ongrid_scrape_samples_accepted"
 )
 
 // SampleLimitError reports that a streaming scrape observed at least one

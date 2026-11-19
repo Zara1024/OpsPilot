@@ -104,7 +104,7 @@ func TestPutBackendUsesStrictJSONAndCallsService(t *testing.T) {
 	good := adminBackendRequest(http.MethodPut, "/v1/logs/backend", []byte(`{
 		"write_endpoints":["https://es.example"],
 		"query_endpoint":"https://es-query.example",
-		"dataset":"opspilot.system",
+		"dataset":"ongrid.system",
 		"namespace":"prod",
 		"write_api_key":"direct-write-value",
 		"query_api_key":"direct-query-value"
@@ -114,7 +114,7 @@ func TestPutBackendUsesStrictJSONAndCallsService(t *testing.T) {
 	if goodRec.Code != http.StatusOK {
 		t.Fatalf("valid status=%d body=%s", goodRec.Code, goodRec.Body.String())
 	}
-	if svc.saved == nil || svc.saved.Dataset != "opspilot.system" || svc.saved.Namespace != "prod" ||
+	if svc.saved == nil || svc.saved.Dataset != "ongrid.system" || svc.saved.Namespace != "prod" ||
 		svc.saved.WriteAPIKey != "direct-write-value" || svc.saved.QueryAPIKey != "direct-query-value" {
 		t.Fatalf("saved input = %+v", svc.saved)
 	}
@@ -178,7 +178,7 @@ func TestTestBackendDraftCallsServiceWithoutSaving(t *testing.T) {
 	req := adminBackendRequest(http.MethodPost, "/v1/logs/backend/test", []byte(`{
 		"write_endpoints":["https://draft-es.example"],
 		"query_endpoint":"https://draft-es-query.example",
-		"dataset":"opspilot.system",
+		"dataset":"ongrid.system",
 		"namespace":"draft"
 	}`))
 	rec := httptest.NewRecorder()

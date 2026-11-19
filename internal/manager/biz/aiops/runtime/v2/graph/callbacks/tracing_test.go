@@ -18,7 +18,7 @@ import (
 )
 
 func TestTraceHandlerStreamMasksContentAndSharesProvider(t *testing.T) {
-	t.Setenv("ONGRID_AGENT_TRACE_CAPTURE_CONTENT", "false")
+	t.Setenv("OPSPILOT_AGENT_TRACE_CAPTURE_CONTENT", "false")
 	previous := otel.GetTracerProvider()
 	recorder := tracetest.NewSpanRecorder()
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
@@ -70,7 +70,7 @@ func TestTraceHandlerStreamMasksContentAndSharesProvider(t *testing.T) {
 }
 
 func TestTraceHandlerCapturesBoundedStreamContent(t *testing.T) {
-	t.Setenv("ONGRID_AGENT_TRACE_CAPTURE_CONTENT", "true")
+	t.Setenv("OPSPILOT_AGENT_TRACE_CAPTURE_CONTENT", "true")
 	previous := otel.GetTracerProvider()
 	recorder := tracetest.NewSpanRecorder()
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))

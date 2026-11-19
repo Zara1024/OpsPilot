@@ -5,7 +5,7 @@
 // https://qdrant.github.io/qdrant/redoc/index.html.
 //
 // Conventions:
-//   - One collection per opspilot deployment, default name "knowledge".
+//   - One collection per ongrid deployment, default name "knowledge".
 //   - Vectors are float32; cosine distance.
 //   - Point IDs are uint64. The knowledge service mints them as
 //     md5(payload.url) >> 64 lo bits — stable across sync runs so a
@@ -151,9 +151,9 @@ func (c *Client) EnsurePayloadIndex(ctx context.Context, collection, field, sche
 
 // Point is one record in qdrant.
 type Point struct {
-	ID      uint64         `json:"id"`
-	Vector  []float32      `json:"vector"`
-	Payload map[string]any `json:"payload,omitempty"`
+	ID      uint64                 `json:"id"`
+	Vector  []float32              `json:"vector"`
+	Payload map[string]any         `json:"payload,omitempty"`
 }
 
 // Upsert writes points. Replaces by id.
@@ -250,9 +250,9 @@ func (c *Client) DeleteByID(ctx context.Context, collection string, id uint64) e
 
 // SearchHit is the result row.
 type SearchHit struct {
-	ID      uint64         `json:"id"`
-	Score   float64        `json:"score"`
-	Payload map[string]any `json:"payload"`
+	ID      uint64                 `json:"id"`
+	Score   float64                `json:"score"`
+	Payload map[string]any         `json:"payload"`
 }
 
 // SearchOpts narrows a vector search via server-side payload filters.

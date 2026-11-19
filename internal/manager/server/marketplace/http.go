@@ -41,7 +41,7 @@ type Handler struct {
 func NewHandler(svc Service) *Handler { return &Handler{svc: svc} }
 
 // Register attaches the routes under a chi.Router that already has
-// the auth middleware in front of it (see cmd/opspilot).
+// the auth middleware in front of it (see cmd/ongrid).
 func (h *Handler) Register(r chi.Router) {
 	r.Post("/v1/marketplace/install", h.install)
 	r.Post("/v1/marketplace/upload", h.upload)

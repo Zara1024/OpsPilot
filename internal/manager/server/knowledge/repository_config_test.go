@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"testing"
 
-	model "github.com/Zara1024/OpsPilot/internal/manager/model/knowledge"
 	"github.com/go-chi/chi/v5"
+	model "github.com/Zara1024/OpsPilot/internal/manager/model/knowledge"
 )
 
 type repoUpdateRecorder struct {

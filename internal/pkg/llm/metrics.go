@@ -34,21 +34,21 @@ func newMetrics(reg *prometheus.Registry, log *slog.Logger) *metrics {
 
 	tokens := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "opspilot_llm_tokens_total",
+			Name: "ongrid_llm_tokens_total",
 			Help: "Total LLM tokens consumed, split by model and kind (prompt|completion).",
 		},
 		[]string{"model", "kind"},
 	)
 	reqs := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "opspilot_llm_requests_total",
+			Name: "ongrid_llm_requests_total",
 			Help: "Total LLM chat completion requests, split by model and result.",
 		},
 		[]string{"model", "result"},
 	)
 	dur := prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "opspilot_llm_request_duration_seconds",
+			Name:    "ongrid_llm_request_duration_seconds",
 			Help:    "LLM chat completion request duration in seconds.",
 			Buckets: prometheus.ExponentialBuckets(0.1, 2, 10), // 0.1s .. ~51s
 		},

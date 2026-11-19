@@ -145,7 +145,7 @@ apt install <pkg>=<previous-version>
 **永远不要直接 `kill -9 <main-pid>` 然后期望 systemd 拉起来** —— 不优雅关闭可能留下脏状态，
 影响下一次启动。
 
-## opspilot 工具提示
+## ongrid 工具提示
 
 - 状态查询：直接派 `specialist-ops`，他会跑 `systemctl status` + `journalctl` 组合
 - 重启动作：用 `host_restart_service` 工具，**会触发 reviewer 二审**，不要 `host_bash systemctl restart` 绕开

@@ -65,13 +65,13 @@ func TestIngester_Push_AddsCloudLabelsAndSorts(t *testing.T) {
 			TsMs:   1700000001000,
 		},
 		{
-			Name: "opspilot_test_metric",
+			Name: "ongrid_test_metric",
 			Labels: map[string]string{
 				// Reserved keys must NOT clobber the cloud-controlled values.
-				"__name__":        "evil",
-				"device_id":       "evil",
-				"opspilot_source": "evil",
-				"foo":             "bar",
+				"__name__":      "evil",
+				"device_id":     "evil",
+				"ongrid_source": "evil",
+				"foo":           "bar",
 			},
 			Value: 1,
 			TsMs:  1700000002000,
@@ -94,8 +94,8 @@ func TestIngester_Push_AddsCloudLabelsAndSorts(t *testing.T) {
 	if m0["device_id"] != "42" {
 		t.Errorf("sample0 device_id = %q", m0["device_id"])
 	}
-	if m0["opspilot_source"] != "embedded:gopsutil" {
-		t.Errorf("sample0 opspilot_source = %q", m0["opspilot_source"])
+	if m0["ongrid_source"] != "embedded:gopsutil" {
+		t.Errorf("sample0 ongrid_source = %q", m0["ongrid_source"])
 	}
 	if m0["mode"] != "idle" || m0["cpu"] != "0" || m0["device"] != "eth0" {
 		t.Errorf("sample0 user labels missing: %v", m0)
@@ -117,8 +117,8 @@ func TestIngester_Push_AddsCloudLabelsAndSorts(t *testing.T) {
 	if m1["device_id"] != "42" {
 		t.Errorf("sample1 device_id = %q", m1["device_id"])
 	}
-	if m1["opspilot_source"] != "embedded:gopsutil" {
-		t.Errorf("sample1 opspilot_source = %q", m1["opspilot_source"])
+	if m1["ongrid_source"] != "embedded:gopsutil" {
+		t.Errorf("sample1 ongrid_source = %q", m1["ongrid_source"])
 	}
 	if len(fw.last[1].Labels) != 3 {
 		t.Errorf("sample1 should have 3 labels, got %d", len(fw.last[1].Labels))
@@ -126,14 +126,14 @@ func TestIngester_Push_AddsCloudLabelsAndSorts(t *testing.T) {
 
 	// Sample 2: reserved keys must be cloud-controlled.
 	m2 := labelMap(fw.last[2].Labels)
-	if m2["__name__"] != "opspilot_test_metric" {
+	if m2["__name__"] != "ongrid_test_metric" {
 		t.Errorf("sample2 __name__ = %q (cloud should win)", m2["__name__"])
 	}
 	if m2["device_id"] != "42" {
 		t.Errorf("sample2 device_id = %q (cloud should win)", m2["device_id"])
 	}
-	if m2["opspilot_source"] != "embedded:gopsutil" {
-		t.Errorf("sample2 opspilot_source = %q (cloud should win)", m2["opspilot_source"])
+	if m2["ongrid_source"] != "embedded:gopsutil" {
+		t.Errorf("sample2 ongrid_source = %q (cloud should win)", m2["ongrid_source"])
 	}
 	if m2["foo"] != "bar" {
 		t.Errorf("sample2 foo = %q", m2["foo"])
@@ -169,8 +169,8 @@ func TestIngester_Push_NoSourceOmitsLabel(t *testing.T) {
 		t.Fatalf("len = %d", len(fw.last))
 	}
 	m := labelMap(fw.last[0].Labels)
-	if _, ok := m["opspilot_source"]; ok {
-		t.Errorf("opspilot_source should be omitted when source==\"\": %v", m)
+	if _, ok := m["ongrid_source"]; ok {
+		t.Errorf("ongrid_source should be omitted when source==\"\": %v", m)
 	}
 }
 
@@ -181,13 +181,13 @@ func TestIngester_PushKubernetes_AddsClusterLabelsAndDropsHostIdentity(t *testin
 		{
 			Name: "kube_pod_status_phase",
 			Labels: map[string]string{
-				"namespace":       "default",
-				"pod":             "api-123",
-				"phase":           "Running",
-				"cluster_id":      "evil",
-				"device_id":       "evil",
-				"edge_id":         "evil",
-				"opspilot_source": "evil",
+				"namespace":     "default",
+				"pod":           "api-123",
+				"phase":         "Running",
+				"cluster_id":    "evil",
+				"device_id":     "evil",
+				"edge_id":       "evil",
+				"ongrid_source": "evil",
 			},
 			Value: 1,
 			TsMs:  1700000000000,
@@ -207,8 +207,8 @@ func TestIngester_PushKubernetes_AddsClusterLabelsAndDropsHostIdentity(t *testin
 	if m["cluster_id"] != "9" {
 		t.Errorf("cluster_id = %q, want 9", m["cluster_id"])
 	}
-	if m["opspilot_source"] != "k8s:kube-state-metrics" {
-		t.Errorf("opspilot_source = %q", m["opspilot_source"])
+	if m["ongrid_source"] != "k8s:kube-state-metrics" {
+		t.Errorf("ongrid_source = %q", m["ongrid_source"])
 	}
 	if _, ok := m["device_id"]; ok {
 		t.Errorf("device_id must not be kept on cluster metrics: %v", m)

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	oteltracing "github.com/Zara1024/OpsPilot/internal/pkg/tracing"
 	"github.com/golang/snappy"
+	oteltracing "github.com/Zara1024/OpsPilot/internal/pkg/tracing"
 )
 
 // Label is one (name, value) pair attached to a Sample. The Prometheus
@@ -34,7 +34,7 @@ type Sample struct {
 // EndpointResolver returns the current full remote_write endpoint URL (no
 // /api/v1/write appended — caller composes). It's called once per Write
 // request, so implementations should cache. The wiring side
-// (cmd/opspilot + biz/setting) layers its own ~5s TTL so admin UI edits
+// (cmd/ongrid + biz/setting) layers its own ~5s TTL so admin UI edits
 // take effect within that window without a manager restart.
 type EndpointResolver interface {
 	ResolveWriteURL(ctx context.Context) (string, error)
@@ -165,7 +165,7 @@ func (c *Client) post(ctx context.Context, raw []byte, sampleCount int) error {
 	req.Header.Set("Content-Type", "application/x-protobuf")
 	req.Header.Set("Content-Encoding", "snappy")
 	req.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
-	req.Header.Set("User-Agent", "opspilot-promwrite/0.1")
+	req.Header.Set("User-Agent", "ongrid-promwrite/0.1")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

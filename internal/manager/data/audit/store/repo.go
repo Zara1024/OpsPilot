@@ -13,7 +13,7 @@ import (
 )
 
 // Repo wraps *gorm.DB with the audit_logs operations the biz layer
-// consumes. Kept thin 鈥?audit log doesn't have business rules, just
+// consumes. Kept thin — audit log doesn't have business rules, just
 // "write a row" + "list with filters" + "delete old".
 type Repo struct {
 	db *gorm.DB
@@ -26,7 +26,7 @@ func New(db *gorm.DB) *Repo {
 
 // Insert persists one log row. OccurredAt + CreatedAt are stamped by the
 // caller (biz.Usecase) and GORM autoCreate respectively. Failure must
-// not propagate to business code 鈥?the caller wraps with a warn-log
+// not propagate to business code — the caller wraps with a warn-log
 // (see biz.Usecase.Emit) to honour HLD-010's "audit write failure
 // must never block the request".
 func (r *Repo) Insert(ctx context.Context, log *model.Log) error {
@@ -36,16 +36,7 @@ func (r *Repo) Insert(ctx context.Context, log *model.Log) error {
 // ListFilters captures all the GET /v1/admin/audit-logs querystring
 // knobs in one struct so the http layer doesn't have to wire 7 args.
 // Zero values mean "no filter on this column".
-type ListFilters struct {
-	UserEmail    string
-	Action       string
-	ResourceType string
-	Status       string
-	From         time.Time
-	To           time.Time
-	Limit        int // capped at 500 by the repo to bound payload size
-	Offset       int
-}
+type ListFilters = model.ListFilters
 
 // List returns matching rows newest-first plus the total count for the
 // same filters (excluding limit/offset) so the UI can render
@@ -100,4 +91,3 @@ func (r *Repo) DeleteOlderThan(ctx context.Context, cutoff time.Time) (int64, er
 	res := dbx.WithContext(ctx, r.db).Where("occurred_at < ?", cutoff).Delete(&model.Log{})
 	return res.RowsAffected, res.Error
 }
-

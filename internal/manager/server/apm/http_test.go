@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	biz "github.com/Zara1024/OpsPilot/internal/manager/biz/apm"
 	"github.com/Zara1024/OpsPilot/internal/pkg/tenantctx"
-	"github.com/go-chi/chi/v5"
 )
 
 func TestAuthenticatedValidationAndDisabledBackend(t *testing.T) {
@@ -19,7 +19,7 @@ func TestAuthenticatedValidationAndDisabledBackend(t *testing.T) {
 		name, path string
 		auth       bool
 		status     int
-	}{{"unauthenticated", base, false, 401}, {"disabled", base, true, 503}, {"global dependencies", strings.Replace(base, "services", "dependencies", 1), true, 503}, {"partial dependency identity", strings.Replace(base, "services", "dependencies", 1) + "&service_name=orders", true, 400}, {"invalid time", "/v1/apm/services?start=no", true, 400}, {"zero page", base + "&page=0", true, 400}, {"missing full identity", strings.Replace(base, "services", "overview", 1) + "&service_name=orders", true, 400}} {
+	}{{"unauthenticated", base, false, 401}, {"ingestion unauthenticated", strings.Replace(base, "services", "ingestion", 1), false, 401}, {"ingestion partial identity", strings.Replace(base, "services", "ingestion", 1) + "&service_name=orders", true, 400}, {"ingestion not wired", strings.Replace(base, "services", "ingestion", 1) + "&service_name=orders&environment=&service_namespace=", true, 503}, {"disabled", base, true, 503}, {"global dependencies", strings.Replace(base, "services", "dependencies", 1), true, 503}, {"partial dependency identity", strings.Replace(base, "services", "dependencies", 1) + "&service_name=orders", true, 400}, {"invalid time", "/v1/apm/services?start=no", true, 400}, {"zero page", base + "&page=0", true, 400}, {"missing full identity", strings.Replace(base, "services", "overview", 1) + "&service_name=orders", true, 400}} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, tc.path, nil)
 			if tc.auth {

@@ -235,4 +235,3 @@ func TestMCPGlobalConcurrencyAlsoBoundsAuthentication(t *testing.T) {
 	require.Equal(t, http.StatusTooManyRequests, limitRequest(context.Background(), h, "another", listFixtureRequest).Code)
 	require.Empty(t, entered, "overload must be rejected before another authentication lookup")
 }
-

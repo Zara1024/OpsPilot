@@ -91,8 +91,8 @@ func TestSplitMarkdown_PreservesCodeBlocks(t *testing.T) {
 		},
 		{
 			name:    "indented",
-			content: "# Deploy\n\n    systemctl restart opspilot",
-			want:    "systemctl restart opspilot",
+			content: "# Deploy\n\n    systemctl restart ongrid",
+			want:    "systemctl restart ongrid",
 		},
 		{
 			name:    "code_only",

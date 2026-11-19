@@ -16,7 +16,7 @@ import (
 )
 
 func TestApprovalReviewIsRedactedAdminOnlyAndNotPersisted(t *testing.T) {
-	t.Setenv("ONGRID_SECRET_KEY", "test-only-approval-key")
+	t.Setenv("OPSPILOT_SECRET_KEY", "test-only-approval-key")
 	ciphertext, err := secretbox.Encrypt(`{"arguments":{"action":"post_users","body":{"display_name":"Review this change","password":"private-fixture","api_key":"private-fixture","token":"private-fixture","dsn":"private-fixture"}}}`)
 	require.NoError(t, err)
 	payload, err := json.Marshal(map[string]any{"operation_id": "fixture", "arguments": map[string]any{"body": "[ENCRYPTED]"}, "encrypted_request": ciphertext})
@@ -39,4 +39,3 @@ func TestApprovalReviewIsRedactedAdminOnlyAndNotPersisted(t *testing.T) {
 	_, err = presentApproval(r, a)
 	require.ErrorIs(t, err, errs.ErrForbidden)
 }
-

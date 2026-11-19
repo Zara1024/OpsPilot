@@ -27,10 +27,10 @@ const createInBatchesSize = 500
 
 // Physical table names, mirroring model.*.TableName().
 const (
-	tableRaw = "host_metrics_raw"
-	table5m  = "host_metrics_5m"
-	table1h  = "host_metrics_1h"
-	tableDLQ = "host_metrics_dead_letter"
+	tableRaw  = "host_metrics_raw"
+	table5m   = "host_metrics_5m"
+	table1h   = "host_metrics_1h"
+	tableDLQ  = "host_metrics_dead_letter"
 )
 
 // WriteRaw persists a batch of raw Points to host_metrics_raw.

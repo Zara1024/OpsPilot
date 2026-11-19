@@ -5,7 +5,7 @@
 //
 // The catalog is read-only metadata (name / description / when-to-use /
 // class / category / JSON-Schema params). It is produced in
-// cmd/opspilot/main.go over the live tools.Registry, so biz/flow stays
+// cmd/ongrid/main.go over the live tools.Registry, so biz/flow stays
 // free of the aiops/tools import — same seam pattern as AgentRunner /
 // ToolInvoker / Notifier.
 package flow

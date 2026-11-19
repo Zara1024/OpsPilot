@@ -86,7 +86,7 @@ func marshalCollectorConfig(receivers map[string]any, receiverNames []string, at
 	body := map[string]any{
 		"receivers": receivers,
 		"processors": map[string]any{
-			"resource/opspilot": map[string]any{"attributes": attributes},
+			"resource/ongrid": map[string]any{"attributes": attributes},
 		},
 		"exporters": map[string]any{"otlphttp/manager": exporter},
 		"service": map[string]any{
@@ -97,7 +97,7 @@ func marshalCollectorConfig(receivers map[string]any, receiverNames []string, at
 			"pipelines": map[string]any{
 				"profiles": map[string]any{
 					"receivers":  receiverNames,
-					"processors": []string{"resource/opspilot"},
+					"processors": []string{"resource/ongrid"},
 					"exporters":  []string{"otlphttp/manager"},
 				},
 			},
@@ -128,7 +128,7 @@ func profileMode(spec map[string]any) (string, error) {
 func resourceAttributes(edgeID uint64, profileType, serviceName string) []map[string]any {
 	attrs := []map[string]any{
 		{"key": "device_id", "value": strconv.FormatUint(edgeID, 10), "action": "upsert"},
-		{"key": "opspilot_source", "value": "otel_profiles", "action": "upsert"},
+		{"key": "ongrid_source", "value": "otel_profiles", "action": "upsert"},
 		{"key": "profile.type", "value": profileType, "action": "upsert"},
 	}
 	if serviceName != "" {

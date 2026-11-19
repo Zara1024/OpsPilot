@@ -149,8 +149,8 @@ func TestListMetricCatalogTool_InstructsWhenBurnRateMetricsLackStatusLabel(t *te
 		resp: &promquery.InstantResult{
 			ResultType: "vector",
 			Result: json.RawMessage(`[
-				{"metric":{"__name__":"traces_spanmetrics_calls_total","service":"ongrid-manager"},"value":[1,"33"]},
-				{"metric":{"__name__":"traces_spanmetrics_latency_count","service":"ongrid-manager"},"value":[1,"33"]}
+				{"metric":{"__name__":"traces_spanmetrics_calls_total","service":"opspilot-manager"},"value":[1,"33"]},
+				{"metric":{"__name__":"traces_spanmetrics_latency_count","service":"opspilot-manager"},"value":[1,"33"]}
 			]`),
 		},
 	}

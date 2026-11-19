@@ -28,7 +28,7 @@ type SessionRepo struct {
 
 // NewSessionRepo constructs the repo around an opened *gorm.DB.
 func NewSessionRepo(db *gorm.DB) *SessionRepo {
-	root := strings.TrimSpace(os.Getenv("ONGRID_CHAT_ATTACHMENT_DIR"))
+	root := strings.TrimSpace(os.Getenv("OPSPILOT_CHAT_ATTACHMENT_DIR"))
 	if root == "" {
 		root = "/var/lib/ongrid/chat-attachments"
 	}

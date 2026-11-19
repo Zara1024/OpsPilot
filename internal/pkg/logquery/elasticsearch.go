@@ -20,7 +20,7 @@ import (
 
 const (
 	elasticsearchBackendName     = "elasticsearch"
-	defaultESIndexPattern        = "logs-opspilot.*.otel-*"
+	defaultESIndexPattern        = "logs-ongrid.*.otel-*"
 	defaultESKeepAlive           = 5 * time.Minute
 	maxESResponseBytes           = 16 * 1024 * 1024
 	maxESSearchResponseHardBytes = 32 * 1024 * 1024
@@ -485,7 +485,7 @@ func (c *ElasticsearchClient) Probe(ctx context.Context) (string, error) {
 	return info.Version, nil
 }
 
-// RequirePrivileges verifies the API key against the fixed product index
+// RequirePrivileges verifies the credential against the fixed product index
 // pattern owned by this client. Elasticsearch permits an API key to inspect
 // its own effective privileges, so this check does not require granting the
 // Edge write credential any cluster-wide monitoring permission.
@@ -814,7 +814,7 @@ func (c *ElasticsearchClient) doJSONWithLimit(ctx context.Context, method, path 
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", c.authorization)
-	req.Header.Set("User-Agent", "opspilot-logquery/0.2")
+	req.Header.Set("User-Agent", "ongrid-logquery/0.2")
 	if input != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -861,8 +861,8 @@ func validateElasticsearchEndpoint(raw string, allowHTTP bool) (string, error) {
 }
 
 func validateElasticsearchIndexPattern(pattern string) error {
-	if !strings.HasPrefix(pattern, "logs-opspilot.") || !strings.Contains(pattern, ".otel-") {
-		return errors.New("logquery: Elasticsearch index pattern must stay under logs-opspilot.*.otel-*")
+	if !strings.HasPrefix(pattern, "logs-ongrid.") || !strings.Contains(pattern, ".otel-") {
+		return errors.New("logquery: Elasticsearch index pattern must stay under logs-ongrid.*.otel-*")
 	}
 	if strings.ContainsAny(pattern, " ,\\/#?") || strings.Contains(pattern, "..") {
 		return errors.New("logquery: invalid Elasticsearch index pattern")

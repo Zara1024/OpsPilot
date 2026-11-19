@@ -246,8 +246,8 @@ func (c *Client) do(ctx context.Context, path string, q url.Values) ([]byte, err
 		return nil, fmt.Errorf("logquery: build request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "opspilot-logquery/0.1")
-	// Single-tenant install — nginx injects X-Scope-OrgID: opspilot on
+	req.Header.Set("User-Agent", "ongrid-logquery/0.1")
+	// Single-tenant install — nginx injects X-Scope-OrgID: ongrid on
 	// the ingest side, so use the same on read.
 	req.Header.Set("X-Scope-OrgID", "opspilot")
 

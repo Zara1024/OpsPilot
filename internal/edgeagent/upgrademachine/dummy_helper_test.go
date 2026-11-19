@@ -3,7 +3,7 @@
 // 和 supervisor self-swap 测试（supervisor_selfswap_test.go）共用。
 // dummy.exe 支持：
 //   - 默认：sleep 60s（模拟运行中 supervisor.exe）
-//   - --version：输出 "opspilot-dummy v0.0.1" + exit 0（smokeTestVersion 验证用）
+//   - --version：输出 "ongrid-dummy v0.0.1" + exit 0（smokeTestVersion 验证用）
 //   - --self-rename <path>：自 rename + JSON 报告（rename 场景测试用）
 
 package upgrademachine
@@ -29,7 +29,7 @@ var (
 func buildDummy(t *testing.T) string {
 	t.Helper()
 	dummyOnce.Do(func() {
-		out := filepath.Join(os.TempDir(), "opspilot-dummy.exe")
+		out := filepath.Join(os.TempDir(), "ongrid-dummy.exe")
 		src := filepath.Join("testdata", "dummy_main.go")
 		cmd := exec.Command("go", "build", "-o", out, src)
 		if out, err := cmd.CombinedOutput(); err != nil {

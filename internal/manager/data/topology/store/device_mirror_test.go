@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/glebarez/sqlite"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/topology"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
-	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )

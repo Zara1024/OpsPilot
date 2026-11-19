@@ -49,8 +49,8 @@ cat /proc/meminfo | grep -E '^Swap'
 # 按 RSS（驻留内存）倒排
 ps -eo pid,user,rss,vsz,comm --sort=-rss | head -15
 
-# opspilot 工具
-# get_host_processes(device_id=N, sort_by=mem, top_n=10)
+# ongrid 工具
+# get_host_processes(device_ids=[N], sort_by=mem, top_n=10)
 ```
 
 看 RSS（实际占的物理内存），不要看 VSZ（虚拟空间，常常吓人但不真实占用）。

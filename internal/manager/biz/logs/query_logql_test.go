@@ -136,7 +136,7 @@ func TestServiceQueryLogQLCompilesPortableLogQLForSelectedElasticsearch(t *testi
 						"body":          map[string]any{"text": "panic: upstream timeout"},
 						"severity_text": "ERROR",
 						"resource": map[string]any{"attributes": map[string]any{
-							"device_id": "42", "namespace": "prod", "opspilot_source": "kubernetes:pod",
+							"device_id": "42", "namespace": "prod", "ongrid_source": "kubernetes:pod",
 						}},
 					},
 					"sort": []any{"2026-08-24T01:30:00Z", 1},
@@ -153,7 +153,7 @@ func TestServiceQueryLogQLCompilesPortableLogQLForSelectedElasticsearch(t *testi
 	backend := &model.Backend{
 		ID: 7, Generation: 2, Type: model.BackendTypeElasticsearch,
 		QueryEndpoint: server.URL, QueryCredentialRef: "query-ref",
-		IndexPattern: "logs-opspilot.*.otel-*", TLSInsecure: true,
+		IndexPattern: "logs-ongrid.*.otel-*", TLSInsecure: true,
 	}
 	service := NewService(
 		queryLogQLRepo{selected: backend},

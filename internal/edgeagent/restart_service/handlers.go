@@ -1,7 +1,7 @@
 //go:build linux
 
 // Package restart_service registers the edge-side handler for
-// MethodRestartService — the first mutating skill in opspilot (
+// MethodRestartService — the first mutating skill in ongrid (
 // double-sign / mutating class). The manager-side
 // BaseTool dispatches here AFTER the reviewer worker (agents/reviewer.md)
 // returns "Decision: approve"; this package's job is two-fold:
@@ -23,8 +23,7 @@
 //   - Real `systemctl` requires root + dbus + a real failing service
 //     to test the failure path — out of scope for the SOP gating PR.
 //
-// The Default allow-list mirrors the SKILL.md `edge_capabilities`
-// process.exec entry plus the operator-curated unit list. Operators may
+// The default unit allow-list matches the manager-side BaseTool. Operators may
 // override at edge boot by constructing a SandboxConfig directly; the
 // Default is the one we ship.
 package restart_service
@@ -69,8 +68,8 @@ type SandboxConfig struct {
 }
 
 // DefaultSandboxConfig returns the production-default config. The unit
-// list mirrors the SKILL.md `[能力: restart_service]` body block:
-// nginx / redis / prometheus / loki / tempo / grafana / mysql / opspilot.
+// list matches the manager-side BaseTool:
+// nginx / redis / prometheus / loki / tempo / grafana / mysql / ongrid.
 // Mocked = true while the real systemctl path is still TODO (PR-7
 // stub posture). The allow-list is intentionally narrow — the worst
 // blast radius on a single-tenant dev box is restarting one of these

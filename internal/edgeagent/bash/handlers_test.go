@@ -5,6 +5,8 @@ package bash
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -145,5 +147,50 @@ func TestHandler_RejectsForbiddenSyntax(t *testing.T) {
 		if resp.Allowed {
 			t.Errorf("%q: expected reject", cmd)
 		}
+	}
+}
+
+// Exercise the real shell path past the old sandbox ceiling; no fake clock
+// can establish that the command survives all handler/sandbox deadlines.
+func TestHandler_DefaultAllowsCommandBeyondThirtySeconds(t *testing.T) {
+	t.Parallel()
+	sb := &cmdpolicy.Sandbox{Policy: cmdpolicy.DefaultReadOnly()}
+	resp := invokeHandler(t, makeHandler(sb, nil), tunnel.BashExecRequest{
+		Cmd: "sleep 31; printf completed", Unrestricted: true,
+	})
+	if resp.ExitCode != 0 || resp.Stdout != "completed" {
+		t.Fatalf("long command failed: %+v", resp)
+	}
+}
+
+func TestHandler_ExplicitShortTimeoutStillStopsCommand(t *testing.T) {
+	t.Parallel()
+	sb := &cmdpolicy.Sandbox{Policy: cmdpolicy.DefaultReadOnly()}
+	resp := invokeHandler(t, makeHandler(sb, nil), tunnel.BashExecRequest{
+		Cmd: "exec sleep 10", Unrestricted: true, Timeout: 1,
+	})
+	if resp.ExitCode == 0 {
+		t.Fatalf("explicit timeout did not stop command: %+v", resp)
+	}
+}
+
+// 真实落盘验证：仅审批执行路径能写入，普通请求被策略拒绝。
+func TestHandler_HostFileWriteRequiresApprovedPath(t *testing.T) {
+	h := makeHandler(&cmdpolicy.Sandbox{Policy: cmdpolicy.DefaultReadOnly()}, nil)
+	path := filepath.Join(t.TempDir(), "approved-write")
+	cmd := "touch " + path
+	denied := invokeHandler(t, h, tunnel.BashExecRequest{Cmd: cmd})
+	if denied.Allowed {
+		t.Fatal("unapproved write allowed")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("unapproved path exists: %v", err)
+	}
+	approved := invokeHandler(t, h, tunnel.BashExecRequest{Cmd: cmd, Unrestricted: true})
+	if !approved.Allowed || approved.ExitCode != 0 {
+		t.Fatalf("approved write failed: %+v", approved)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -54,7 +54,7 @@ type Enforcer struct {
 // creates table `casbin_rule` automatically; it lives alongside the
 // app's other tables and uses the same connection.
 //
-// Boot order (cmd/opspilot):
+// Boot order (cmd/ongrid):
 //  1. iam Migrate(db) — creates users, orgs, org_memberships
 //  2. authz.New(db, log) — creates casbin_rule, loads policies
 //  3. authz.Enforcer.SeedRolePolicies() — idempotent inject of the

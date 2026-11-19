@@ -46,7 +46,7 @@ func NewHandler(svc SettingService, applier *bizsetting.ObservabilityApplier) *H
 }
 
 // Register attaches the routes under a chi.Router that already has the
-// auth middleware in front of it (see cmd/opspilot).
+// auth middleware in front of it (see cmd/ongrid).
 func (h *Handler) Register(r chi.Router) {
 	r.Get("/v1/system-settings", h.list)
 	r.Put("/v1/system-settings/{category}/{key}", h.put)

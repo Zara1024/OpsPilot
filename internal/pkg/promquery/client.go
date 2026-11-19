@@ -27,7 +27,7 @@ type InstantResult struct {
 }
 
 // BaseURLResolver returns the current Prometheus API root. It's invoked
-// once per Query / QueryRange call. The wiring layer (cmd/opspilot +
+// once per Query / QueryRange call. The wiring layer (cmd/ongrid +
 // biz/setting) caches with ~5s TTL so admin UI edits propagate without
 // a restart but don't hammer the DB on every PromQL invocation.
 type BaseURLResolver interface {
@@ -131,7 +131,7 @@ func (c *Client) do(ctx context.Context, path string, q url.Values) (*InstantRes
 		return nil, fmt.Errorf("promquery: build request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "opspilot-promquery/0.1")
+	req.Header.Set("User-Agent", "ongrid-promquery/0.1")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

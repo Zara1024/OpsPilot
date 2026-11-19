@@ -82,7 +82,7 @@ func (r *Repo) Create(ctx context.Context, p *model.Panel) (*model.Panel, error)
 // Update writes the named columns onto the row with the given id and
 // returns the post-update row. Missing id surfaces as errs.ErrNotFound.
 //
-// `fields` is the column-name 鈫?new-value map; gorm only emits an UPDATE
+// `fields` is the column-name → new-value map; gorm only emits an UPDATE
 // for the columns named, leaving everything else untouched.
 func (r *Repo) Update(ctx context.Context, id uint64, fields map[string]any) (*model.Panel, error) {
 	if id == 0 {
@@ -108,7 +108,7 @@ func (r *Repo) Update(ctx context.Context, id uint64, fields map[string]any) (*m
 
 // SetSyncResult records the outcome of an asynchronous Grafana mirror
 // attempt. errMsg = "" means the sync succeeded; lastSyncAt is updated
-// regardless. Failures are non-fatal 鈥?the caller still returns 200 to
+// regardless. Failures are non-fatal — the caller still returns 200 to
 // the operator and the row stays usable.
 func (r *Repo) SetSyncResult(ctx context.Context, id uint64, errMsg string) error {
 	if id == 0 {
@@ -139,4 +139,3 @@ func (r *Repo) Delete(ctx context.Context, id uint64) error {
 	}
 	return nil
 }
-

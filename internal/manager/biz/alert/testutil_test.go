@@ -271,9 +271,6 @@ func (r *fakeRepo) CountEventsByType(_ context.Context, eventType string, since 
 	}
 	var n int64
 	for _, ev := range r.events {
-		if n >= int64(limit) {
-			break
-		}
 		if ev.EventType != eventType {
 			continue
 		}
@@ -290,6 +287,9 @@ func (r *fakeRepo) CountEventsByType(_ context.Context, eventType string, since 
 			}
 		}
 		n++
+		if n == int64(limit) {
+			break
+		}
 	}
 	return n, nil
 }

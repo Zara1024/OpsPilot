@@ -93,7 +93,7 @@ func TestCreateSessionSchedulesMembersAtCommonTime(t *testing.T) {
 	uc := New(repo, caller, sessionResolver{101: 11, 102: 12}, nil)
 	now := time.Date(2026, 8, 14, 10, 0, 0, 0, time.UTC)
 	uc.now = func() time.Time { return now }
-	out, err := uc.CreateSession(context.Background(), CreateSessionInput{Targets: []SessionTarget{{DeviceID: 101, Interface: "eth0", NetworkNamespace: "opspilot-netdev-a"}, {DeviceID: 102, Interface: "eth1", NetworkNamespace: "opspilot-netdev-a"}}, Filter: "tcp and port 443", DurationSeconds: 10, Source: SourceChat, ChatSessionID: "chat-session-1"})
+	out, err := uc.CreateSession(context.Background(), CreateSessionInput{Targets: []SessionTarget{{DeviceID: 101, Interface: "eth0", NetworkNamespace: "ongrid-netdev-a"}, {DeviceID: 102, Interface: "eth1", NetworkNamespace: "ongrid-netdev-a"}}, Filter: "tcp and port 443", DurationSeconds: 10, Source: SourceChat, ChatSessionID: "chat-session-1"})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestCreateSessionSchedulesMembersAtCommonTime(t *testing.T) {
 	if wire.StartAt == nil || !wire.StartAt.Equal(out.Session.PlannedStartAt) {
 		t.Fatalf("start_at=%v want %s", wire.StartAt, out.Session.PlannedStartAt)
 	}
-	if wire.NetworkNamespace != "opspilot-netdev-a" {
+	if wire.NetworkNamespace != "ongrid-netdev-a" {
 		t.Fatalf("network namespace = %q", wire.NetworkNamespace)
 	}
 }

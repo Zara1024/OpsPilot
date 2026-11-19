@@ -3,7 +3,7 @@
 // while keeping a hard short-circuit for superusers — corrupt casbin
 // policies can never lock the system administrator out of the box.
 //
-// Usage from cmd/opspilot:
+// Usage from cmd/ongrid:
 //
 //	mw := authzmw.New(authzEnf, log)
 //	r.With(mw.Require("edge:*", "write")).Post("/v1/edges", ...)
@@ -60,8 +60,7 @@ func New(z Authorizer, log *slog.Logger) *Middleware {
 // Resolution:
 //  1. No tenant in ctx → 401
 //  2. Superuser → bypass (allow)
-//  3. Authorizer nil (legacy / test wiring) → bypass (allow) so the
-//     deployment without iam Phase-1 still works
+//  3. Authorizer nil → fail closed (403 Forbidden)
 //  4. AllowAnyOrg(user, obj, act) → allow
 //  5. Otherwise → 403
 //
@@ -80,17 +79,7 @@ func (m *Middleware) Require(obj, act string) func(http.Handler) http.Handler {
 				return
 			}
 			if m.z == nil {
-				// 安全加固（H-14）：鉴权组件未初始化时默认拒绝（Fail-Closed），保障系统安全
 				m.log.Error("authz: enforcer not initialized; failing closed for security")
-				http.Error(w, errs.ErrForbidden.Error(), http.StatusForbidden)
-				return
-			}
-			// 安全加固：系统角色为 viewer 的只读用户严禁执行任何写入/修改/删除等破坏性操作
-			if t.Role == "viewer" && act != "read" {
-				m.log.Info("authz: viewer role rejected for non-read action",
-					slog.Uint64("user", t.UserID),
-					slog.String("obj", obj),
-					slog.String("act", act))
 				http.Error(w, errs.ErrForbidden.Error(), http.StatusForbidden)
 				return
 			}

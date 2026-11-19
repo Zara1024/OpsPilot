@@ -28,7 +28,7 @@ func (f fakeGrafana) Test(context.Context) error { return f.err }
 func TestCheckAggregatesFailedDependency(t *testing.T) {
 	t.Parallel()
 	qdrant := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/collections/opspilot_knowledge" {
+		if r.URL.Path != "/collections/ongrid_knowledge" {
 			t.Fatalf("qdrant path = %q", r.URL.Path)
 		}
 		w.WriteHeader(http.StatusOK)
@@ -45,7 +45,7 @@ func TestCheckAggregatesFailedDependency(t *testing.T) {
 		LLMConfigured:       true,
 		EmbeddingConfigured: true,
 		QdrantURL:           qdrant.URL,
-		QdrantCollection:    "opspilot_knowledge",
+		QdrantCollection:    "ongrid_knowledge",
 	}, Dependencies{
 		DB:      fakeDB{},
 		Prom:    fakeProm{err: errors.New("prom down")},
@@ -102,7 +102,7 @@ func TestCheckReportsDegradedWhenOptionalCapabilitiesMissing(t *testing.T) {
 func TestCheckReportsGrafanaMissingCredentialAsDegraded(t *testing.T) {
 	t.Parallel()
 	qdrant := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/collections/opspilot_knowledge" {
+		if r.URL.Path != "/collections/ongrid_knowledge" {
 			t.Fatalf("qdrant path = %q", r.URL.Path)
 		}
 		w.WriteHeader(http.StatusOK)
@@ -119,7 +119,7 @@ func TestCheckReportsGrafanaMissingCredentialAsDegraded(t *testing.T) {
 		LLMConfigured:       true,
 		EmbeddingConfigured: true,
 		QdrantURL:           qdrant.URL,
-		QdrantCollection:    "opspilot_knowledge",
+		QdrantCollection:    "ongrid_knowledge",
 	}, Dependencies{
 		DB:      fakeDB{},
 		Prom:    fakeProm{},

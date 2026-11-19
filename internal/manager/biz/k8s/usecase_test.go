@@ -176,7 +176,7 @@ func TestInstallCommandDerivesExternalTunnelAddr(t *testing.T) {
 	if !strings.Contains(cmd, "--set-string manager.tlsInsecure=true") {
 		t.Fatalf("install command missing tlsInsecure for self-signed manager TLS: %s", cmd)
 	}
-	if !strings.Contains(cmd, "'oci://helm.cnb.cool/zara1024/opspilot-edge'") {
+	if !strings.Contains(cmd, "'oci://helm.cnb.cool/ongridio/opspilot-edge'") {
 		t.Fatalf("install command should use the CNB OCI chart: %s", cmd)
 	}
 	if !strings.Contains(cmd, "--version '0.10.0'") {
@@ -190,7 +190,7 @@ func TestInstallCommandOmitsChartVersionForDevBuild(t *testing.T) {
 		ImageTag:  "dev",
 	})
 	cmd := uc.installCommand(6, model.ModeFullNode, "controller-token", "node-token")
-	if !strings.Contains(cmd, "'oci://helm.cnb.cool/zara1024/opspilot-edge'") {
+	if !strings.Contains(cmd, "'oci://helm.cnb.cool/ongridio/opspilot-edge'") {
 		t.Fatalf("install command should use the CNB OCI chart: %s", cmd)
 	}
 	if strings.Contains(cmd, "--version") {
@@ -204,12 +204,12 @@ func TestUpgradeCommandUsesManagerConfig(t *testing.T) {
 		TunnelAddr: "manager.example.com:40012",
 		ImageTag:   "v0.9.1",
 	})
-	command := uc.UpgradeCommand(&model.Cluster{ControllerNamespace: "opspilot-system"})
+	command := uc.UpgradeCommand(&model.Cluster{ControllerNamespace: "ongrid-system"})
 	for _, want := range []string{
 		"helm upgrade opspilot-edge",
-		"'oci://helm.cnb.cool/zara1024/opspilot-edge'",
+		"'oci://helm.cnb.cool/ongridio/opspilot-edge'",
 		"--version '0.9.1'",
-		"--namespace 'opspilot-system'",
+		"--namespace 'ongrid-system'",
 		"--reset-then-reuse-values",
 		"manager.publicURL='https://manager.example.com:8443'",
 		"manager.tunnelAddr='manager.example.com:40012'",
@@ -240,7 +240,7 @@ func TestInstallCommandKeepsPlaceholdersWhenExternalAddressUnknown(t *testing.T)
 	if !strings.Contains(cmd, "--set-string manager.tlsInsecure=true") {
 		t.Fatalf("install command missing tlsInsecure for self-signed manager TLS: %s", cmd)
 	}
-	if !strings.Contains(cmd, "'oci://helm.cnb.cool/zara1024/opspilot-edge'") {
+	if !strings.Contains(cmd, "'oci://helm.cnb.cool/ongridio/opspilot-edge'") {
 		t.Fatalf("install command should use the CNB OCI chart: %s", cmd)
 	}
 	if !strings.Contains(cmd, "--version '0.10.0'") {
@@ -370,7 +370,7 @@ func TestUsecaseControllerEnrollmentRequiresExplicitRecoveryAfterRegister(t *tes
 		ClusterID:      reg.Cluster.ID,
 		ClusterUID:     testClusterUID,
 		Role:           model.RoleController,
-		Namespace:      "opspilot-system",
+		Namespace:      "ongrid-system",
 	}
 	first, err := uc.Enroll(ctx, in)
 	if err != nil {
@@ -428,7 +428,7 @@ func TestUsecaseControllerEnrollmentIssuesSeparateTelemetryCredential(t *testing
 		ClusterID:      reg.Cluster.ID,
 		ClusterUID:     testClusterUID,
 		Role:           model.RoleController,
-		Namespace:      "opspilot-system",
+		Namespace:      "ongrid-system",
 	})
 	if err != nil {
 		t.Fatalf("Enroll() error = %v", err)
@@ -493,7 +493,7 @@ func TestResolveTelemetryConfigPublishesIndependentExternalTraceAndLogTargets(t 
 	}
 }
 
-func TestUsecaseEnrollmentKeepsExternalPasswordWhitespace(t *testing.T) {
+func TestResolveTelemetryConfigKeepsExternalPasswordWhitespace(t *testing.T) {
 	const pass = "  demo pass\t"
 	uc := NewUsecase(nil, nil, Config{PublicURL: "https://manager.example"})
 	uc.SetTelemetryTargetResolver(staticTelemetryTargetResolver{targets: map[string]TelemetryTarget{
@@ -643,7 +643,7 @@ func TestUsecaseLookupControllerCluster(t *testing.T) {
 		ClusterUID: testClusterUID,
 		Role:       model.RoleController,
 		NodeName:   "node-a",
-		Namespace:  "opspilot-system",
+		Namespace:  "ongrid-system",
 		PodName:    "opspilot-edge-controller-abc",
 	}); err != nil {
 		t.Fatalf("HandleRegister(controller) error = %v", err)
@@ -652,7 +652,7 @@ func TestUsecaseLookupControllerCluster(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetCluster() error = %v", err)
 	}
-	if registered.ControllerNodeName != "node-a" || registered.ControllerNamespace != "opspilot-system" || registered.ControllerPodName != "opspilot-edge-controller-abc" {
+	if registered.ControllerNodeName != "node-a" || registered.ControllerNamespace != "ongrid-system" || registered.ControllerPodName != "opspilot-edge-controller-abc" {
 		t.Fatalf("controller runtime location = node:%q namespace:%q pod:%q", registered.ControllerNodeName, registered.ControllerNamespace, registered.ControllerPodName)
 	}
 	if repo.lastInstallation == nil || repo.lastInstallation.ScopeType != "cluster" {
@@ -1308,7 +1308,7 @@ func TestUsecaseDeleteClusterDeletesAssociatedEdges(t *testing.T) {
 		ClusterUID:     testClusterUID,
 		Role:           model.RoleController,
 		NodeName:       "control-plane",
-		Namespace:      "opspilot-system",
+		Namespace:      "ongrid-system",
 	})
 	if err != nil {
 		t.Fatalf("Enroll(controller) error = %v", err)
@@ -1472,11 +1472,11 @@ func TestUsecaseInventoryPrunesOnlyDeclaredScope(t *testing.T) {
 		ClusterID: reg.Cluster.ID,
 		Role:      model.RoleController,
 		Scope:     "namespace",
-		Namespace: "opspilot-system",
+		Namespace: "ongrid-system",
 	}); err != nil {
 		t.Fatalf("IngestInventory(namespace) error = %v", err)
 	}
-	want := []string{"workloads:opspilot-system", "pods:opspilot-system", "events:opspilot-system"}
+	want := []string{"workloads:ongrid-system", "pods:ongrid-system", "events:ongrid-system"}
 	if strings.Join(repo.pruned, ",") != strings.Join(want, ",") {
 		t.Fatalf("namespace prune = %v, want %v", repo.pruned, want)
 	}
@@ -1764,10 +1764,10 @@ func TestUsecaseInventoryUpdatesSyncMetadata(t *testing.T) {
 		ClusterID:         reg.Cluster.ID,
 		Role:              model.RoleController,
 		Scope:             "namespace",
-		Namespace:         "opspilot-system",
+		Namespace:         "ongrid-system",
 		Ts:                collectedAt,
 		ResourceVersion:   "42",
-		ResourceVersions:  map[string]string{"pods:opspilot-system": "42", "events:opspilot-system": "41"},
+		ResourceVersions:  map[string]string{"pods:ongrid-system": "42", "events:ongrid-system": "41"},
 		CollectDurationMS: 123,
 	}); err != nil {
 		t.Fatalf("IngestInventory() error = %v", err)
@@ -1779,7 +1779,7 @@ func TestUsecaseInventoryUpdatesSyncMetadata(t *testing.T) {
 	if got.ControllerEdgeID == nil || *got.ControllerEdgeID != 99 {
 		t.Fatalf("ControllerEdgeID = %v, want 99", got.ControllerEdgeID)
 	}
-	if got.InventoryResourceVersion != "42" || got.InventoryScope != "namespace" || got.InventoryNamespace != "opspilot-system" {
+	if got.InventoryResourceVersion != "42" || got.InventoryScope != "namespace" || got.InventoryNamespace != "ongrid-system" {
 		t.Fatalf("inventory metadata = rv:%q scope:%q ns:%q", got.InventoryResourceVersion, got.InventoryScope, got.InventoryNamespace)
 	}
 	if got.InventorySyncDurationMS != 123 || got.InventoryWatchLagSeconds != 0 || got.InventorySyncedAt == nil {
@@ -1788,7 +1788,7 @@ func TestUsecaseInventoryUpdatesSyncMetadata(t *testing.T) {
 	if got.InventorySyncedAt.Before(time.Unix(collectedAt, 0).Add(5 * time.Second)) {
 		t.Fatalf("InventorySyncedAt = %v, must use manager receive time instead of edge timestamp", got.InventorySyncedAt)
 	}
-	if !strings.Contains(got.InventoryResourceVersionsJSON, `"pods:opspilot-system":"42"`) {
+	if !strings.Contains(got.InventoryResourceVersionsJSON, `"pods:ongrid-system":"42"`) {
 		t.Fatalf("resource_versions_json = %s", got.InventoryResourceVersionsJSON)
 	}
 }

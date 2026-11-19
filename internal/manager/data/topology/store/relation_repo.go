@@ -124,7 +124,7 @@ func (r *RelationRepo) Delete(ctx context.Context, id uint64) error {
 }
 
 // applyRelationFilter applies the optional filter clauses. SrcOrDstID
-// is processed exclusively (mutually exclusive with SrcID/DstID 鈥?if
+// is processed exclusively (mutually exclusive with SrcID/DstID — if
 // the caller sets it, we ignore the more-specific endpoints to keep
 // the SQL straightforward).
 func applyRelationFilter(q *gorm.DB, f biz.RelationListFilter) *gorm.DB {
@@ -143,4 +143,3 @@ func applyRelationFilter(q *gorm.DB, f biz.RelationListFilter) *gorm.DB {
 	}
 	return q
 }
-

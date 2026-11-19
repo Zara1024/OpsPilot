@@ -47,7 +47,7 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 
 	// Spool the upload to a temp file so zip (which needs ReaderAt) and tar
 	// share one code path.
-	tmp, err := os.CreateTemp("", "opspilot-upload-*"+archiveExt(header.Filename))
+	tmp, err := os.CreateTemp("", "ongrid-upload-*"+archiveExt(header.Filename))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -61,7 +61,7 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	tmp.Close()
 
-	dest, err := os.MkdirTemp("", "opspilot-pack-*")
+	dest, err := os.MkdirTemp("", "ongrid-pack-*")
 	if err != nil {
 		writeErr(w, err)
 		return

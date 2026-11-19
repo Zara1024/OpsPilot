@@ -1,6 +1,6 @@
 // Package mcp holds the persistence entity for external MCP (Model Context
 // Protocol) server registrations (HLD-018). Each row is one upstream MCP
-// server opspilot connects to as a *client*: its transport + endpoint (or
+// server ongrid connects to as a *client*: its transport + endpoint (or
 // stdio command), an optional credential-vault reference + header template
 // for auth injection, a trust/enable flag, and a cached snapshot of the
 // tools the server advertised on the last successful probe.
@@ -50,7 +50,7 @@ type Server struct {
 
 	// ToolsCacheJSON is the JSON-encoded []mcpclient.Tool snapshot from the
 	// last successful probe. Status/LastError record that probe's outcome.
-	ToolsCacheJSON string `gorm:"type:text"`
+	ToolsCacheJSON string `gorm:"type:longtext"`
 	Status         string `gorm:"size:16"`
 	LastError      string `gorm:"size:512"`
 

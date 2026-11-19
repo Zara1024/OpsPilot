@@ -125,14 +125,14 @@ func aggregate5m(pts []model.Point, bucketStart time.Time) []model.Bucket5m {
 		return nil
 	}
 	type acc struct {
-		n                    int
-		cpuSum, memSum       float64
-		cpuMax, memMax       float64
-		l1Sum, l5Sum, l15Sum float64
-		l1Max, l5Max, l15Max float64
-		netRx, netTx         uint64
-		diskSum              float64
-		diskMax              float64
+		n                                       int
+		cpuSum, memSum                          float64
+		cpuMax, memMax                          float64
+		l1Sum, l5Sum, l15Sum                    float64
+		l1Max, l5Max, l15Max                    float64
+		netRx, netTx                            uint64
+		diskSum                                 float64
+		diskMax                                 float64
 	}
 	by := make(map[uint64]*acc)
 	for _, p := range pts {
@@ -205,13 +205,13 @@ func aggregate1h(bs []model.Bucket5m, bucketStart time.Time) []model.Bucket1h {
 		return nil
 	}
 	type acc struct {
-		n                             int
-		cpuAvgSum, memAvgSum          float64
-		cpuMax, memMax                float64
-		l1AvgSum, l5AvgSum, l15AvgSum float64
-		l1Max, l5Max, l15Max          float64
-		netRx, netTx                  uint64
-		diskAvgSum, diskMax           float64
+		n                                         int
+		cpuAvgSum, memAvgSum                      float64
+		cpuMax, memMax                            float64
+		l1AvgSum, l5AvgSum, l15AvgSum             float64
+		l1Max, l5Max, l15Max                      float64
+		netRx, netTx                              uint64
+		diskAvgSum, diskMax                       float64
 	}
 	by := make(map[uint64]*acc)
 	for _, b := range bs {

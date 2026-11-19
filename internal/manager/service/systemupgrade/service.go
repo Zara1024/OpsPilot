@@ -1,4 +1,4 @@
-// Package systemupgrade checks the upstream opspilot release and prepares
+// Package systemupgrade checks the upstream ongrid release and prepares
 // operator-run upgrade commands for the Web UI.
 package systemupgrade
 
@@ -15,10 +15,9 @@ import (
 )
 
 const (
-	// 优先使用官方 GitHub Releases API，保障最新版本秒级查询响应
+	defaultReleaseMetadataURL = "https://ongrid.cloud/dl/latest.json"
 	defaultGitHubReleaseURL   = "https://api.github.com/repos/Zara1024/OpsPilot/releases/latest"
-	defaultReleaseMetadataURL = "https://github.com/Zara1024/OpsPilot/releases/latest/download/latest.json"
-	defaultDownloadBase       = "https://github.com/Zara1024/OpsPilot/releases/download"
+	defaultDownloadBase       = "https://ongrid.cloud/dl"
 	maxReleaseMetadataBytes   = 1 << 20
 )
 
@@ -72,7 +71,7 @@ type releaseInfo struct {
 
 func New(cfg Config, client *http.Client) *Service {
 	cfg.ReleaseAPIURLs = normalizeReleaseURLs(cfg)
-	if cfg.DownloadBase == "" || strings.Contains(cfg.DownloadBase, "opspilot.cloud") {
+	if cfg.DownloadBase == "" {
 		cfg.DownloadBase = defaultDownloadBase
 	}
 	if cfg.Timeout <= 0 {
@@ -102,23 +101,15 @@ func (s *Service) buildInfo(rel *releaseInfo) *Info {
 	cmp, comparable := compareVersions(s.cfg.CurrentVersion, latest)
 	updateAvailable := comparable && cmp < 0
 	downloadBase := strings.TrimSpace(rel.downloadBase)
-	if downloadBase == "" || strings.Contains(downloadBase, "opspilot.cloud") {
+	if downloadBase == "" {
 		downloadBase = s.cfg.DownloadBase
-	}
-	releaseURL := strings.TrimSpace(rel.releaseURL)
-	if releaseURL == "" || strings.Contains(releaseURL, "opspilot.cloud") {
-		if latest != "" {
-			releaseURL = fmt.Sprintf("https://github.com/Zara1024/OpsPilot/releases/tag/%s", latest)
-		} else {
-			releaseURL = "https://github.com/Zara1024/OpsPilot/releases"
-		}
 	}
 	return &Info{
 		CurrentVersion:      strings.TrimSpace(s.cfg.CurrentVersion),
 		LatestVersion:       latest,
 		UpdateAvailable:     updateAvailable,
 		ComparisonSupported: comparable,
-		ReleaseURL:          releaseURL,
+		ReleaseURL:          rel.releaseURL,
 		PublishedAt:         rel.publishedAt,
 		CheckedAt:           time.Now().UTC(),
 		Commands:            buildCommands(latest, downloadBase),
@@ -134,7 +125,7 @@ func (s *Service) fetchLatest(ctx context.Context, sourceURL string) (*releaseIn
 		return nil, fmt.Errorf("build release request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json, text/plain;q=0.9, */*;q=0.8")
-	req.Header.Set("User-Agent", "opspilot/"+strings.TrimSpace(s.cfg.CurrentVersion))
+	req.Header.Set("User-Agent", "ongrid/"+strings.TrimSpace(s.cfg.CurrentVersion))
 
 	resp, err := s.http.Do(req)
 	if err != nil {
@@ -218,26 +209,23 @@ func normalizeReleaseURLs(cfg Config) []string {
 		urls = []string{cfg.ReleaseAPIURL}
 	}
 	if len(urls) == 0 {
-		urls = []string{defaultGitHubReleaseURL, defaultReleaseMetadataURL}
+		urls = []string{defaultReleaseMetadataURL, defaultGitHubReleaseURL}
 	}
 	out := make([]string, 0, len(urls))
 	for _, sourceURL := range urls {
 		sourceURL = strings.TrimSpace(sourceURL)
-		if strings.Contains(sourceURL, "opspilot.cloud") {
-			sourceURL = defaultReleaseMetadataURL
-		}
 		if sourceURL != "" {
 			out = append(out, sourceURL)
 		}
 	}
 	if len(out) == 0 {
-		return []string{defaultGitHubReleaseURL, defaultReleaseMetadataURL}
+		return []string{defaultReleaseMetadataURL, defaultGitHubReleaseURL}
 	}
 	return out
 }
 
 func buildCommands(version, downloadBase string) []UpgradeCommand {
-	base := normalizeDownloadBase(downloadBase, version)
+	base := strings.TrimRight(downloadBase, "/")
 	return []UpgradeCommand{
 		{
 			ID:      "linux-amd64",
@@ -260,20 +248,6 @@ func buildCommands(version, downloadBase string) []UpgradeCommand {
 	}
 }
 
-func normalizeDownloadBase(downloadBase, version string) string {
-	base := strings.TrimRight(strings.TrimSpace(downloadBase), "/")
-	if base == "" || strings.Contains(base, "opspilot.cloud") {
-		base = defaultDownloadBase
-	}
-	version = strings.TrimSpace(version)
-	if strings.Contains(base, "github.com") && strings.Contains(base, "/releases/download") {
-		if version != "" && !strings.HasSuffix(base, "/"+version) {
-			base = base + "/" + version
-		}
-	}
-	return base
-}
-
 func buildAutoCommand(version, base string) string {
 	return fmt.Sprintf(
 		`ARCH="$(uname -m)"
@@ -282,7 +256,7 @@ case "$ARCH" in
   aarch64|arm64) ARCH=arm64 ;;
   *) echo "unsupported arch: $ARCH"; exit 1 ;;
 esac
-PKG="opspilot-%s-linux-${ARCH}"
+PKG="ongrid-%s-linux-${ARCH}"
 curl -fL -O %s/${PKG}.tar.xz || wget %s/${PKG}.tar.xz
 tar xf ${PKG}.tar.xz && cd ${PKG}
 sudo ./upgrade.sh`,
@@ -293,7 +267,7 @@ sudo ./upgrade.sh`,
 }
 
 func buildArchCommand(version, base, arch string) string {
-	pkg := fmt.Sprintf("opspilot-%s-linux-%s", version, arch)
+	pkg := fmt.Sprintf("ongrid-%s-linux-%s", version, arch)
 	return fmt.Sprintf(
 		`curl -fL -O %s/%s.tar.xz || wget %s/%s.tar.xz
 tar xf %s.tar.xz && cd %s

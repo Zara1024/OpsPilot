@@ -37,7 +37,7 @@ func newMemVec() *memVec { return &memVec{points: map[uint64]qdrantx.SearchHit{}
 
 func (m *memVec) count() int { return len(m.points) }
 
-func (m *memVec) EnsureCollection(context.Context, string, int) error              { return nil }
+func (m *memVec) EnsureCollection(context.Context, string, int) error             { return nil }
 func (m *memVec) EnsurePayloadIndex(context.Context, string, string, string) error { return nil }
 
 func (m *memVec) Upsert(_ context.Context, _ string, pts []qdrantx.Point) error {

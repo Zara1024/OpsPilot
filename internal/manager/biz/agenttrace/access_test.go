@@ -158,7 +158,7 @@ func TestBuiltInTraceScopesAndMissingRoots(t *testing.T) {
 	}
 	// Official Eino callback spans use an external SDK scope, but Manager's
 	// resource identity still marks an in-progress trace as private.
-	body := strings.ReplaceAll(string(testBody(t, testSpan(1, 0, map[string]any{"langfuse.observation.input": "secret"}))), "support-agent", "ongrid-manager")
+	body := strings.ReplaceAll(string(testBody(t, testSpan(1, 0, map[string]any{"langfuse.observation.input": "secret"}))), "support-agent", "opspilot-manager")
 	q := NewScopedQuerier(&fixtureQuerier{body: []byte(body)}, accessSessions{})
 	if _, err := q.GetTrace(accessContext(1), fixtureTraceID); !errors.Is(err, errs.ErrNotFound) {
 		t.Fatalf("unfinished root leaked content: %v", err)
@@ -215,7 +215,7 @@ func TestOwnedRootCannotAuthorizeUnrelatedIncompleteSpans(t *testing.T) {
 		{"parent cycle", []map[string]any{root, testSpan(3, 2, nil), testSpan(2, 3, map[string]any{"langfuse.observation.input": "foreign question"})}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			body := strings.ReplaceAll(string(testBody(t, tc.spans...)), "support-agent", "ongrid-manager")
+			body := strings.ReplaceAll(string(testBody(t, tc.spans...)), "support-agent", "opspilot-manager")
 			q := NewScopedQuerier(&fixtureQuerier{body: []byte(body)}, accessSessions{owners: map[string]uint64{"owned": 1}})
 			_, err := q.GetTrace(accessContext(1), fixtureTraceID)
 			if tc.allow && err != nil || !tc.allow && !errors.Is(err, errs.ErrNotFound) {

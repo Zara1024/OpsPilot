@@ -2,14 +2,14 @@ package alert
 
 import "testing"
 
-// The same alert subject reported with vs without the opspilot_source
+// The same alert subject reported with vs without the ongrid_source
 // provenance label (embedded vs cloud collector) must dedupe to ONE incident
 // — that's the "duplicate alerts" merge. Identity labels still distinguish.
 func TestLabelSetKey_IgnoresProvenanceLabels(t *testing.T) {
-	withSrc := map[string]string{"device_id": "1", "mountpoint": "/", "opspilot_source": "embedded"}
+	withSrc := map[string]string{"device_id": "1", "mountpoint": "/", "ongrid_source": "embedded"}
 	without := map[string]string{"device_id": "1", "mountpoint": "/"}
 	if labelSetKey(withSrc) != labelSetKey(without) {
-		t.Errorf("opspilot_source must not split the key: with=%q without=%q", labelSetKey(withSrc), labelSetKey(without))
+		t.Errorf("ongrid_source must not split the key: with=%q without=%q", labelSetKey(withSrc), labelSetKey(without))
 	}
 	withProductSrc := map[string]string{"device_id": "1", "mountpoint": "/", "source_id": "embedded"}
 	if labelSetKey(withProductSrc) != labelSetKey(without) {

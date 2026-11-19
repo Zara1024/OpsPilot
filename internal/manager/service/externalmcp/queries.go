@@ -306,11 +306,10 @@ func sanitize(value any) any {
 			for !utf8.ValidString(v) {
 				v = v[:len(v)-1]
 			}
-			v += "鈥?[TRUNCATED]"
+			v += "… [TRUNCATED]"
 		}
 		return v
 	default:
 		return value
 	}
 }
-

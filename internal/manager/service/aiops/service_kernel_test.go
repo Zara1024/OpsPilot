@@ -191,7 +191,7 @@ func TestService_Graph_DispatchesToRuntime(t *testing.T) {
 }
 
 // TestService_MissingRuntimeFailsExplicitly guards
-// against the misconfig where ONGRID_AGENT_KERNEL=graph but the
+// against the misconfig where OPSPILOT_AGENT_KERNEL=graph but the
 // runtime fails to build. We must fall back to legacy; the test
 // confirms runtime is never called.
 // 运行时不可用时应返回稳定错误，不能隐式执行另一套循环。

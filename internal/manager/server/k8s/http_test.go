@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/Zara1024/OpsPilot/internal/pkg/autoapm"
 	"github.com/Zara1024/OpsPilot/internal/pkg/tenantctx"
 	"net/http"
 	"net/http/httptest"
@@ -89,6 +90,7 @@ func (s *telemetryRefreshService) RefreshTelemetryConfig(_ context.Context, cont
 
 func TestRefreshTelemetryConfigUsesAuthenticatedControllerIdentity(t *testing.T) {
 	svc := &telemetryRefreshService{out: &biz.TelemetryConfig{
+		AppMetricsScope:     autoapm.MetricsScope{Namespaces: []string{"shop"}, PodUIDs: []string{"pod-one"}},
 		ClusterID:           7,
 		AccessKey:           "kt_access",
 		SecretKey:           "ks_secret",
@@ -126,6 +128,9 @@ func TestRefreshTelemetryConfigUsesAuthenticatedControllerIdentity(t *testing.T)
 	if got.ClusterID != 7 || got.AccessKey != "kt_access" || got.SecretKey != "ks_secret" ||
 		got.ManagerPublicURL != "https://manager.example" {
 		t.Fatalf("response = %#v", got)
+	}
+	if !got.AppMetricsScope.Allows("shop", "future") || !got.AppMetricsScope.Allows("other", "pod-one") || got.AppMetricsScope.Allows("other", "pod-two") {
+		t.Fatalf("application metrics scope lost or widened: %+v", got.AppMetricsScope)
 	}
 	if got.TracesEndpoint != "https://tempo.example/v1/traces" || got.TracesAuthMode != "backend" ||
 		got.TracesBasicUser != "tempo-user" || got.TracesBasicPass != "tempo-pass" || !got.TracesTLSInsecure ||
@@ -178,6 +183,33 @@ func TestRefreshTelemetryConfigRejectsMissingAuthenticatedIdentity(t *testing.T)
 	h.refreshTelemetryConfig(resp, httptest.NewRequest(http.MethodPost, "/internal/k8s/telemetry-config", nil))
 	if resp.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", resp.Code)
+	}
+}
+
+func TestReconcileNodeRequiresBootstrapAndCompleteNodeIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name, token, body string
+		status            int
+	}{
+		{name: "no bootstrap", body: `{}`, status: http.StatusUnauthorized},
+		{name: "controller", token: "bootstrap", body: `{"role":"controller","cached_edge_id":1,"node_uid":"uid","node_name":"node"}`, status: http.StatusBadRequest},
+		{name: "no cached edge", token: "bootstrap", body: `{"role":"node","node_uid":"uid","node_name":"node"}`, status: http.StatusBadRequest},
+		{name: "no UID", token: "bootstrap", body: `{"role":"node","cached_edge_id":1,"node_name":"node"}`, status: http.StatusBadRequest},
+		{name: "no name", token: "bootstrap", body: `{"role":"node","cached_edge_id":1,"node_uid":"uid"}`, status: http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			router := chi.NewRouter()
+			NewHandler(nil).RegisterInternal(router)
+			req := httptest.NewRequest(http.MethodPost, "/internal/k8s/reconcile-node", strings.NewReader(tc.body))
+			if tc.token != "" {
+				req.Header.Set("Authorization", "Bearer "+tc.token)
+			}
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, req)
+			if response.Code != tc.status {
+				t.Fatalf("status=%d, want %d", response.Code, tc.status)
+			}
+		})
 	}
 }
 

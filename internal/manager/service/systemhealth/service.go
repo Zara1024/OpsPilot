@@ -100,7 +100,7 @@ func New(cfg Config, deps Dependencies) *Service {
 		cfg.ProbeTimeout = 3 * time.Second
 	}
 	if cfg.QdrantCollection == "" {
-		cfg.QdrantCollection = "opspilot_knowledge"
+		cfg.QdrantCollection = "ongrid_knowledge"
 	}
 	if deps.HTTP == nil {
 		deps.HTTP = &http.Client{Timeout: cfg.ProbeTimeout}

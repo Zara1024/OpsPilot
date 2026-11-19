@@ -92,7 +92,7 @@ func NewHandler(streamer Streamer, router *bizwebshell.Router, audit bizwebshell
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  4096,
 			WriteBufferSize: 16384,
-			Subprotocols:    []string{"opspilot.shell.v1"},
+			Subprotocols:    []string{"ongrid.shell.v1"},
 			CheckOrigin:     sameOrigin,
 		},
 		tickets:  make(map[string]shellTicket),
@@ -391,22 +391,22 @@ func (h *Handler) openShell(w http.ResponseWriter, r *http.Request) {
 
 	startedAt := time.Now().UTC()
 	if err := h.audit.Open(r.Context(), &wsmodel.Session{
-		ID:             sid,
-		OpsPilotUserID: ticket.UserID,
-		SSHUser:        ticket.SSHUser,
-		SSHPort:        ticket.Port,
-		CredentialID:   ticket.CredentialID,
-		DeviceID:       deviceID,
-		EdgeID:         ticket.EdgeID,
-		ClientIP:       clientIP(r),
-		StartedAt:      startedAt,
+		ID:           sid,
+		OngridUserID: ticket.UserID,
+		SSHUser:      ticket.SSHUser,
+		SSHPort:      ticket.Port,
+		CredentialID: ticket.CredentialID,
+		DeviceID:     deviceID,
+		EdgeID:       ticket.EdgeID,
+		ClientIP:     clientIP(r),
+		StartedAt:    startedAt,
 	}); err != nil {
 		br.closeWith(websocket.CloseInternalServerErr, "audit insert: "+err.Error())
 		return
 	}
 
 	h.router.Register(sid, br, bizwebshell.ActiveSession{
-		SessionID: sid, OpsPilotUserID: ticket.UserID, SSHUser: ticket.SSHUser,
+		SessionID: sid, OngridUserID: ticket.UserID, SSHUser: ticket.SSHUser,
 		SSHPort: ticket.Port, DeviceID: deviceID, EdgeID: ticket.EdgeID,
 		StartedAt: startedAt, LastInputAt: startedAt,
 	})
@@ -683,34 +683,34 @@ func (h *Handler) listSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	active := h.router.Active()
 	type row struct {
-		ID             string  `json:"id"`
-		OpsPilotUserID uint64  `json:"opspilot_user_id"`
-		SSHUser        string  `json:"ssh_user"`
-		SSHPort        uint16  `json:"ssh_port"`
-		DeviceID       uint64  `json:"device_id"`
-		EdgeID         uint64  `json:"edge_id"`
-		StartedAt      string  `json:"started_at"`
-		EndedAt        *string `json:"ended_at,omitempty"`
-		BytesStdin     uint64  `json:"bytes_stdin"`
-		BytesStdout    uint64  `json:"bytes_stdout"`
-		ExitCode       int     `json:"exit_code"`
-		TerminatedBy   string  `json:"terminated_by,omitempty"`
-		IsActive       bool    `json:"is_active"`
+		ID           string  `json:"id"`
+		OngridUserID uint64  `json:"ongrid_user_id"`
+		SSHUser      string  `json:"ssh_user"`
+		SSHPort      uint16  `json:"ssh_port"`
+		DeviceID     uint64  `json:"device_id"`
+		EdgeID       uint64  `json:"edge_id"`
+		StartedAt    string  `json:"started_at"`
+		EndedAt      *string `json:"ended_at,omitempty"`
+		BytesStdin   uint64  `json:"bytes_stdin"`
+		BytesStdout  uint64  `json:"bytes_stdout"`
+		ExitCode     int     `json:"exit_code"`
+		TerminatedBy string  `json:"terminated_by,omitempty"`
+		IsActive     bool    `json:"is_active"`
 	}
 	out := make([]row, 0, len(active)+len(hist))
 	activeIDs := make(map[string]bool, len(active))
 	for _, s := range active {
 		activeIDs[s.SessionID] = true
 		out = append(out, row{
-			ID:             s.SessionID,
-			OpsPilotUserID: s.OpsPilotUserID,
-			SSHUser:        s.SSHUser,
-			SSHPort:        s.SSHPort,
-			DeviceID:       s.DeviceID,
-			EdgeID:         s.EdgeID,
-			StartedAt:      s.StartedAt.UTC().Format(time.RFC3339),
-			BytesStdout:    h.router.StdoutBytes(s.SessionID),
-			IsActive:       true,
+			ID:           s.SessionID,
+			OngridUserID: s.OngridUserID,
+			SSHUser:      s.SSHUser,
+			SSHPort:      s.SSHPort,
+			DeviceID:     s.DeviceID,
+			EdgeID:       s.EdgeID,
+			StartedAt:    s.StartedAt.UTC().Format(time.RFC3339),
+			BytesStdout:  h.router.StdoutBytes(s.SessionID),
+			IsActive:     true,
 		})
 	}
 	for _, s := range hist {
@@ -723,19 +723,19 @@ func (h *Handler) listSessions(w http.ResponseWriter, r *http.Request) {
 			endedAt = &str
 		}
 		out = append(out, row{
-			ID:             s.ID,
-			OpsPilotUserID: s.OpsPilotUserID,
-			SSHUser:        s.SSHUser,
-			SSHPort:        s.SSHPort,
-			DeviceID:       s.DeviceID,
-			EdgeID:         s.EdgeID,
-			StartedAt:      s.StartedAt.UTC().Format(time.RFC3339),
-			EndedAt:        endedAt,
-			BytesStdin:     s.BytesStdin,
-			BytesStdout:    s.BytesStdout,
-			ExitCode:       s.ExitCode,
-			TerminatedBy:   s.TerminatedBy,
-			IsActive:       false,
+			ID:           s.ID,
+			OngridUserID: s.OngridUserID,
+			SSHUser:      s.SSHUser,
+			SSHPort:      s.SSHPort,
+			DeviceID:     s.DeviceID,
+			EdgeID:       s.EdgeID,
+			StartedAt:    s.StartedAt.UTC().Format(time.RFC3339),
+			EndedAt:      endedAt,
+			BytesStdin:   s.BytesStdin,
+			BytesStdout:  s.BytesStdout,
+			ExitCode:     s.ExitCode,
+			TerminatedBy: s.TerminatedBy,
+			IsActive:     false,
 		})
 	}
 	body, _ := json.Marshal(map[string]any{"items": out, "total": len(out)})
@@ -909,16 +909,21 @@ func parseUintParam(r *http.Request, name string) (uint64, error) {
 }
 
 func (h *Handler) onlineEdge(ctx context.Context, deviceID uint64) (*edgemodel.Edge, error) {
-	edges, err := h.edges.List(ctx, edgebiz.ListFilter{Limit: 1000})
+	host, err := h.devices.Get(ctx, deviceID)
 	if err != nil {
-		return nil, fmt.Errorf("list edges: %w", err)
+		return nil, fmt.Errorf("resolve host runtime: %w", err)
 	}
-	for _, edge := range edges {
-		if edge.DeviceID != nil && *edge.DeviceID == deviceID && edge.Status == edgemodel.StatusOnline {
-			return edge, nil
-		}
+	if host.CurrentEdgeID == nil {
+		return nil, errs.ErrEdgeOffline
 	}
-	return nil, fmt.Errorf("%w: device offline or unknown", errs.ErrEdgeOffline)
+	edge, err := h.edges.GetByID(ctx, *host.CurrentEdgeID)
+	if err != nil {
+		return nil, err
+	}
+	if edge.DeviceID == nil || *edge.DeviceID != deviceID || edge.Status != edgemodel.StatusOnline {
+		return nil, errs.ErrEdgeOffline
+	}
+	return edge, nil
 }
 
 func (h *Handler) mintTicket(ticket shellTicket) (string, time.Time, error) {

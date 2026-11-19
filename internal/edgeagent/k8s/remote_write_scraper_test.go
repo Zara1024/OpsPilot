@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/Zara1024/OpsPilot/internal/pkg/autoapm"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -72,7 +73,7 @@ func TestRemoteWriteScraperPreservesKubernetesLabels(t *testing.T) {
 		t.Fatal("kube_pod_status_phase was not written")
 	}
 	labels := remoteWriteLabelMap(found.Labels)
-	if labels["cluster_id"] != "7" || labels["opspilot_source"] != k8sMetricsSource {
+	if labels["cluster_id"] != "7" || labels["ongrid_source"] != k8sMetricsSource {
 		t.Fatalf("system labels = %#v", labels)
 	}
 	if labels["namespace"] != "default" || labels["pod"] != "api" || labels["phase"] != "Running" {
@@ -97,7 +98,7 @@ func TestRemoteWriteScraperPreservesKubernetesLabels(t *testing.T) {
 	}
 	var lastSuccess float64
 	for _, family := range families {
-		if family.GetName() == "opspilot_edge_k8s_metrics_last_success_timestamp_seconds" && len(family.Metric) == 1 {
+		if family.GetName() == "ongrid_edge_k8s_metrics_last_success_timestamp_seconds" && len(family.Metric) == 1 {
 			lastSuccess = family.Metric[0].GetGauge().GetValue()
 		}
 	}
@@ -147,7 +148,9 @@ func TestRemoteWriteScraperReadyTracksCompleteCycle(t *testing.T) {
 func TestRemoteWriteScraperDiscoversApplicationTargets(t *testing.T) {
 	metricsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-		_, _ = w.Write([]byte("app_requests_total{route=\"/ready\"} 3\n"))
+		_, _ = w.Write([]byte(`app_requests_total{route="/ready",id="one",instance="app",url="/business",cluster_id="spoofed",ongrid_source="spoofed"} 3
+app_requests_total{route="/ready",id="two",instance="app",url="/business"} 4
+`))
 	}))
 	defer metricsServer.Close()
 	metricsURL, err := url.Parse(metricsServer.URL)
@@ -184,10 +187,13 @@ func TestRemoteWriteScraperDiscoversApplicationTargets(t *testing.T) {
 	scraper, err := newRemoteWriteScraper(writer, RemoteWriteScraperConfig{
 		ClusterID:    7,
 		DiscoverApps: true,
-		Interval:     time.Second,
-		Timeout:      time.Second,
-		PushTimeout:  time.Second,
-		MaxRetries:   1,
+		AppMetricsScope: func(context.Context) (autoapm.MetricsScope, error) {
+			return autoapm.MetricsScope{Namespaces: []string{"default"}}, nil
+		},
+		Interval:    time.Second,
+		Timeout:     time.Second,
+		PushTimeout: time.Second,
+		MaxRetries:  1,
 	}, slog.Default(), nil, &apiClient{baseURL: apiServer.URL, http: apiServer.Client()})
 	if err != nil {
 		t.Fatalf("newRemoteWriteScraper() error = %v", err)
@@ -196,18 +202,21 @@ func TestRemoteWriteScraperDiscoversApplicationTargets(t *testing.T) {
 		t.Fatal("application-only scrape cycle did not become ready")
 	}
 
+	seen := map[string]float64{}
 	for _, batch := range writer.batches {
 		for _, sample := range batch {
 			labels := remoteWriteLabelMap(sample.Labels)
 			if labels["__name__"] == "app_requests_total" {
-				if labels["opspilot_source"] != k8sAppMetricsSource || labels["namespace"] != "default" || labels["pod"] != "api" {
+				if labels["ongrid_source"] != k8sAppMetricsSource || labels["cluster_id"] != "7" || labels["namespace"] != "default" || labels["pod"] != "api" || labels["instance"] != "app" || labels["url"] != "/business" {
 					t.Fatalf("application labels = %#v", labels)
 				}
-				return
+				seen[labels["id"]] = sample.Value
 			}
 		}
 	}
-	t.Fatal("discovered application metric was not written")
+	if len(seen) != 2 || seen["one"] != 3 || seen["two"] != 4 {
+		t.Fatalf("business series collapsed: %#v", seen)
+	}
 }
 
 func TestRemoteWriteScraperKeepsCoreReadyWhenAppDiscoveryFails(t *testing.T) {
@@ -227,10 +236,13 @@ func TestRemoteWriteScraperKeepsCoreReadyWhenAppDiscoveryFails(t *testing.T) {
 		ClusterID:    7,
 		Endpoint:     metricsServer.URL,
 		DiscoverApps: true,
-		Interval:     time.Second,
-		Timeout:      time.Second,
-		PushTimeout:  time.Second,
-		MaxRetries:   1,
+		AppMetricsScope: func(context.Context) (autoapm.MetricsScope, error) {
+			return autoapm.MetricsScope{Namespaces: []string{"default"}}, nil
+		},
+		Interval:    time.Second,
+		Timeout:     time.Second,
+		PushTimeout: time.Second,
+		MaxRetries:  1,
 	}, slog.Default(), nil, &apiClient{baseURL: apiServer.URL, http: apiServer.Client()})
 	if err != nil {
 		t.Fatalf("newRemoteWriteScraper() error = %v", err)

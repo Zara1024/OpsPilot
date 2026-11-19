@@ -31,6 +31,10 @@ func TestRenderedConfigsAcceptedByCollector(t *testing.T) {
 	if err := os.WriteFile(apiKeyPath, []byte("id:secret"), 0o600); err != nil {
 		t.Fatalf("write API key: %v", err)
 	}
+	authPath := filepath.Join(dir, "es-basic-auth")
+	if err := os.WriteFile(authPath, []byte("Basic dXNlcjpwYXNz"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	cases := map[string]plugins.PluginConfig{
 		"builtin-loki-host": {
 			Enabled: true, EdgeID: 42, Endpoint: "https://manager.example.com/loki/api/v1/push",
@@ -43,7 +47,17 @@ func TestRenderedConfigsAcceptedByCollector(t *testing.T) {
 				"backend": backendExternalES, "backend_generation": uint64(3),
 				"elasticsearch_endpoints":    []interface{}{"https://es.example.com:9200"},
 				"elasticsearch_api_key_file": apiKeyPath,
-				"elasticsearch_dataset":      "opspilot.host", "elasticsearch_namespace": "default",
+				"elasticsearch_dataset":      "ongrid.host", "elasticsearch_namespace": "default",
+				"enable_journald": false, "file_paths": []interface{}{`/var/log/*.log`},
+			},
+		},
+		"external-elasticsearch-basic": {
+			Enabled: true, EdgeID: 42,
+			Spec: map[string]interface{}{
+				"backend": backendExternalES, "backend_generation": uint64(3),
+				"elasticsearch_endpoints":          []interface{}{"https://es.example.com:9200"},
+				"elasticsearch_authorization_file": authPath,
+				"elasticsearch_dataset":            "ongrid.host", "elasticsearch_namespace": "default",
 				"enable_journald": false, "file_paths": []interface{}{`/var/log/*.log`},
 			},
 		},
@@ -284,7 +298,7 @@ func TestRenderJournaldIsEnabledByDefault(t *testing.T) {
 	operators := list(t, asObject(t, receiver)["operators"])
 	for _, operator := range operators[:len(operators)-1] {
 		field := scalar(t, asObject(t, operator), "field")
-		if field != `resource["device_id"]` && field != `resource["opspilot_source"]` {
+		if field != `resource["device_id"]` && field != `resource["ongrid_source"]` {
 			t.Fatalf("journald resource field = %q", field)
 		}
 	}
@@ -301,6 +315,7 @@ func TestRenderKubernetesMode(t *testing.T) {
 		Spec: map[string]interface{}{
 			"mode": "kubernetes", "cluster_id": float64(7), "node_name": "kind-worker",
 			"pod_log_paths":        []string{"/var/log/pods/shop_orders_uid/app/*.log", "/var/log/pods/billing_*_*/*/*.log"},
+			"journald_units":       []interface{}{"kubelet.service", "containerd.service"},
 			"pod_log_self_exclude": "/var/log/pods/custom_custom-edge-node-x_*/*/*.log",
 		},
 	})
@@ -308,13 +323,16 @@ func TestRenderKubernetesMode(t *testing.T) {
 	if _, exists := receivers["journald/system"]; !exists {
 		t.Fatal("Kubernetes node must retain system journald")
 	}
+	units := object(t, receivers, "journald/system")["units"]
+	assertStringListContains(t, units, "kubelet.service")
+	assertStringListContains(t, units, "containerd.service")
 	kubernetes := object(t, receivers, "filelog/kubernetes")
 	assertStringListContains(t, kubernetes["include"], "/var/log/pods/shop_orders_uid/app/*.log")
 	assertStringListContains(t, kubernetes["include"], "/var/log/pods/billing_*_*/*/*.log")
 	if len(list(t, kubernetes["include"])) != 2 {
 		t.Fatal("unselected paths included")
 	}
-	assertStringListContains(t, kubernetes["exclude"], "/var/log/pods/opspilot-system_opspilot-edge-node-*/*/*.log")
+	assertStringListContains(t, kubernetes["exclude"], "/var/log/pods/ongrid-system_opspilot-edge-node-*/*/*.log")
 	assertStringListContains(t, kubernetes["exclude"], "/var/log/pods/custom_custom-edge-node-x_*/*/*.log")
 	resource := object(t, kubernetes, "resource")
 	if scalar(t, resource, "device_id") != "42" || scalar(t, resource, "cluster_id") != "7" {
@@ -369,7 +387,7 @@ func TestRenderExternalElasticsearchPipeline(t *testing.T) {
 			"elasticsearch_endpoints":    []interface{}{"https://es-a.example.com:9200", "https://es-b.example.com:9200"},
 			"elasticsearch_api_key_file": "/var/lib/opspilot-edge/secrets/logs/elasticsearch_api_key",
 			"elasticsearch_ca_file":      "/var/lib/opspilot-edge/secrets/logs/elasticsearch_ca.pem",
-			"elasticsearch_dataset":      "opspilot.container",
+			"elasticsearch_dataset":      "ongrid.container",
 			"elasticsearch_namespace":    "prod",
 		},
 	})
@@ -393,9 +411,9 @@ func TestRenderExternalElasticsearchPipeline(t *testing.T) {
 
 	actions := list(t, object(t, object(t, root, "processors"), "resource/backend")["attributes"])
 	assertResourceAction(t, actions, "data_stream.type", "logs")
-	assertResourceActionMode(t, actions, "data_stream.dataset", "opspilot.container", "insert")
+	assertResourceActionMode(t, actions, "data_stream.dataset", "ongrid.container", "insert")
 	assertResourceAction(t, actions, "data_stream.namespace", "prod")
-	assertResourceAction(t, actions, "opspilot.backend_generation", "9")
+	assertResourceAction(t, actions, "ongrid.backend_generation", "9")
 }
 
 func TestRenderExternalElasticsearchRejectsUnsafeConfiguration(t *testing.T) {
@@ -403,13 +421,19 @@ func TestRenderExternalElasticsearchRejectsUnsafeConfiguration(t *testing.T) {
 		"backend": backendExternalES, "backend_generation": uint64(1),
 		"elasticsearch_endpoints":    []interface{}{"https://es.example.com:9200"},
 		"elasticsearch_api_key_file": "/var/lib/opspilot-edge/secrets/logs/key",
-		"elasticsearch_dataset":      "opspilot.host", "elasticsearch_namespace": "default",
+		"elasticsearch_dataset":      "ongrid.host", "elasticsearch_namespace": "default",
 	}
 	tests := []struct {
 		name   string
 		mutate func(map[string]interface{})
 	}{
 		{name: "inline API key", mutate: func(spec map[string]interface{}) { spec["elasticsearch_api_key"] = "secret" }},
+		{name: "inline password", mutate: func(spec map[string]interface{}) { spec["elasticsearch_password"] = "secret" }},
+		{name: "ambiguous credentials", mutate: func(spec map[string]interface{}) { spec["elasticsearch_authorization_file"] = "/secrets/basic" }},
+		{name: "relative Basic Auth path", mutate: func(spec map[string]interface{}) {
+			delete(spec, "elasticsearch_api_key_file")
+			spec["elasticsearch_authorization_file"] = "secrets/basic"
+		}},
 		{name: "plain HTTP", mutate: func(spec map[string]interface{}) {
 			spec["elasticsearch_endpoints"] = []interface{}{"http://es.example.com:9200"}
 		}},
@@ -431,6 +455,27 @@ func TestRenderExternalElasticsearchRejectsUnsafeConfiguration(t *testing.T) {
 				t.Fatal("render accepted unsafe Elasticsearch configuration")
 			}
 		})
+	}
+}
+
+func TestRenderElasticsearchBasicAuthUsesOnlyManagedHeader(t *testing.T) {
+	root := renderConfig(t, plugins.PluginConfig{
+		Enabled: true, EdgeID: 42,
+		Spec: map[string]interface{}{
+			"backend": backendExternalES, "backend_generation": uint64(3),
+			"elasticsearch_endpoints":          []string{"https://es.example.com:9200"},
+			"elasticsearch_authorization_file": "/secrets/es-basic.g3",
+			"elasticsearch_dataset":            "ongrid.host", "elasticsearch_namespace": "default",
+		},
+	})
+	es := object(t, object(t, root, "exporters"), "elasticsearch/generation_3")
+	if got := scalar(t, object(t, es, "headers"), "Authorization"); got != "${file:/secrets/es-basic.g3}" {
+		t.Fatalf("unexpected authorization file reference: %q", got)
+	}
+	for _, field := range []string{"api_key", "user", "password"} {
+		if _, exists := es[field]; exists {
+			t.Fatalf("Basic Auth exporter also contains %s", field)
+		}
 	}
 }
 

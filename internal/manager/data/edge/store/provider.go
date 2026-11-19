@@ -6,7 +6,7 @@ import (
 	biz "github.com/Zara1024/OpsPilot/internal/manager/biz/edge"
 )
 
-// NewBizRepo is the wire-ready constructor. cmd/opspilot binds this at
+// NewBizRepo is the wire-ready constructor. cmd/ongrid binds this at
 // assembly time to produce the biz.Repo value that Usecase + Authenticator
 // consume. The bare NewRepo in edge.go returns the concrete *Repo (for
 // test introspection); this helper returns the interface to keep the wiring

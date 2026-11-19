@@ -6,7 +6,7 @@ import (
 	monitormodel "github.com/Zara1024/OpsPilot/internal/manager/model/monitor"
 )
 
-// TestBuildMonitorDashboardJSON verifies the renderer maps each opspilot
+// TestBuildMonitorDashboardJSON verifies the renderer maps each ongrid
 // panel onto the Grafana wire shape and lays out the grid 2-wide. This
 // is the only logic that runs without a live Grafana, so the test
 // focuses there; SyncMonitorPanels itself is exercised by integration
@@ -18,9 +18,9 @@ func TestBuildMonitorDashboardJSON(t *testing.T) {
 		{ID: 2, Title: "Mem", Type: monitormodel.PanelTypeStat, PromQL: "mem_pct", Unit: "percent"},
 		{ID: 3, Title: "Disk", Type: monitormodel.PanelTypeGauge, PromQL: "disk_pct", Unit: "percent"},
 	}
-	out := buildMonitorDashboardJSON("opspilot-monitor", "Title", panels)
+	out := buildMonitorDashboardJSON("ongrid-monitor", "Title", panels)
 
-	if got := out["uid"]; got != "opspilot-monitor" {
+	if got := out["uid"]; got != "ongrid-monitor" {
 		t.Fatalf("uid = %v", got)
 	}
 	gp, ok := out["panels"].([]map[string]any)

@@ -36,7 +36,7 @@ func samplePack(packID string) *model.InstalledPack {
 		Version:          "0.1.0",
 		Source:           "local",
 		SourceURL:        "/tmp/" + packID,
-		InstallPath:      "/var/lib/opspilot/system/skills/" + packID,
+		InstallPath:      "/var/lib/ongrid/system/skills/" + packID,
 		ManifestSHA256:   "abcd",
 		SignatureState:   model.SigStateUnsigned,
 		CapabilitiesJSON: `{"skills":[]}`,

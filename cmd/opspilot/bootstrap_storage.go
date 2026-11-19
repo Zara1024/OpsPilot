@@ -1,0 +1,122 @@
+package main
+
+import (
+	manageroncalldata "github.com/Zara1024/OpsPilot/internal/manager/data/oncall/store"
+	"context"
+	"database/sql"
+	externalmcpdata "github.com/Zara1024/OpsPilot/internal/manager/data/externalmcp"
+	resultdata "github.com/Zara1024/OpsPilot/internal/manager/data/toolresult/store"
+	"log/slog"
+
+	iamdatatoken "github.com/Zara1024/OpsPilot/internal/iam/data/integrationtoken"
+	iamdatamembership "github.com/Zara1024/OpsPilot/internal/iam/data/membership/store"
+	iamdataorg "github.com/Zara1024/OpsPilot/internal/iam/data/org/store"
+	iamdatauser "github.com/Zara1024/OpsPilot/internal/iam/data/user/sqlite"
+	managerbizsecret "github.com/Zara1024/OpsPilot/internal/manager/biz/secret"
+	managerbizskill "github.com/Zara1024/OpsPilot/internal/manager/biz/skill"
+	manageraiopsdata "github.com/Zara1024/OpsPilot/internal/manager/data/aiops/store"
+	manageralertdata "github.com/Zara1024/OpsPilot/internal/manager/data/alert/store"
+	managerapprovaldata "github.com/Zara1024/OpsPilot/internal/manager/data/approval/store"
+	manageraudtdata "github.com/Zara1024/OpsPilot/internal/manager/data/audit/store"
+	managerdevicedata "github.com/Zara1024/OpsPilot/internal/manager/data/device/store"
+	manageredgedata "github.com/Zara1024/OpsPilot/internal/manager/data/edge/store"
+	managerflowdata "github.com/Zara1024/OpsPilot/internal/manager/data/flow/store"
+	managerk8sdata "github.com/Zara1024/OpsPilot/internal/manager/data/k8s/store"
+	managerlogsdata "github.com/Zara1024/OpsPilot/internal/manager/data/logs/store"
+	managermarketplacedata "github.com/Zara1024/OpsPilot/internal/manager/data/marketplace/store"
+	managermcpdata "github.com/Zara1024/OpsPilot/internal/manager/data/mcp/store"
+	managermetricdata "github.com/Zara1024/OpsPilot/internal/manager/data/metric/store"
+	managermonitordata "github.com/Zara1024/OpsPilot/internal/manager/data/monitor/store"
+	managerpacketcapturedata "github.com/Zara1024/OpsPilot/internal/manager/data/packetcapture/store"
+	managerreportdata "github.com/Zara1024/OpsPilot/internal/manager/data/report/store"
+	managersecretdata "github.com/Zara1024/OpsPilot/internal/manager/data/secret/store"
+	managersettingdata "github.com/Zara1024/OpsPilot/internal/manager/data/setting/store"
+	managertopologydata "github.com/Zara1024/OpsPilot/internal/manager/data/topology/store"
+	managerwebshelldata "github.com/Zara1024/OpsPilot/internal/manager/data/webshell/store"
+	"github.com/Zara1024/OpsPilot/internal/pkg/config"
+	"github.com/Zara1024/OpsPilot/internal/pkg/dbx"
+	"gorm.io/gorm"
+)
+
+type storageModule struct {
+	oncallStore              *manageroncalldata.Store
+	db                       *gorm.DB
+	upgradingExistingInstall bool
+	secretUC                 *managerbizsecret.Usecase
+	sqlDB                    *sql.DB
+	errDB                    error
+}
+
+func bootstrapStorage(rootCtx context.Context, cfg *config.Config, log *slog.Logger) (*storageModule, error) {
+	// Open the configured DB backend (MySQL by default, SQLite opt-in) and
+	// run AutoMigrate-based schema management. Each data package exposes a
+	// Migrate(db) function and is composed in startup order below.
+	db, err := dbx.Open(cfg.DB, log)
+	if err != nil {
+		log.Error("open db", slog.Any("err", err))
+		return nil, err
+	}
+	// This flag is sampled before AutoMigrate. It distinguishes an existing
+	// installation being upgraded from a fresh database created by this boot.
+	upgradingExistingInstall := db.Migrator().HasTable("devices")
+	if err := dbx.RunMigrations(db, log,
+		iamdatauser.Migrate,
+		iamdatatoken.Migrate,
+		iamdataorg.Migrate,
+		iamdatamembership.Migrate,
+		manageralertdata.Migrate,
+		managerdevicedata.Migrate,
+		manageredgedata.Migrate,
+		managerk8sdata.Migrate,
+		managerlogsdata.Migrate,
+		managertopologydata.Migrate,
+		managermetricdata.Migrate,
+		manageraiopsdata.Migrate,
+		resultdata.Migrate,
+		externalmcpdata.Migrate,
+		managerbizskill.Migrate,
+		managersettingdata.Migrate,
+		managermarketplacedata.Migrate,
+		managersecretdata.Migrate,
+		managermcpdata.Migrate,
+		managerapprovaldata.Migrate,
+		managermonitordata.Migrate,
+		managerwebshelldata.Migrate,
+		manageraudtdata.Migrate,
+		managerreportdata.Migrate,
+		managerflowdata.Migrate,
+		managerpacketcapturedata.Migrate,
+		manageroncalldata.Migrate,
+	); err != nil {
+		log.Error("run migrations", slog.Any("err", err))
+		return nil, err
+	}
+	if migrated, err := managerflowdata.MigrateLegacyIMNotificationTool(rootCtx, db); err != nil {
+		log.Error("migrate legacy workflow IM notification tools", slog.Any("err", err))
+		return nil, err
+	} else if migrated > 0 {
+		log.Info("migrated legacy workflow IM notification tools", slog.Int("flow_count", migrated))
+	}
+	if err := managerk8sdata.RepairNodeHostIdentities(rootCtx, db, log); err != nil {
+		log.Error("repair kubernetes host identities", slog.Any("err", err))
+		return nil, err
+	}
+	// The encrypted credential vault is shared by multiple bounded contexts.
+	// Construct it immediately after migrations so log backend wiring can use
+	// separate read/write API keys without delaying the HTTP/query services.
+	secretUC := managerbizsecret.NewUsecase(managersecretdata.NewRepo(db))
+	sqlDB, errDB := db.DB()
+	if errDB != nil {
+		log.Warn("gorm.DB() failed; DB pool metrics and health ping will be unavailable", slog.Any("err", errDB))
+	}
+
+	oncallStore := manageroncalldata.NewStore(db)
+	return &storageModule{
+		oncallStore:              oncallStore,
+		db:                       db,
+		upgradingExistingInstall: upgradingExistingInstall,
+		secretUC:                 secretUC,
+		sqlDB:                    sqlDB,
+		errDB:                    errDB,
+	}, nil
+}

@@ -1,12 +1,12 @@
-# zara1024 vault
+# ongridio vault
 
-The platform-vendor knowledge base shipped with OpsPilot. The manager
-auto-registers this tree at boot under the `zara1024` org so its contents
+The platform-vendor knowledge base shipped with Ongrid. The manager
+auto-registers this tree at boot under the `ongridio` org so its contents
 are available to RAG retrieval, agent skills (`query_knowledge`), and the
 Knowledge UI out of the box.
 
-This repo will live at **`github.com/zara1024/vault`** (private). The
-opspilot manager clones it on first run and re-syncs periodically. Operators
+This repo will live at **`github.com/ongridio/vault`** (private). The
+ongrid manager clones it on first run and re-syncs periodically. Operators
 can override the source URL via the standard `knowledge_repos` mechanism.
 
 ## Layout
@@ -54,8 +54,8 @@ maintain parallel translations of the same doc.
 
 On startup the manager:
 
-1. Ensures the `zara1024` org exists
-2. Ensures a `knowledge_repos` row points at this vault, owner_org = `zara1024`, kind = `builtin`
+1. Ensures the `ongridio` org exists
+2. Ensures a `knowledge_repos` row points at this vault, owner_org = `ongridio`, kind = `builtin`
 3. Pulls + walks + embeds every `.md` under the tracked directories
 4. Tags chunks with their `path` (e.g. `diagnostics/network-connectivity`) so
    the Knowledge UI breadcrumb works and skills can scope retrieval

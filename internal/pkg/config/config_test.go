@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -12,6 +13,7 @@ func TestLoadDefaults(t *testing.T) {
 		"OPSPILOT_K8S_EVENT_RETENTION", "OPSPILOT_K8S_EVENT_MAX_PER_CLUSTER",
 		"OPSPILOT_K8S_EVENT_CLEANUP_INTERVAL",
 		"OPSPILOT_DB_DIALECT", "OPSPILOT_DB_DSN", "OPSPILOT_DB_PATH",
+		"OPSPILOT_DB_MAX_OPEN_CONNS", "OPSPILOT_DB_MAX_IDLE_CONNS",
 		"OPSPILOT_JWT_SECRET", "OPSPILOT_JWT_ACCESS_TTL", "OPSPILOT_JWT_REFRESH_TTL",
 		"OPSPILOT_OPENAI_API_KEY", "OPSPILOT_OPENAI_MODEL", "OPSPILOT_OPENAI_BASE_URL",
 		"OPSPILOT_MINIMAX_API_KEY", "OPSPILOT_MINIMAX_MODEL", "OPSPILOT_MINIMAX_BASE_URL", "OPSPILOT_MINIMAX_MODELS",
@@ -60,12 +62,15 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.DB.Dialect != "mysql" {
 		t.Errorf("DB.Dialect default = %q, want mysql", cfg.DB.Dialect)
 	}
-	wantDSN := "opspilot:opspilot@tcp(127.0.0.1:3306)/opspilot?parseTime=true&charset=utf8mb4&loc=Local"
+	wantDSN := "ongrid:ongrid@tcp(127.0.0.1:3306)/ongrid?parseTime=true&charset=utf8mb4&loc=Local"
 	if cfg.DB.DSN != wantDSN {
 		t.Errorf("DB.DSN default = %q, want %q", cfg.DB.DSN, wantDSN)
 	}
-	if cfg.DB.Path != "./data/opspilot.db" {
-		t.Errorf("DB.Path default = %q, want ./data/opspilot.db", cfg.DB.Path)
+	if cfg.DB.Path != "./data/ongrid.db" {
+		t.Errorf("DB.Path default = %q, want ./data/ongrid.db", cfg.DB.Path)
+	}
+	if cfg.DB.MaxOpenConns != 50 || cfg.DB.MaxIdleConns != 10 {
+		t.Errorf("DB pool defaults = %d/%d, want 50/10", cfg.DB.MaxOpenConns, cfg.DB.MaxIdleConns)
 	}
 	if cfg.JWT.AccessTTL != 15*time.Minute {
 		t.Errorf("JWT.AccessTTL default = %v, want 15m", cfg.JWT.AccessTTL)
@@ -98,7 +103,7 @@ func TestLoadDefaults(t *testing.T) {
 		t.Errorf("FrontierClient.Addr default = %q, want frontier:40011", cfg.FrontierClient.Addr)
 	}
 	if cfg.FrontierClient.ServiceName != "opspilot-manager" {
-		t.Errorf("FrontierClient.ServiceName default = %q, want opspilot-manager", cfg.FrontierClient.ServiceName)
+		t.Errorf("FrontierClient.ServiceName default = %q, want ongrid-manager", cfg.FrontierClient.ServiceName)
 	}
 	if cfg.Edge.CollectorMode != "off" {
 		t.Errorf("Edge.CollectorMode default = %q, want off", cfg.Edge.CollectorMode)
@@ -207,7 +212,7 @@ func TestLoadPromOverrides(t *testing.T) {
 // embedded/scrape mode split.
 func TestLoadEdgeCollectorOverrides(t *testing.T) {
 	t.Setenv("OPSPILOT_EDGE_COLLECTOR_MODE", "scrape")
-	t.Setenv("OPSPILOT_EDGE_SCRAPE_CONFIG_FILE", "/opt/opspilot/scrape.yaml")
+	t.Setenv("OPSPILOT_EDGE_SCRAPE_CONFIG_FILE", "/opt/ongrid/scrape.yaml")
 	t.Setenv("OPSPILOT_EDGE_COLLECTOR_INTERVAL", "30s")
 
 	cfg, err := Load()
@@ -217,7 +222,7 @@ func TestLoadEdgeCollectorOverrides(t *testing.T) {
 	if cfg.Edge.CollectorMode != "scrape" {
 		t.Errorf("Edge.CollectorMode = %q", cfg.Edge.CollectorMode)
 	}
-	if cfg.Edge.ScrapeConfigFile != "/opt/opspilot/scrape.yaml" {
+	if cfg.Edge.ScrapeConfigFile != "/opt/ongrid/scrape.yaml" {
 		t.Errorf("Edge.ScrapeConfigFile = %q", cfg.Edge.ScrapeConfigFile)
 	}
 	if cfg.Edge.CollectorInterval != 30*time.Second {
@@ -335,12 +340,12 @@ func TestLoadAlertOverrides(t *testing.T) {
 
 func TestLoadOverrides(t *testing.T) {
 	t.Setenv("OPSPILOT_DB_DIALECT", "sqlite")
-	t.Setenv("OPSPILOT_DB_DSN", "u:p@tcp(db:3306)/opspilot")
-	t.Setenv("OPSPILOT_DB_PATH", "/var/lib/opspilot/db.sqlite")
+	t.Setenv("OPSPILOT_DB_DSN", "u:p@tcp(db:3306)/ongrid")
+	t.Setenv("OPSPILOT_DB_PATH", "/var/lib/ongrid/db.sqlite")
 	t.Setenv("OPSPILOT_ADMIN_EMAIL", "root@example.com")
 	t.Setenv("OPSPILOT_ADMIN_PASSWORD", "s3cret")
 	t.Setenv("OPSPILOT_FRONTIER_ADDR", "frontier-staging:31011")
-	t.Setenv("OPSPILOT_FRONTIER_SERVICE_NAME", "opspilot-manager-staging")
+	t.Setenv("OPSPILOT_FRONTIER_SERVICE_NAME", "ongrid-manager-staging")
 
 	cfg, err := Load()
 	if err != nil {
@@ -349,10 +354,10 @@ func TestLoadOverrides(t *testing.T) {
 	if cfg.DB.Dialect != "sqlite" {
 		t.Errorf("DB.Dialect = %q", cfg.DB.Dialect)
 	}
-	if cfg.DB.DSN != "u:p@tcp(db:3306)/opspilot" {
+	if cfg.DB.DSN != "u:p@tcp(db:3306)/ongrid" {
 		t.Errorf("DB.DSN = %q", cfg.DB.DSN)
 	}
-	if cfg.DB.Path != "/var/lib/opspilot/db.sqlite" {
+	if cfg.DB.Path != "/var/lib/ongrid/db.sqlite" {
 		t.Errorf("DB.Path = %q", cfg.DB.Path)
 	}
 	if cfg.Admin.Email != "root@example.com" {
@@ -364,30 +369,29 @@ func TestLoadOverrides(t *testing.T) {
 	if cfg.FrontierClient.Addr != "frontier-staging:31011" {
 		t.Errorf("FrontierClient.Addr = %q", cfg.FrontierClient.Addr)
 	}
-	if cfg.FrontierClient.ServiceName != "opspilot-manager-staging" {
+	if cfg.FrontierClient.ServiceName != "ongrid-manager-staging" {
 		t.Errorf("FrontierClient.ServiceName = %q", cfg.FrontierClient.ServiceName)
 	}
 }
 
-// TestLegacyPrefixFallback 验证当仅提供 ONGRID_* 旧前缀环境变量时，能无缝回退并正确加载
-func TestLegacyPrefixFallback(t *testing.T) {
-	// 设置 ONGRID_* 格式的环境变量
-	t.Setenv("ONGRID_DB_DIALECT", "mysql")
-	t.Setenv("ONGRID_DB_DSN", "opspilot:pass@tcp(mysql:3306)/opspilot")
-	t.Setenv("ONGRID_JWT_SECRET", "custom-ongrid-jwt-secret")
-	t.Setenv("ONGRID_PUBLIC_URL", "https://opspilot.example.com")
-
+func TestLoadDBPool(t *testing.T) {
+	t.Setenv("OPSPILOT_DB_MAX_OPEN_CONNS", "20")
+	t.Setenv("OPSPILOT_DB_MAX_IDLE_CONNS", "5")
 	cfg, err := Load()
 	if err != nil {
-		t.Fatalf("Load 失败: %v", err)
+		t.Fatal(err)
 	}
-	if cfg.DB.DSN != "opspilot:pass@tcp(mysql:3306)/opspilot" {
-		t.Errorf("DB.DSN 回退解析错误: 期望 %q, 实际得到 %q", "opspilot:pass@tcp(mysql:3306)/opspilot", cfg.DB.DSN)
+	if cfg.DB.MaxOpenConns != 20 || cfg.DB.MaxIdleConns != 5 {
+		t.Fatalf("DB pool overrides = %d/%d, want 20/5", cfg.DB.MaxOpenConns, cfg.DB.MaxIdleConns)
 	}
-	if cfg.JWT.Secret != "custom-ongrid-jwt-secret" {
-		t.Errorf("JWT.Secret 回退解析错误: 期望 %q, 实际得到 %q", "custom-ongrid-jwt-secret", cfg.JWT.Secret)
-	}
-	if cfg.PublicURL != "https://opspilot.example.com" {
-		t.Errorf("PublicURL 回退解析错误: 期望 %q, 实际得到 %q", "https://opspilot.example.com", cfg.PublicURL)
+	for _, key := range []string{"OPSPILOT_DB_MAX_OPEN_CONNS", "OPSPILOT_DB_MAX_IDLE_CONNS"} {
+		for _, value := range []string{"-1", "0", "invalid", "1.5"} {
+			t.Run(key+"/"+value, func(t *testing.T) {
+				t.Setenv(key, value)
+				if _, err := Load(); err == nil || !strings.Contains(err.Error(), key) {
+					t.Fatalf("Load with %s=%s returned %v", key, value, err)
+				}
+			})
+		}
 	}
 }

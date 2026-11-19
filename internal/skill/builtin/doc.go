@@ -9,7 +9,7 @@
 // permission gate, and the audit log from skill metadata.
 //
 // Sub-packaged skills (one per directory) are blank-imported below so
-// the same `_ "internal/skill/builtin"` import in cmd/opspilot + cmd/
+// the same `_ "internal/skill/builtin"` import in cmd/ongrid + cmd/
 // opspilot-edge transitively wires every skill regardless of layout.
 // New mutating / dangerous skills live in their own
 // sub-packages so the registration shim and any auxiliary types stay

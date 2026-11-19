@@ -20,7 +20,7 @@ type fakeVec struct {
 	deletedID []uint64
 }
 
-func (f *fakeVec) EnsureCollection(context.Context, string, int) error              { return nil }
+func (f *fakeVec) EnsureCollection(context.Context, string, int) error          { return nil }
 func (f *fakeVec) EnsurePayloadIndex(context.Context, string, string, string) error { return nil }
 func (f *fakeVec) Upsert(_ context.Context, _ string, pts []qdrantx.Point) error {
 	f.upserts = append(f.upserts, pts)

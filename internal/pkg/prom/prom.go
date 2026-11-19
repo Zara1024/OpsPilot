@@ -1,5 +1,5 @@
 // Package prom builds the process-wide Prometheus registry and /metrics
-// handler used by opspilot cloud and opspilot-edge.
+// handler used by ongrid cloud and opspilot-edge.
 //
 // Label cardinality red line: NEVER use org_id / user_id / edge_id
 // / URL full-path as labels. Allowed labels: method, code, status, model,

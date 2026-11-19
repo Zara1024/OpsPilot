@@ -77,7 +77,7 @@ type Device struct {
 	DiskUsagePct float32 `gorm:"not null;default:0;column:disk_usage_pct"`
 
 	// Roles is a bit field of device roles (server / storage / network /
-	// database). Multi-role boxes (hyper-converged, edge gateways,
+	// database / gpu). Multi-role boxes (hyper-converged, edge gateways,
 	// application NAS) can carry several bits at once; 0 means "未分类".
 	// Moved from Edge during the May 2026 split — this is host metadata,
 	// not agent metadata.
@@ -113,11 +113,11 @@ func (Device) TableName() string { return "devices" }
 // 5 bits used, 3 reserved. Do NOT renumber existing bits — operators'
 // stored values would all silently re-categorize.
 const (
-	RoleBitServer   uint8 = 1 << 0 // 0b00001
-	RoleBitStorage  uint8 = 1 << 1 // 0b00010
-	RoleBitNetwork  uint8 = 1 << 2 // 0b00100
-	RoleBitDatabase uint8 = 1 << 3 // 0b01000
-	RoleBitGPU      uint8 = 1 << 4 // 0b10000
+	RoleBitServer   uint8 = 1 << 0 // 0b0001
+	RoleBitStorage  uint8 = 1 << 1 // 0b0010
+	RoleBitNetwork  uint8 = 1 << 2 // 0b0100
+	RoleBitDatabase uint8 = 1 << 3 // 0b1000
+	RoleBitGPU      uint8 = 1 << 4 // 0b1_0000
 
 	// RolesAllKnownBits is the OR of every defined bit. Anything outside
 	// this mask is invalid and rejected by IsValidRoles.

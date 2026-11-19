@@ -1,7 +1,7 @@
 // Package imbridge holds the storage shape for the multi-turn IM
 // bridge. An ImApp is the manager-side registration of a
 // Feishu / DingTalk bot application; an ImThread maps one IM
-// conversation (group chat / DM / reply thread) to an opspilot
+// conversation (group chat / DM / reply thread) to an ongrid
 // chat_session so messages from the same IM thread flow into the
 // same agent conversation.
 package imbridge
@@ -50,8 +50,9 @@ const (
 // platform-side identifier (Feishu app_id, DingTalk AppKey); the secret
 // is encrypted at rest by SystemSetting reveal/store flow.
 type ImApp struct {
-	ID       uint64 `gorm:"primaryKey;autoIncrement"`
-	Provider string `gorm:"size:16;not null;uniqueIndex:uk_provider_app_id,priority:1"`
+	ApprovalTemplateID string `gorm:"size:128"`
+	ID                 uint64 `gorm:"primaryKey;autoIncrement"`
+	Provider           string `gorm:"size:16;not null;uniqueIndex:uk_provider_app_id,priority:1"`
 	// Mode = ModeStream (default) or ModeWebhook. Stream apps are
 	// supervised by imbridge.StreamSupervisor; webhook apps wait for
 	// inbound HTTP at /api/v1/im/{provider}/events.
@@ -92,7 +93,7 @@ type ImApp struct {
 func (ImApp) TableName() string { return "im_apps" }
 
 // ImThread maps one IM conversation (Feishu chat_id + optional root_id
-// for reply threads; DingTalk conversationId) to one opspilot
+// for reply threads; DingTalk conversationId) to one ongrid
 // chat_session. The mapping is owned by the ImApp it was created
 // under, so two apps in the same group don't collide.
 // ImThread is the session-mapping row. Key shape is
@@ -116,11 +117,11 @@ type ImThread struct {
 	// ImSenderID is the most recent sender — recorded for audit /
 	// future per-user binding but does NOT split the
 	// session mapping. All senders in a chat share one session.
-	ImSenderID        string `gorm:"column:im_sender_id;size:128"`
-	OpsPilotSessionID string `gorm:"column:opspilot_session_id;size:128;not null;index:idx_session"`
-	LastSeenAt        time.Time
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	ImSenderID      string `gorm:"column:im_sender_id;size:128"`
+	OngridSessionID string `gorm:"column:ongrid_session_id;size:128;not null;index:idx_session"`
+	LastSeenAt      time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 func (ImThread) TableName() string { return "im_threads" }

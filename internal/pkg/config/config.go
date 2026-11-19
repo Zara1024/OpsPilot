@@ -9,13 +9,14 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 )
 
-// Config is the top-level runtime configuration shared by opspilot and
+// Config is the top-level runtime configuration shared by ongrid and
 // opspilot-edge. Fields unused by one binary are simply ignored.
 type Config struct {
 	ExternalMCP ExternalMCPConfig
@@ -77,7 +78,7 @@ type ExternalMCPConfig struct {
 //
 // Default ExternalDirs is empty unless OPSPILOT_SKILLS_EXTERNAL_DIRS is
 // set; on the deployed image the compose env block points it at
-// /etc/opspilot/skills.
+// /etc/ongrid/skills.
 type SkillsConfig struct {
 	// ExternalDirs is the comma-/colon-separated list of allowlist
 	// roots the loader walks at startup. Each must be an absolute
@@ -171,7 +172,7 @@ type GrafanaConfig struct {
 	InternalRootURL string
 
 	// BootstrapUser / BootstrapPassword are the admin credentials the
-	// manager uses ONCE at first boot to auto-create the opspilot SA +
+	// manager uses ONCE at first boot to auto-create the ongrid SA +
 	// token via the Grafana admin API. Only set for the embedded Grafana
 	// shipped in our compose; for a customer-supplied external Grafana
 	// these stay empty and bootstrap is skipped — the operator pastes
@@ -325,12 +326,20 @@ type DBConfig struct {
 	// An empty string is treated as "mysql" for defensive defaults.
 	Dialect string
 	// DSN is the MySQL Data Source Name used when Dialect == "mysql".
-	// Example: "opspilot:opspilot@tcp(127.0.0.1:3306)/opspilot?parseTime=true&charset=utf8mb4&loc=Local".
+	// Example: "ongrid:ongrid@tcp(127.0.0.1:3306)/ongrid?parseTime=true&charset=utf8mb4&loc=Local".
 	DSN string
 	// Path is the sqlite database file path used when Dialect == "sqlite".
 	// The special value ":memory:" is accepted for tests.
 	Path string
+	// MySQL pool limits per Manager. Zero uses the defaults below.
+	MaxOpenConns int
+	MaxIdleConns int
 }
+
+const (
+	DefaultDBMaxOpenConns = 50
+	DefaultDBMaxIdleConns = 10
+)
 
 // JWTConfig holds JWT signing / expiry parameters used by the iam bounded context.
 type JWTConfig struct {
@@ -401,7 +410,7 @@ type EdgeConfig struct {
 	// behaves. Defaults to "off" because the hostmetrics + procmetrics
 	// plugins now expose host / per-process metrics to the manager via
 	// direct Prometheus scrape — pushing duplicate samples via tunnel
-	// produces noisy "opspilot_source=embedded" extra series in panel
+	// produces noisy "ongrid_source=embedded" extra series in panel
 	// legends.
 	//
 	// Values:
@@ -490,9 +499,26 @@ func Load() (*Config, error) {
 	c.DB.Dialect = getEnv("OPSPILOT_DB_DIALECT", "mysql")
 	c.DB.DSN = getEnv(
 		"OPSPILOT_DB_DSN",
-		"opspilot:opspilot@tcp(127.0.0.1:3306)/opspilot?parseTime=true&charset=utf8mb4&loc=Local",
+		"ongrid:ongrid@tcp(127.0.0.1:3306)/ongrid?parseTime=true&charset=utf8mb4&loc=Local",
 	)
-	c.DB.Path = getEnv("OPSPILOT_DB_PATH", "./data/opspilot.db")
+	c.DB.Path = getEnv("OPSPILOT_DB_PATH", "./data/ongrid.db")
+	for _, pool := range []struct {
+		key      string
+		value    *int
+		fallback int
+	}{
+		{"OPSPILOT_DB_MAX_OPEN_CONNS", &c.DB.MaxOpenConns, DefaultDBMaxOpenConns},
+		{"OPSPILOT_DB_MAX_IDLE_CONNS", &c.DB.MaxIdleConns, DefaultDBMaxIdleConns},
+	} {
+		*pool.value = pool.fallback
+		if raw := os.Getenv(pool.key); raw != "" {
+			n, err := strconv.Atoi(raw)
+			if err != nil || n <= 0 {
+				return nil, fmt.Errorf("%s must be a positive integer", pool.key)
+			}
+			*pool.value = n
+		}
+	}
 
 	c.JWT.Secret = getEnv("OPSPILOT_JWT_SECRET", "dev-insecure-secret-change-me")
 	c.JWT.AccessTTL = getEnvDuration("OPSPILOT_JWT_ACCESS_TTL", 15*time.Minute)
@@ -611,30 +637,10 @@ func Load() (*Config, error) {
 	return c, nil
 }
 
-// lookupEnv 环境变量查找辅助函数，支持 OPSPILOT_ 与 ONGRID_ 双向平滑兼容
-func lookupEnv(key string) (string, bool) {
-	// 1. 优先查找当前指定的环境变量名
-	if v, ok := os.LookupEnv(key); ok && strings.TrimSpace(v) != "" {
-		return strings.TrimSpace(v), true
-	}
-	// 2. 如果未找到或值为空，尝试在前缀之间进行平滑回退
-	var altKey string
-	if strings.HasPrefix(key, "OPSPILOT_") {
-		altKey = strings.Replace(key, "OPSPILOT_", "ONGRID_", 1)
-	} else if strings.HasPrefix(key, "ONGRID_") {
-		altKey = strings.Replace(key, "ONGRID_", "OPSPILOT_", 1)
-	}
-	if altKey != "" {
-		if v, ok := os.LookupEnv(altKey); ok && strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v), true
-		}
-	}
-	return "", false
-}
-
-// getEnvBool 解析布尔型环境变量
+// getEnvBool parses a boolean env var. Accepts the usual strconv.ParseBool
+// values (1/0, t/f, true/false, TRUE/FALSE …); any other value returns def.
 func getEnvBool(key string, def bool) bool {
-	v, ok := lookupEnv(key)
+	v, ok := os.LookupEnv(key)
 	if !ok || v == "" {
 		return def
 	}
@@ -644,17 +650,15 @@ func getEnvBool(key string, def bool) bool {
 	return def
 }
 
-// getEnv 获取字符串型环境变量
 func getEnv(key, def string) string {
-	if v, ok := lookupEnv(key); ok && v != "" {
+	if v, ok := os.LookupEnv(key); ok && v != "" {
 		return v
 	}
 	return def
 }
 
-// getOptionalURL 获取可选的 URL 地址环境变量
 func getOptionalURL(key, def string) string {
-	v, ok := lookupEnv(key)
+	v, ok := os.LookupEnv(key)
 	if !ok || strings.TrimSpace(v) == "" {
 		return def
 	}
@@ -692,9 +696,8 @@ func splitProviderModels(raw string) []string {
 	return out
 }
 
-// getEnvCSV 获取逗号/分号分隔的字符串列表环境变量
 func getEnvCSV(key string, def []string) []string {
-	v, ok := lookupEnv(key)
+	v, ok := os.LookupEnv(key)
 	if !ok || v == "" {
 		return def
 	}
@@ -714,9 +717,8 @@ func getEnvCSV(key string, def []string) []string {
 	return out
 }
 
-// getEnvInt 获取整型环境变量
 func getEnvInt(key string, def int) int {
-	v, ok := lookupEnv(key)
+	v, ok := os.LookupEnv(key)
 	if !ok || v == "" {
 		return def
 	}
@@ -726,9 +728,8 @@ func getEnvInt(key string, def int) int {
 	return def
 }
 
-// getEnvFloat 获取浮点型环境变量
 func getEnvFloat(key string, def float64) float64 {
-	v, ok := lookupEnv(key)
+	v, ok := os.LookupEnv(key)
 	if !ok || v == "" {
 		return def
 	}
@@ -738,16 +739,15 @@ func getEnvFloat(key string, def float64) float64 {
 	return def
 }
 
-// getEnvDuration 获取时间间隔环境变量
 func getEnvDuration(key string, def time.Duration) time.Duration {
-	v, ok := lookupEnv(key)
+	v, ok := os.LookupEnv(key)
 	if !ok || v == "" {
 		return def
 	}
 	if d, err := time.ParseDuration(v); err == nil {
 		return d
 	}
-	// 兜底回退为按秒解析
+	// Fall back to integer seconds for convenience.
 	if n, err := strconv.Atoi(v); err == nil {
 		return time.Duration(n) * time.Second
 	}

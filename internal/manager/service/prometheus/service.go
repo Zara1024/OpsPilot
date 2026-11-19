@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/Zara1024/OpsPilot/internal/pkg/auth"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
-	"github.com/golang-jwt/jwt/v5"
 )
 
 const (

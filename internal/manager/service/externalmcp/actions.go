@@ -230,4 +230,3 @@ func ProjectTools(catalog []biz.Tool) []biz.Tool {
 	}
 	return catalog
 }
-

@@ -170,7 +170,7 @@ func TestElasticsearchDatasourceUsesReadOnlyQuerySettings(t *testing.T) {
 	t.Parallel()
 	ds, err := elasticsearchDatasource(pkggrafana.ElasticsearchDatasourceConfig{
 		URL:          "https://es.example.com:9200/",
-		IndexPattern: "logs-opspilot.*.otel-prod",
+		IndexPattern: "logs-ongrid.*.otel-prod",
 		APIKey:       "query-only-key",
 		CAPEM:        "test-ca",
 		TLSInsecure:  true,
@@ -185,7 +185,7 @@ func TestElasticsearchDatasourceUsesReadOnlyQuerySettings(t *testing.T) {
 		t.Fatalf("endpoint = %q access=%q", ds.URL, ds.Access)
 	}
 	for key, want := range map[string]any{
-		"index":             "logs-opspilot.*.otel-prod",
+		"index":             "logs-ongrid.*.otel-prod",
 		"timeField":         "@timestamp",
 		"logMessageField":   "body.text",
 		"logLevelField":     "resource.attributes.level",
@@ -209,7 +209,7 @@ func TestElasticsearchDatasourceRejectsIncompleteConfig(t *testing.T) {
 	t.Parallel()
 	valid := pkggrafana.ElasticsearchDatasourceConfig{
 		URL:          "https://es.example.com:9200",
-		IndexPattern: "logs-opspilot.*.otel-prod",
+		IndexPattern: "logs-ongrid.*.otel-prod",
 		APIKey:       "query-only-key",
 	}
 	tests := []struct {
@@ -263,7 +263,7 @@ func TestSyncLogsDatasourceCreatesActiveElasticsearchDatasource(t *testing.T) {
 	}
 	config := pkggrafana.ElasticsearchDatasourceConfig{
 		URL:          "https://es.example.com:9200",
-		IndexPattern: "logs-opspilot.*.otel-prod",
+		IndexPattern: "logs-ongrid.*.otel-prod",
 		APIKey:       "query-only-key",
 	}
 	svc := New(settings, false, nil)

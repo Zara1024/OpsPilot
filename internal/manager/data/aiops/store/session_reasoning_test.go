@@ -21,13 +21,13 @@ func newReasoningTestRepo(t *testing.T, dialect string) *SessionRepo {
 	if dialect == "sqlite" {
 		return newTestRepo(t)
 	}
-	dsn := os.Getenv("ONGRID_TEST_MYSQL_DSN")
+	dsn := os.Getenv("OPSPILOT_TEST_MYSQL_DSN")
 	if dsn == "" {
-		t.Skip("set ONGRID_TEST_MYSQL_DSN to run MySQL reasoning migration regression")
+		t.Skip("set OPSPILOT_TEST_MYSQL_DSN to run MySQL reasoning migration regression")
 	}
 	cfg, err := driver.ParseDSN(dsn)
 	if err != nil {
-		t.Fatal("invalid ONGRID_TEST_MYSQL_DSN")
+		t.Fatal("invalid OPSPILOT_TEST_MYSQL_DSN")
 	}
 	cfg.DBName, cfg.ParseTime = "", true
 	if cfg.Params == nil {

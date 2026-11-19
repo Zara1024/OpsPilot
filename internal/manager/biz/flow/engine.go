@@ -204,7 +204,8 @@ func (e *Engine) runNode(ctx context.Context, run *model.FlowRun, g *Graph, byID
 	}
 
 	// Resolve config templates under the lock (context reads), execute
-	// outside it (slow: agents/tools).
+	// outside it (slow: agents/tools). The executor gets a private copy of
+	// the context: other branches keep writing the shared maps meanwhile.
 	var cfg map[string]any
 	var resolveErr error
 	st.mu.Lock()

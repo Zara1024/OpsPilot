@@ -83,4 +83,3 @@ func TestCancellationRollsBackWhenApprovalInvalidationFails(t *testing.T) {
 	require.NoError(t, f.db.Model(&auditmodel.Log{}).Count(&auditAfter).Error)
 	require.Equal(t, auditBefore, auditAfter)
 }
-

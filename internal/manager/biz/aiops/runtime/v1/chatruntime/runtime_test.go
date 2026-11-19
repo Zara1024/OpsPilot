@@ -285,7 +285,7 @@ func TestRuntime_Handle_HappyPath_FinalReply(t *testing.T) {
 }
 
 // TestRuntime_ToolCount + ToolNames provides the per-spec visibility.
-// (a) ONGRID_AGENT_KERNEL=graph startup logs how many BaseTools are
+// (a) OPSPILOT_AGENT_KERNEL=graph startup logs how many BaseTools are
 // bound — this is the seam main.go logs against.
 func TestRuntime_ToolCountAndNames(t *testing.T) {
 	sess := &model.Session{ID: "s1", UserID: 7}

@@ -45,7 +45,7 @@ func TestHTTPUserIsolationAcrossAgentAndTraceRoutes(t *testing.T) {
 				name, scope = "bob", "github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/runtime/v2/chatruntime"
 			}
 			// The two users deliberately share the application identity.
-			fmt.Fprintf(w, `{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"ongrid-manager"}},{"key":"service.namespace","value":{"stringValue":"ongrid"}},{"key":"deployment.environment.name","value":{"stringValue":"test"}}]},"scopeSpans":[{"scope":{"name":%q},"spans":[{"traceId":%q,"spanId":"0000000000000001","name":%q,"startTimeUnixNano":"1791936000000000000","endTimeUnixNano":"1791936001000000000","attributes":[{"key":"gen_ai.operation.name","value":{"stringValue":"invoke_agent"}},{"key":"ongrid.agent.session.id","value":{"stringValue":%q}},{"key":"gen_ai.conversation.id","value":{"stringValue":%q}},{"key":"input.value","value":{"stringValue":%q}}]}]}]}]}`,
+			fmt.Fprintf(w, `{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"opspilot-manager"}},{"key":"service.namespace","value":{"stringValue":"opspilot"}},{"key":"deployment.environment.name","value":{"stringValue":"test"}}]},"scopeSpans":[{"scope":{"name":%q},"spans":[{"traceId":%q,"spanId":"0000000000000001","name":%q,"startTimeUnixNano":"1791936000000000000","endTimeUnixNano":"1791936001000000000","attributes":[{"key":"gen_ai.operation.name","value":{"stringValue":"invoke_agent"}},{"key":"ongrid.agent.session.id","value":{"stringValue":%q}},{"key":"gen_ai.conversation.id","value":{"stringValue":%q}},{"key":"input.value","value":{"stringValue":%q}}]}]}]}]}`,
 				scope, id, name+"-private", name+"-session", name+"-session", name+"-question")
 		default:
 			http.NotFound(w, r)

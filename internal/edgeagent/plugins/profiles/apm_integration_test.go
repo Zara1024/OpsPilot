@@ -51,7 +51,7 @@ func TestAPMProfileIdentityIntegration(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "collector.yaml"), raw, 0644); err != nil {
 		t.Fatal(err)
 	}
-	name := fmt.Sprintf("opspilot-apm-profile-test-%d", os.Getpid())
+	name := fmt.Sprintf("ongrid-apm-profile-test-%d", os.Getpid())
 	command := exec.CommandContext(ctx, "docker", "run", "--rm", "--name", name, "--network", network, "--user", "10001:10001", "-v", dir+":/apm:ro", "otel/opentelemetry-collector-contrib:0.157.0", "--config=/apm/collector.yaml", profilesFeatureGate)
 	output, err := os.Create(filepath.Join(dir, "collector.log"))
 	if err != nil {

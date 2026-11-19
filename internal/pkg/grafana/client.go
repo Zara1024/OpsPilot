@@ -4,7 +4,7 @@
 //   - Verify connectivity from the manager (Health)
 //   - Idempotently upsert the Prometheus datasource so dashboards have
 //     somewhere to query (UpsertDatasource)
-//   - Push opspilot's pre-built dashboards into the user's Grafana
+//   - Push ongrid's pre-built dashboards into the user's Grafana
 //     (UpsertDashboard) under a known folder
 //
 // Auth is a Service Account token (Bearer). API-key tokens (legacy) work
@@ -306,7 +306,7 @@ func (c *Client) UpsertDashboard(ctx context.Context, dashboard []byte, folderUI
 	wrapper := map[string]any{
 		"dashboard": raw,
 		"overwrite": overwrite,
-		"message":   "synced from opspilot",
+		"message":   "synced from ongrid",
 	}
 	if folderUID != "" {
 		wrapper["folderUid"] = folderUID

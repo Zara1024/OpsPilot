@@ -20,6 +20,11 @@ func render(cfg plugins.PluginConfig) ([]byte, error) {
 	if !s.Selected() {
 		return nil, fmt.Errorf("auto APM: refusing to start OBI without selected targets")
 	}
+	sampler := map[string]string{"name": "parentbased_traceidratio", "arg": strconv.FormatFloat(s.Ratio(), 'f', -1, 64)}
+	if s.Ratio() == 0 {
+		// Preserve metrics-only mode even when the captured parent is sampled.
+		sampler = map[string]string{"name": "always_off"}
+	}
 	rules := make([]map[string]interface{}, 0, len(s.Targets))
 	for _, t := range s.Targets {
 		rules = append(rules, map[string]interface{}{"exe_path": "^" + regexp.QuoteMeta(t.Executable) + "$", "open_ports": strconv.Itoa(int(t.Port)), "name": t.ServiceName, "namespace": t.ServiceNamespace})
@@ -34,10 +39,10 @@ func render(cfg plugins.PluginConfig) ([]byte, error) {
 				return nil, fmt.Errorf("auto APM: Kubernetes capture requires a cluster identity")
 			}
 		}
-		ebpf["bpf_fs_path"] = "/sys/fs/bpf/opspilot"
+		ebpf["bpf_fs_path"] = "/sys/fs/bpf/ongrid"
 		kubernetes["enable"] = "true"
 		kubernetes["disable_informers"] = []string{"service"}
-		// OBI v0.12.1 infers its node from os.Hostname, not spec.nodeName.
+		// OBI infers its node from os.Hostname, not spec.nodeName.
 		// Only restrict metadata when that inference is safe. Otherwise local
 		// process/container IDs still limit capture to this node's selected Pods.
 		// ponytail: cache cluster metadata until OBI accepts an explicit node name.
@@ -59,14 +64,14 @@ func render(cfg plugins.PluginConfig) ([]byte, error) {
 		"attributes":          map[string]interface{}{"kubernetes": kubernetes},
 		"discovery":           map[string]interface{}{"services": rules, "exclude_otel_instrumented_services": true},
 		"ebpf":                ebpf,
-		"otel_traces_export":  map[string]interface{}{"endpoint": "http://127.0.0.1:14318/v1/traces", "protocol": "http/protobuf", "instrumentations": []string{"http", "grpc"}, "sampler": map[string]string{"name": "parentbased_traceidratio", "arg": strconv.FormatFloat(s.Ratio(), 'f', -1, 64)}},
+		"otel_traces_export":  map[string]interface{}{"endpoint": "http://127.0.0.1:14318/v1/traces", "protocol": "http/protobuf", "instrumentations": []string{"http", "grpc", "sql", "redis", "kafka", "mongo"}, "sampler": sampler},
 		"otel_metrics_export": map[string]interface{}{"endpoint": "http://127.0.0.1:14318/v1/metrics", "protocol": "http/protobuf", "interval": "15s", "histogram_aggregation": "explicit_bucket_histogram", "instrumentations": []string{"http", "grpc"}},
 		"metrics":             map[string]interface{}{"features": []string{"application", "application_runtime"}},
 	})
 }
 
 func collectorConfig(cfg plugins.PluginConfig, s contract.Spec) plugins.PluginConfig {
-	attrs := map[string]interface{}{"opspilot.instrumentation.source": "obi"}
+	attrs := map[string]interface{}{"ongrid.instrumentation.source": "obi"}
 	if s.ClusterID != 0 {
 		attrs["cluster_id"] = strconv.FormatUint(s.ClusterID, 10)
 		attrs["k8s_cluster_id"] = strconv.FormatUint(s.K8sClusterID, 10)

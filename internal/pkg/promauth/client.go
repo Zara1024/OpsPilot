@@ -30,7 +30,7 @@ import (
 // populated only Bearer is sent — matching curl's -H precedence over -u.
 //
 // File-mounted bearer tokens (the prometheus.yml `bearer_token_file`
-// pattern) intentionally aren't supported here: opspilot runs as a docker-
+// pattern) intentionally aren't supported here: ongrid runs as a docker-
 // managed monolith, and the only way to put a file inside the manager
 // container is to ssh in and bind-mount it, which defeats the point of a
 // UI-driven configuration. If a real K8s deployment ever needs it, push

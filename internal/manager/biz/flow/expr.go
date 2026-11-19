@@ -6,6 +6,7 @@ package flow
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"regexp"
 	"strconv"
 	"strings"
@@ -26,25 +27,7 @@ type RunContext struct {
 // lock. Shallow is enough: the engine only adds or replaces top-level
 // entries and never mutates a stored value; Trigger is never written.
 func (c *RunContext) snapshot() *RunContext {
-	if c == nil {
-		return nil
-	}
-	return &RunContext{
-		Trigger: c.Trigger,
-		Nodes:   cloneMap(c.Nodes),
-		Vars:    cloneMap(c.Vars),
-	}
-}
-
-func cloneMap(m map[string]any) map[string]any {
-	if m == nil {
-		return nil
-	}
-	out := make(map[string]any, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
-	return out
+	return &RunContext{Trigger: c.Trigger, Nodes: maps.Clone(c.Nodes), Vars: maps.Clone(c.Vars)}
 }
 
 var tmplRe = regexp.MustCompile(`\{\{\s*([^{}]+?)\s*\}\}`)

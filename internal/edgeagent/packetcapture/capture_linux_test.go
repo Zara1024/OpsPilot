@@ -34,11 +34,11 @@ func TestNormalizeRequestRejectsUnsafeInput(t *testing.T) {
 }
 
 func TestNormalizeRequestKeepsNamedNetworkNamespace(t *testing.T) {
-	got, err := normalizeRequest(Request{CaptureID: "capture-123", Interface: "eth0", NetworkNamespace: "opspilot-netdev-a"})
+	got, err := normalizeRequest(Request{CaptureID: "capture-123", Interface: "eth0", NetworkNamespace: "ongrid-netdev-a"})
 	if err != nil {
 		t.Fatalf("normalizeRequest: %v", err)
 	}
-	if got.NetworkNamespace != "opspilot-netdev-a" {
+	if got.NetworkNamespace != "ongrid-netdev-a" {
 		t.Fatalf("network namespace = %q", got.NetworkNamespace)
 	}
 }

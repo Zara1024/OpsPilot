@@ -194,7 +194,7 @@ func TestRegistries_OpenToAuthUser(t *testing.T) {
 	svc := stubSvc{
 		registries: func(_ context.Context, _ bizmp.Caller) bizmp.AllowedRegistries {
 			return bizmp.AllowedRegistries{
-				Items: []bizmp.RegistryEntry{{Name: "opspilot-official", Allowed: true}},
+				Items: []bizmp.RegistryEntry{{Name: "ongrid-official", Allowed: true}},
 			}
 		},
 	}
@@ -210,7 +210,7 @@ func TestRegistries_OpenToAuthUser(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(resp.Items) != 1 || resp.Items[0].Name != "opspilot-official" {
+	if len(resp.Items) != 1 || resp.Items[0].Name != "ongrid-official" {
 		t.Fatalf("resp = %+v", resp)
 	}
 }

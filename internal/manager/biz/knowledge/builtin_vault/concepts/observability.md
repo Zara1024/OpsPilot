@@ -5,7 +5,7 @@ tags: [observability, metrics, logs, traces]
 
 # Observability Primer
 
-OpsPilot's observability story is built on three signal types and a fourth
+Ongrid's observability story is built on three signal types and a fourth
 relationship layer. Understanding what each is good for — and what each
 is *bad* for — is the difference between a fast investigation and a
 shotgun debug session.
@@ -55,7 +55,7 @@ production pattern.
 ## The fourth dimension: correlation
 
 Signals on their own are useful; signals **correlated** are diagnostic.
-OpsPilot's manager links them by:
+Ongrid's manager links them by:
 
 - **`trace_id` on logs** — emit it in every log line so `trace_id` from
   Tempo can pivot directly to Loki

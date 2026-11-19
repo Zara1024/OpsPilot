@@ -196,7 +196,7 @@ type repoDTO struct {
 	// The frontend uses this to (a) hide it from the user-facing Repos list
 	// and (b) drive the Knowledge page's "同步内置知识库" sync button — so
 	// neither relies on fragile URL substring matching, which silently
-	// broke when the vault URL migrated zara1024/vault → builtin://vault.
+	// broke when the vault URL migrated ongridio/vault → builtin://vault.
 	IsBuiltin bool      `json:"is_builtin"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

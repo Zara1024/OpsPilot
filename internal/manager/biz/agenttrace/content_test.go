@@ -10,7 +10,7 @@ import (
 )
 
 func TestCapturedContentIsDecodedOnlyFromTrace(t *testing.T) {
-	t.Setenv("ONGRID_AGENT_TRACE_CAPTURE_CONTENT", "true")
+	t.Setenv("OPSPILOT_AGENT_TRACE_CAPTURE_CONTENT", "true")
 	raw, _ := json.Marshal(strings.Repeat("执行快照😀", 10000))
 	snapshot := tracing.MaskAgentContent(string(raw))
 	body := testBody(t, testSpan(1, 0, map[string]any{"gen_ai.operation.name": "invoke_agent", "input.value": `"本轮问题"`, "output.value": snapshot, "ongrid.agent.session.id": "deleted-chat", "ongrid.agent.content.capture": true}))

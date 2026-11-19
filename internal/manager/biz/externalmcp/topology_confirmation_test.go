@@ -18,7 +18,7 @@ import (
 )
 
 func TestExistingTopologyTypeRequiresConfirmation(t *testing.T) {
-	t.Setenv("ONGRID_SECRET_KEY", "isolated-review-only-encryption-key")
+	t.Setenv("OPSPILOT_SECRET_KEY", "isolated-review-only-encryption-key")
 	f := newFixture(t)
 	require.NoError(t, f.db.AutoMigrate(&topologymodel.RelationType{}, &topologymodel.NodeType{}))
 	existing := topologymodel.RelationType{Name: "custom-dependency", Direction: "src_to_dst", SemanticsTag: "hard_dep", PropagatesFailure: true}
@@ -62,4 +62,3 @@ func TestExistingTopologyTypeRequiresConfirmation(t *testing.T) {
 	require.Equal(t, "annotation", after.SemanticsTag)
 	require.False(t, after.PropagatesFailure)
 }
-

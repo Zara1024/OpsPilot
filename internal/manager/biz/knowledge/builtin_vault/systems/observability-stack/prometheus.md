@@ -120,7 +120,7 @@ Two scaling patterns:
   (Cortex, Mimir, Thanos receive, VictoriaMetrics). Cleaner for
   multi-cluster + long retention.
 
-OpsPilot's reference architecture: edge Prometheus scrapes locally,
+Ongrid's reference architecture: edge Prometheus scrapes locally,
 remote-writes to a central Prometheus on the manager. See ADR-009.
 
 ## High-leverage operational metrics

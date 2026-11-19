@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/Zara1024/OpsPilot/internal/edgeagent/plugins/metricscommon"
+	"github.com/Zara1024/OpsPilot/internal/pkg/autoapm"
 	pkgpromwrite "github.com/Zara1024/OpsPilot/internal/pkg/promwrite"
 	"github.com/Zara1024/OpsPilot/internal/pkg/tunnel"
 )
@@ -32,6 +33,7 @@ type RemoteWriteScraperConfig struct {
 	ClusterID        uint64
 	Endpoint         string
 	DiscoverApps     bool
+	AppMetricsScope  func(context.Context) (autoapm.MetricsScope, error)
 	Interval         time.Duration
 	Timeout          time.Duration
 	PushTimeout      time.Duration
@@ -196,6 +198,14 @@ func (s *RemoteWriteScraper) targets(ctx context.Context) ([]metricscommon.Targe
 	if !s.cfg.DiscoverApps {
 		return targets, true
 	}
+	if s.cfg.AppMetricsScope == nil {
+		return targets, true
+	}
+	scope, err := s.cfg.AppMetricsScope(ctx)
+	if err != nil {
+		s.log.Warn("k8s app metrics scope unavailable", slog.Any("err", err))
+		return targets, false
+	}
 	if s.api == nil {
 		s.log.Warn("k8s app metrics discovery client is unavailable")
 		return targets, false
@@ -214,7 +224,7 @@ func (s *RemoteWriteScraper) targets(ctx context.Context) ([]metricscommon.Targe
 	}
 	discovered := 0
 	for _, pod := range pods {
-		target, ok := appMetricsTarget(pod, appCfg)
+		target, ok := appMetricsTarget(pod, appCfg, scope)
 		if !ok {
 			continue
 		}
@@ -351,11 +361,11 @@ func (s *RemoteWriteScraper) logOutcome(target metricscommon.Target, stats metri
 }
 
 var reservedKubernetesRemoteWriteLabels = map[string]struct{}{
-	"__name__":        {},
-	"cluster_id":      {},
-	"device_id":       {},
-	"edge_id":         {},
-	"opspilot_source": {},
+	"__name__":      {},
+	"cluster_id":    {},
+	"device_id":     {},
+	"edge_id":       {},
+	"ongrid_source": {},
 }
 
 func buildKubernetesRemoteWriteSamples(clusterID uint64, source string, samples []tunnel.PromSample) []pkgpromwrite.Sample {
@@ -367,7 +377,7 @@ func buildKubernetesRemoteWriteSamples(clusterID uint64, source string, samples 
 			pkgpromwrite.Label{Name: "cluster_id", Value: strconv.FormatUint(clusterID, 10)},
 		)
 		if source != "" {
-			labels = append(labels, pkgpromwrite.Label{Name: "opspilot_source", Value: source})
+			labels = append(labels, pkgpromwrite.Label{Name: "ongrid_source", Value: source})
 		}
 		for name, value := range sample.Labels {
 			if _, reserved := reservedKubernetesRemoteWriteLabels[name]; reserved {

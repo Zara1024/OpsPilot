@@ -1,6 +1,6 @@
 // Package imbridge wires the IM platforms to the existing chat agent
 // runtime. Inbound webhooks land here after their handler has verified
-// + decrypted them; this layer maps the IM thread to an opspilot
+// + decrypted them; this layer maps the IM thread to an ongrid
 // chat_session, drives the agent run, and progressively edits the IM
 // message as SSE chunks arrive.
 package imbridge
@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/agent"
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/chatprotocol"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/imbridge"
 )
 
@@ -44,7 +44,7 @@ type AgentSession interface {
 	// EventAssistant (which carries the assistant text chunks) and
 	// EventDone (terminal). This is a thin wrapper over
 	// service.Service.PostMessageStreamWithOpts.
-	StreamMessage(ctx context.Context, sessionID string, userContent string, emit agent.Emit) error
+	StreamMessage(ctx context.Context, sessionID string, userContent string, emit chatprotocol.Emit) error
 }
 
 // Bridge is the singleton wired into manager main.go. Exported methods
@@ -53,10 +53,13 @@ type AgentSession interface {
 type Bridge struct {
 	repo  Repo
 	agent AgentSession
-	// ServiceUserID is the opspilot users.id used as owner_user_id for
+	// ServiceUserID is the ongrid users.id used as owner_user_id for
 	// IM-originated chat sessions until per-IM-user binding (S3)
 	// lands. Configured at boot via NewBridge.
-	serviceUserID uint64
+	serviceUserID    uint64
+	publicURL        string
+	approvalDelivery *ApprovalDelivery
+	interaction      *Interaction
 	// per-provider client cache so we don't rebuild HTTP / token
 	// state on every inbound event. Keyed by app_id.
 	feishuCache sync.Map // app_id -> *feishu.Client
@@ -67,35 +70,49 @@ type Bridge struct {
 	log  *slog.Logger
 }
 
-func NewBridge(repo Repo, agent AgentSession, serviceUserID uint64, log *slog.Logger) *Bridge {
+func NewBridge(repo Repo, agent AgentSession, serviceUserID uint64, log *slog.Logger, options ...BridgeOption) *Bridge {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Bridge{
+	b := &Bridge{
 		repo:          repo,
 		agent:         agent,
 		serviceUserID: serviceUserID,
 		seen:          newDedupSet(2048),
 		log:           log.With(slog.String("comp", "imbridge")),
 	}
+	for _, option := range options {
+		option(b)
+	}
+	return b
+}
+
+type BridgeOption func(*Bridge)
+
+// WithApprovalPublicURL accepts a value validated by ApprovalPublicURL.
+func WithApprovalPublicURL(base string) BridgeOption {
+	return func(b *Bridge) { b.publicURL = base }
 }
 
 // InboundMessage describes a normalized inbound event the bridge can
 // process. The provider-specific webhook handler decrypts + decodes
 // to this shape so the bridge stays platform-agnostic.
 type InboundMessage struct {
-	Provider      string // "feishu" | "dingtalk"
-	AppID         string // platform-side app_id (== ImApp.AppID)
-	ChatID        string // platform chat / conversation id
-	ThreadID      string // optional reply thread id (Feishu root_id)
-	OpenID        string // platform user id of the sender (we currently use this only for logging; S3 will bind)
-	UserName      string // sender display name (logging only)
-	Text          string // normalized message body — text/plain
-	EventID       string // platform event id, used for dedup
-	ReceiveIDType string // platform-specific hint: "chat_id" / "open_id" / "union_id"
+	ConnectionIdentity string
+	Subject            Subject
+	Private            bool
+	Provider           string // "feishu" | "dingtalk"
+	AppID              string // platform-side app_id (== ImApp.AppID)
+	ChatID             string // platform chat / conversation id
+	ThreadID           string // optional reply thread id (Feishu root_id)
+	OpenID             string // platform user id of the sender (we currently use this only for logging; S3 will bind)
+	UserName           string // sender display name (logging only)
+	Text               string // normalized message body — text/plain
+	EventID            string // platform event id, used for dedup
+	ReceiveIDType      string // platform-specific hint: "chat_id" / "open_id" / "union_id"
 }
 
-// HandleInbound resolves the IM thread → opspilot session and kicks off
+// HandleInbound resolves the IM thread → ongrid session and kicks off
 // the agent stream. Session rules:
 //
 //   - Map key is (im_app_id, im_chat_id, thread_id). One session per
@@ -103,10 +120,10 @@ type InboundMessage struct {
 //     anyone in the room previously said. Feishu reply threads stay
 //     independent (their own thread_id).
 //   - Sessions are stable: there is NO auto-rotation on idle. The
-//     same mapping row points at the same opspilot session forever
+//     same mapping row points at the same ongrid session forever
 //     unless a user explicitly resets.
 //   - Reset: any user sends "/new" / "新会话" / "新建会话" / "重新开始"
-//     — the bridge allocates a fresh opspilot session, rotates the
+//     — the bridge allocates a fresh ongrid session, rotates the
 //     mapping pointer, and acknowledges with a short confirmation.
 //     The current message is NOT fed to the agent (would otherwise
 //     be split across the old + new session boundary).
@@ -145,6 +162,36 @@ func (b *Bridge) HandleInbound(ctx context.Context, sender Sender, msg InboundMe
 		return errors.New("imbridge: app disabled")
 	}
 
+	if strings.TrimSpace(msg.Text) == "/whoami" {
+		reply := "请在机器人私聊中查询你的审批身份。"
+		if msg.Private && msg.ConnectionIdentity == ConnectionIdentity(app) && msg.Subject.valid(app.Provider) {
+			reply = fmt.Sprintf("你的平台身份（不会自动授予审批权限）：\nApp ID: %s\nScope: %s\nUser ID: %s\n请交由 Ongrid 管理员核对并预先授权。授权后可直接在卡片中批准或拒绝，无需跳转网页。", app.AppID, msg.Subject.Scope, msg.Subject.User)
+		}
+		_, err := sender.SendText(ctx, msg.ChatID, msg.ReceiveIDType, reply)
+		return err
+	}
+
+	if strings.HasPrefix(strings.TrimSpace(msg.Text), "/bind") {
+		reply := ApprovalReceipt(ErrIdentityUnbound, app.DefaultLocale, app.Provider)
+		parts := strings.Fields(msg.Text)
+		if b.interaction != nil && msg.ConnectionIdentity == ConnectionIdentity(app) && msg.Private && len(parts) == 2 && parts[0] == "/bind" {
+			if err := b.interaction.ClaimBinding(ctx, app, msg.Subject, parts[1]); err == nil {
+				reply = (ApprovalCard{Locale: app.DefaultLocale}).Label("已收到绑定请求，尚未完成绑定。请回到 Ongrid「设置 → IM → 我的 IM 审批身份」核对并确认；完成后可直接点击有效的审批卡片。", "Binding request received, but not yet confirmed. Return to Ongrid Settings > IM > My IM approval identities to verify and confirm. Then use a valid approval card.")
+			}
+		}
+		_, err := sender.SendText(ctx, msg.ChatID, msg.ReceiveIDType, reply)
+		return err
+	}
+	// 文字同意不是审批回调。不能让它启动新回合并取消正在等待卡片决策的回合。
+	if b.interaction != nil && b.interaction.Enabled(app) && isApprovalReply(msg.Text) {
+		reply := "请直接点击审批卡片的「批准执行」或「拒绝」，无需发送文字确认。若没有有效卡片，请重新说明具体操作；文字同意不会执行任何操作。"
+		if app.DefaultLocale == "en" {
+			reply = "Use Approve execution or Reject on the approval card. Text replies do not approve operations. If no active card exists, describe the operation again."
+		}
+		_, err := sender.SendText(ctx, msg.ChatID, msg.ReceiveIDType, reply)
+		return err
+	}
+
 	thread, err := b.repo.FindThread(ctx, app.ID, msg.ChatID, msg.ThreadID)
 	if err != nil {
 		if !strings.Contains(strings.ToLower(err.Error()), "not found") {
@@ -159,19 +206,19 @@ func (b *Bridge) HandleInbound(ctx context.Context, sender Sender, msg InboundMe
 	switch {
 	case thread == nil:
 		// First-ever message in this chat (+ thread). Allocate a
-		// fresh opspilot session + write the mapping row.
+		// fresh ongrid session + write the mapping row.
 		sid, err := b.agent.EnsureSession(ctx, b.serviceUserID, b.sessionLabel(msg))
 		if err != nil {
 			return fmt.Errorf("ensure session: %w", err)
 		}
 		thread = &model.ImThread{
-			ImAppID:           app.ID,
-			Provider:          msg.Provider,
-			ImChatID:          msg.ChatID,
-			ImThreadID:        msg.ThreadID,
-			ImSenderID:        msg.OpenID,
-			OpsPilotSessionID: sid,
-			LastSeenAt:        now,
+			ImAppID:         app.ID,
+			Provider:        msg.Provider,
+			ImChatID:        msg.ChatID,
+			ImThreadID:      msg.ThreadID,
+			ImSenderID:      msg.OpenID,
+			OngridSessionID: sid,
+			LastSeenAt:      now,
 		}
 		if err := b.repo.CreateThread(ctx, thread); err != nil {
 			return fmt.Errorf("create thread: %w", err)
@@ -190,7 +237,7 @@ func (b *Bridge) HandleInbound(ctx context.Context, sender Sender, msg InboundMe
 			slog.Uint64("thread_id", thread.ID),
 			slog.String("reason", "/new command"),
 			slog.String("new_session_id", sid))
-		thread.OpsPilotSessionID = sid
+		thread.OngridSessionID = sid
 	default:
 		_ = b.repo.TouchThread(ctx, thread.ID)
 	}
@@ -202,6 +249,14 @@ func (b *Bridge) HandleInbound(ctx context.Context, sender Sender, msg InboundMe
 		_, _ = sender.SendText(ctx, msg.ChatID, msg.ReceiveIDType,
 			localizeReply(app.DefaultLocale, replyNewSession))
 		return nil
+	}
+
+	// Persist the original route before a proposal can be created. If persistence
+	// fails, stop before running tools rather than silently losing approval notices.
+	if b.approvalDelivery != nil {
+		if err := b.approvalDelivery.register(ctx, app, thread, sender, msg.ReceiveIDType); err != nil {
+			return fmt.Errorf("register IM approval target: %w", err)
+		}
 	}
 
 	// 3. Send a placeholder only when the provider can edit it. Providers
@@ -221,14 +276,20 @@ func (b *Bridge) HandleInbound(ctx context.Context, sender Sender, msg InboundMe
 	//    language regardless of persona / model defaults. Empty locale =
 	//    auto = LLM mirrors the user. See [[feedback_ai_output_locale]].
 	editor := newStreamEditor(ctx, sender, msg.ChatID, msg.ReceiveIDType, placeholder, app.DefaultLocale, b.log)
-	emit := func(e agent.Event) {
+	editor.publicURL = b.publicURL
+	editor.sessionID = thread.OngridSessionID
+	if b.approvalDelivery == nil {
+		editor.approvalReader, _ = b.agent.(ApprovalStatusReader)
+	}
+	editor.durableApprovals = b.approvalDelivery != nil
+	emit := func(e chatprotocol.Event) {
 		editor.OnEvent(e)
 	}
 	userContent := msg.Text
 	if d := localeDirective(app.DefaultLocale); d != "" {
 		userContent = msg.Text + "\n\n" + d
 	}
-	if err := b.agent.StreamMessage(ctx, thread.OpsPilotSessionID, userContent, emit); err != nil {
+	if err := b.agent.StreamMessage(ctx, thread.OngridSessionID, userContent, emit); err != nil {
 		_ = editor.OnFatal(err)
 		return fmt.Errorf("stream message: %w", err)
 	}
@@ -236,7 +297,7 @@ func (b *Bridge) HandleInbound(ctx context.Context, sender Sender, msg InboundMe
 }
 
 // localeDirective renders the language hint we append to the user content
-// before handing to the agent. Empty locale = "" (no directive, LLM
+// before handing to the chatprotocol. Empty locale = "" (no directive, LLM
 // mirrors). Mirrors the RCA-side helper in alert/investigator but framed
 // for chat replies, not RCA reports — see [[feedback_ai_output_locale]].
 func localeDirective(locale string) string {
@@ -277,7 +338,7 @@ func localizeReply(locale string, key string) string {
 	return ""
 }
 
-// sessionLabel is the chat-history-page title for opspilot-side
+// sessionLabel is the chat-history-page title for ongrid-side
 // sessions born from an IM thread. Group / DM chat_id is enough
 // to disambiguate; sender isn't on the title since the session is
 // shared across senders.
@@ -313,4 +374,13 @@ func shortChatLabel(id string) string {
 		return id
 	}
 	return id[:4] + "…" + id[len(id)-4:]
+}
+
+func isApprovalReply(text string) bool {
+	switch strings.ToLower(strings.Trim(strings.TrimSpace(text), "。！.! ")) {
+	case "确认", "批准", "同意", "确认执行", "批准执行", "同意执行", "confirm", "approve", "approved":
+		return true
+	default:
+		return false
+	}
 }

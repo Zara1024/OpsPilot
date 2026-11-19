@@ -235,26 +235,10 @@ func (e *PipelineEvaluator) evaluate(ctx context.Context) {
 // inventory are deleted so the metric_raw evaluator doesn't keep firing
 // on a removed device.
 //
-// Called every evaluator tick (30s default). Errors here are logged and
-// skipped — gauge staleness for one tick is preferable to a panic in
-type deviceStalenessEntry struct {
-	name string
-	secs float64
-}
-
-// refreshDeviceStalenessGauge updates the device_last_seen_seconds_ago
-// Prom gauge with one series per registered device. Source-of-truth is
-// the host edge's last_seen_at column (which mirrors host presence
-// post-split because the pre-launch backfill keeps device.id == edge.id
-// for type=host junctions). Series for devices that fall out of
-// inventory are deleted so the metric_raw evaluator doesn't keep firing
-// on a removed device.
-//
-// When multiple edges belong to the same device (e.g. an obsolete or
-// re-enrolled edge alongside an active one), staleness is aggregated by
-// taking the minimum seconds ago (i.e. the freshest edge). This avoids
-// ghost/offline edges generating spurious device_offline alerts when the
-// machine is healthy.
+// Two kinds of edge rows get no series at all, because neither has a
+// defensible "seconds since last seen": an edge that has never
+// reported a heartbeat, and an edge that is not linked to a device yet.
+// Emitting for those labels alerts on rows that no device corresponds to.
 //
 // Called every evaluator tick (30s default). Errors here are logged and
 // skipped — gauge staleness for one tick is preferable to a panic in
@@ -265,23 +249,20 @@ func (e *PipelineEvaluator) refreshDeviceStalenessGauge(ctx context.Context, now
 		e.log.Warn("alert: list edges for staleness gauge failed", slog.Any("err", err))
 		return
 	}
-
-	perDevice := make(map[string]deviceStalenessEntry, len(edges))
+	// Re-build the per-tick view of which (device_id, device_name) tuples
+	// we still own. Anything in the previous snapshot but not in this
+	// one gets deleted from the gauge so reuse-after-removal of
+	// device_id values doesn't double-up the series.
+	current := make(map[string]string, len(edges))
 	for _, edge := range edges {
-		// Only evaluate staleness for edges that have reported heartbeats at least once.
-		// Edges with LastSeenAt == nil are pending enrollment / not yet connected;
-		// falling back to CreatedAt causes spurious "device_offline" alerts before
-		// the edge has even enrolled or when enrollment was abandoned.
+		// 没有 last_seen_at 表示这个 edge 从未上报过心跳。批量录入会先建好
+		// 记录、等主机真正安装 edge 后才开始心跳；用 created_at 兜底会让它
+		// 一出生就超过阈值，立刻误报 device_offline。
 		if edge.LastSeenAt == nil {
 			continue
 		}
-		// K8s controller probe edges (e.g. k8s:<cluster>:controller) are cluster control-plane
-		// Pods rather than physical host devices. They must never emit device_last_seen_seconds_ago metrics.
-		if strings.HasPrefix(edge.Name, "k8s:") && strings.HasSuffix(edge.Name, ":controller") {
-			continue
-		}
-		// Only evaluate edges that are linked to a real host device.
-		// Edges without a DeviceID are virtual or unassociated agents and must not emit device metrics.
+		// 序列标签是 device_id。未绑定设备时退回 edge.ID 会伪造出一个
+		// devices 表里并不存在的设备号，告警也就无法对应到任何设备。
 		if edge.DeviceID == nil || *edge.DeviceID == 0 {
 			continue
 		}
@@ -289,30 +270,16 @@ func (e *PipelineEvaluator) refreshDeviceStalenessGauge(ctx context.Context, now
 		if secs < 0 {
 			secs = 0
 		}
-		deviceID := *edge.DeviceID
-		idStr := fmt.Sprintf("%d", deviceID)
-
-		if cur, exists := perDevice[idStr]; !exists || secs < cur.secs {
-			perDevice[idStr] = deviceStalenessEntry{
-				name: edge.Name,
-				secs: secs,
-			}
-		}
+		idStr := fmt.Sprintf("%d", *edge.DeviceID)
+		prom.SetDeviceLastSeenSecondsAgo(idStr, edge.Name, secs)
+		current[idStr] = edge.Name
 	}
-
-	current := make(map[string]string, len(perDevice))
-	for idStr, entry := range perDevice {
-		prom.SetDeviceLastSeenSecondsAgo(idStr, entry.name, entry.secs)
-		current[idStr] = entry.name
-	}
-
 	e.gaugeMu.Lock()
 	prev := e.gaugeSnapshot
 	e.gaugeSnapshot = current
 	e.gaugeMu.Unlock()
-
 	for id, name := range prev {
-		if curName, ok := current[id]; ok && curName == name {
+		if _, ok := current[id]; ok {
 			continue
 		}
 		prom.DeleteDeviceLastSeenSecondsAgo(id, name)
@@ -379,17 +346,18 @@ func (e *PipelineEvaluator) evaluatePromQuery(ctx context.Context, now time.Time
 			value, hasValue := parseFloat(valStr)
 			dedupeKey := fmt.Sprintf("pipeline:%s:%s", rule.RuleKey, labelSetKey(ent.Metric))
 			fired[dedupeKey] = struct{}{}
-			ruleTitle := strings.TrimSpace(rule.Name)
-			if ruleTitle == "" {
-				ruleTitle = rule.RuleKey
-			}
-
 			summary := fmt.Sprintf("%s: %s ⇒ %s (value=%s)", rule.RuleKey, rule.Expr, labelSetKey(ent.Metric), valStr)
-
+			// Extract device_id from result labels when present — host-scope
+			// rules require it for FiringInput validation, and the new
+			// device-aware queries (`by (device_id)`) carry it as a label
+			// on every series. Best-effort: malformed values fall through
+			// and validateFiring rejects with a clear message.
 			var devID *uint64
-			if v, ok := ent.Metric["device_id"]; ok && v != "" {
-				if id, err := strconv.ParseUint(v, 10, 64); err == nil && id > 0 {
-					devID = &id
+			if scope == model.RuleScopeHost {
+				if v, ok := ent.Metric["device_id"]; ok && v != "" {
+					if id, err := strconv.ParseUint(v, 10, 64); err == nil && id > 0 {
+						devID = &id
+					}
 				}
 			}
 			input := FiringInput{
@@ -450,13 +418,8 @@ func (e *PipelineEvaluator) notify(ctx context.Context, res *FiringResult, summa
 	if res == nil || res.Incident == nil {
 		return
 	}
-	subject := res.Incident.Title
-	if subject == "" {
-		subject = summary
-	}
 	msg := notify.Message{
-		Subject:    subject,
-		Body:       summary,
+		Subject:    summary,
 		Severity:   notify.Severity(res.Incident.Severity),
 		Source:     source,
 		DedupeKey:  res.Incident.DedupeKey,
@@ -466,26 +429,14 @@ func (e *PipelineEvaluator) notify(ctx context.Context, res *FiringResult, summa
 			"incident_id": fmt.Sprintf("%d", res.Incident.ID),
 		},
 	}
-	if res.Incident.RuleName != "" {
-		msg.Labels["rule_name"] = res.Incident.RuleName
-	}
 	// Preserve application identity for notification routing and correlation.
 	// Control labels such as incident_id/rule still come from the incident.
 	if labels, err := res.Incident.Labels(); err != nil {
 		e.log.Warn("alert: decode notification identity failed", slog.Uint64("incident_id", res.Incident.ID), slog.Any("err", err))
 	} else {
-		for _, key := range []string{"service", "service_namespace", "deployment_environment_name", "service_instance_id", "span_name", "device_name", "device_id"} {
+		for _, key := range []string{"service", "service_namespace", "deployment_environment_name", "service_instance_id", "span_name"} {
 			if value, ok := labels[key]; ok {
 				msg.Labels[key] = value
-			}
-		}
-		if msg.Labels["device"] == "" && labels["device_name"] != "" {
-			parts := strings.Split(labels["device_name"], ":")
-			shortName := parts[len(parts)-1]
-			if dID := labels["device_id"]; dID != "" {
-				msg.Labels["device"] = fmt.Sprintf("%s (ID: %s)", shortName, dID)
-			} else {
-				msg.Labels["device"] = shortName
 			}
 		}
 	}
@@ -498,13 +449,8 @@ func (e *PipelineEvaluator) notify(ctx context.Context, res *FiringResult, summa
 				e.log.Warn("alert: resolve device identity for notification failed",
 					slog.Uint64("device_id", deviceID), slog.Any("err", err))
 			} else if display := deviceDisplay(identity); display != "" {
-				msg.Labels["device"] = display
-				if strings.Contains(msg.Subject, fmt.Sprintf("device_id=%d", deviceID)) {
-					msg.Subject = strings.ReplaceAll(msg.Subject,
-						fmt.Sprintf("device_id=%d", deviceID), "device="+display)
-				} else if !strings.Contains(msg.Subject, "device=") {
-					msg.Subject = fmt.Sprintf("[device=%s] %s", display, msg.Subject)
-				}
+				msg.Subject = strings.ReplaceAll(msg.Subject,
+					fmt.Sprintf("device_id=%d", deviceID), "device="+display)
 				if identity.Hostname != "" {
 					msg.Labels["device_hostname"] = identity.Hostname
 				}
@@ -551,12 +497,12 @@ func deviceDisplay(identity DeviceIdentity) string {
 // nonIdentityLabels are provenance/collector labels that must NOT split an
 // alert's identity. The same subject (e.g. a host's disk) can be reported by
 // both the embedded and the cloud collector — one tags
-// opspilot_source=embedded — which otherwise produced two incidents for one
+// ongrid_source=embedded — which otherwise produced two incidents for one
 // real alert. Excluding them from the dedupe key merges those back into one.
 var nonIdentityLabels = map[string]struct{}{
-	"__name__":        {},
-	"opspilot_source": {},
-	"source_id":       {},
+	"__name__":      {},
+	"ongrid_source": {},
+	"source_id":     {},
 }
 
 func labelSetKey(m map[string]string) string {

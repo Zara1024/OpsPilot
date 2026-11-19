@@ -208,7 +208,7 @@ type Message struct {
 }
 
 // Attachment stores metadata for a file uploaded to a chat session. The file
-// bytes live below ONGRID_CHAT_ATTACHMENT_DIR and are never serialized in
+// bytes live below OPSPILOT_CHAT_ATTACHMENT_DIR and are never serialized in
 // message/history responses. Data is populated only while building an LLM
 // request.
 type Attachment struct {

@@ -88,7 +88,7 @@ func (q *ScopedQuerier) authorize(ctx context.Context, body []byte) error {
 		manager := false
 		for _, attr := range resource.Resource.Attributes {
 			var name string
-			if attr.Key == "service.name" && json.Unmarshal(attr.Value["stringValue"], &name) == nil && name == "ongrid-manager" {
+			if attr.Key == "service.name" && json.Unmarshal(attr.Value["stringValue"], &name) == nil && name == "opspilot-manager" {
 				manager = true
 			}
 		}

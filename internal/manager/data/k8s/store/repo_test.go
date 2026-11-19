@@ -89,7 +89,7 @@ func TestRepo_BindControllerEnrollmentUpsertsInstallationOnSQLite(t *testing.T) 
 		EdgeID:    firstEdgeID,
 		LastSeen:  firstSeen,
 		NodeName:  "node-a",
-		Namespace: "opspilot-system",
+		Namespace: "ongrid-system",
 		PodName:   "controller-a",
 	}, &model.Installation{
 		ClusterID:        cluster.ID,
@@ -113,7 +113,7 @@ func TestRepo_BindControllerEnrollmentUpsertsInstallationOnSQLite(t *testing.T) 
 		EdgeID:    secondEdgeID,
 		LastSeen:  secondSeen,
 		NodeName:  "node-b",
-		Namespace: "opspilot-system",
+		Namespace: "ongrid-system",
 		PodName:   "controller-b",
 	}, &model.Installation{
 		ClusterID:        cluster.ID,

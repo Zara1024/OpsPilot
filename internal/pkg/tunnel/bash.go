@@ -2,7 +2,7 @@ package tunnel
 
 // bash is the generic shell-execution wire — see
 // internal/edgeagent/bash/handlers.go for the edge implementation and
-// internal/manager/biz/aiops/tools/bash_basetool.go for the manager-side
+// internal/manager/biz/aiops/tools/bash.go for the manager-side
 // BaseTool. v1 ships a read-only policy enforced via cmdpolicy
 // (internal/edgeagent/cmdpolicy); future mutating-bash variants would
 // reuse this same wire under a different policy preset.
@@ -27,7 +27,7 @@ type BashExecRequest struct {
 	Cmd string `json:"cmd"`
 
 	// Timeout overrides the policy default per-call ceiling. 0 → use
-	// the sandbox default (30s). Negative is treated as 0.
+	// the sandbox default (300s). Negative is treated as 0.
 	Timeout int `json:"timeout_seconds,omitempty"`
 
 	// Unrestricted, when true, tells the edge to BYPASS cmdpolicy entirely
@@ -44,7 +44,7 @@ type BashExecRequest struct {
 
 // BashExecResponse is the wire body returned by the edge. Mirrors
 // cmdpolicy.ShellResult byte-for-byte except for snake_case JSON keys
-// that match the broader opspilot wire convention.
+// that match the broader ongrid wire convention.
 type BashExecResponse struct {
 	// Allowed reports whether the policy / path / network checks
 	// passed. False means the command was rejected before any process

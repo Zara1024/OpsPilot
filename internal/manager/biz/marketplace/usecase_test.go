@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	chatruntime "github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/chatruntime"
+	chatruntime "github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/runtime/v3/chatruntime"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/marketplace"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 )
@@ -191,7 +191,7 @@ metadata:
   requires:
     bins: [etcdctl]
     config: [etcd_endpoint]
-  opspilot:
+  ongrid:
     scope: manager
 tools:
   - name: probe
@@ -242,7 +242,7 @@ func newTestUC(t *testing.T) (*Usecase, *fakeRepo, *fakeSkillReg, *fakeAgentReg,
 	uc := NewUsecase(repo, sk, ag, Config{
 		SystemSkillsRoot: systemRoot,
 		StagingDir:       staging,
-		AllowedSources:   []string{"local", "opspilot-official"},
+		AllowedSources:   []string{"local", "ongrid-official"},
 		DevMode:          false,
 	}, nil)
 	return uc, repo, sk, ag, systemRoot, tmp
@@ -386,7 +386,7 @@ func TestInstall_DuplicatePackID(t *testing.T) {
 
 func TestInstall_SourceAllowlist(t *testing.T) {
 	uc, _, _, _, _, tmp := newTestUC(t)
-	uc.cfg.AllowedSources = []string{"opspilot-official"} // local NOT in list
+	uc.cfg.AllowedSources = []string{"ongrid-official"} // local NOT in list
 	uc.cfg.DevMode = false
 
 	src := filepath.Join(tmp, "src")
@@ -485,7 +485,7 @@ func contains(slice []string, s string) bool {
 
 // signPackInPlace generates a fresh ECDSA P-256 keypair, computes the
 // canonical pack hash, and writes signature.json into the pack root.
-// Used by the "opspilot-official + verified" fixture below.
+// Used by the "ongrid-official + verified" fixture below.
 func signPackInPlace(t *testing.T, packDir string) {
 	t.Helper()
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -522,7 +522,7 @@ func signPackInPlace(t *testing.T, packDir string) {
 // TestInstall_RequireSigned_RejectsUnsigned: when a source is in
 // RequireSignedSources, an unsigned pack from that source is rejected
 // with ErrForbidden. We exercise the gate against the "local" label
-// (rather than "opspilot-official") because SourceTypeRegistry fetch
+// (rather than "ongrid-official") because SourceTypeRegistry fetch
 // isn't wired yet — the gate logic itself is source-label-driven so
 // the choice doesn't matter for what we're proving.
 func TestInstall_RequireSigned_RejectsUnsigned(t *testing.T) {
@@ -583,7 +583,7 @@ func TestInstall_RequireSigned_AcceptsVerified(t *testing.T) {
 // signature_state is recorded as "unsigned" but Install succeeds.
 func TestInstall_UnsignedSourceNotGated(t *testing.T) {
 	uc, repo, _, _, _, tmp := newTestUC(t)
-	uc.cfg.RequireSignedSources = []string{"opspilot-official"} // local NOT gated
+	uc.cfg.RequireSignedSources = []string{"ongrid-official"} // local NOT gated
 	uc.cfg.DevMode = false
 
 	src := filepath.Join(tmp, "src")

@@ -9,10 +9,10 @@ package edgedirs
 //
 // ProgramData 是 Windows Service 标准数据目录，NetworkService 可写。
 const (
-	BinDir        = `C:\Program Files\opspilot-edge\bin`
-	DataDir       = `C:\ProgramData\opspilot-edge`
+	BinDir       = `C:\Program Files\opspilot-edge\bin`
+	DataDir      = `C:\ProgramData\opspilot-edge`
 	PluginWorkDir = `C:\ProgramData\opspilot-edge\plugins`
-	StageDir      = `C:\ProgramData\opspilot-edge\upgrade`
+	StageDir     = `C:\ProgramData\opspilot-edge\upgrade`
 )
 
 // HealthFile 是 worker.exe 与 supervisor.exe 之间的 health.json IPC 文件路径。

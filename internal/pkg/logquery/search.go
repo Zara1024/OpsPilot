@@ -400,7 +400,7 @@ func LookupField(name string) (FieldDefinition, bool) {
 	case "environment":
 		return structuredField(name, "keyword", "deployment_environment_name", "resource.attributes.deployment.environment.name"), true
 	case "source_id":
-		return field(name, "keyword", "opspilot_source", "resource.attributes.opspilot_source"), true
+		return field(name, "keyword", "ongrid_source", "resource.attributes.ongrid_source"), true
 	case "level":
 		return structuredField(name, "keyword", "level", "severity_text"), true
 	case "file":

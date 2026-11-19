@@ -22,7 +22,7 @@ type WindowsSecretStore struct {
 // 运行，普通用户测试无法通过 ApplySecretACL 后的 WriteFile；用 var 间接让测试
 // 替换为 noop，ACL 行为在 acl_windows_test.go 单独验证）。
 var (
-	ensureSecureDirFn = EnsureSecureDir
+	ensureSecureDirFn  = EnsureSecureDir
 	applySecretACLFn  = ApplySecretACL
 	verifySecretACLFn = VerifySecretACL
 )

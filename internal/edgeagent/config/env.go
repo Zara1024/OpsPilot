@@ -7,23 +7,9 @@ import (
 	"time"
 )
 
-// getEnvWithFallback checks the provided key, and if unset, checks its OpsPilot/Ongrid counterpart.
-func getEnvWithFallback(key string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	if strings.HasPrefix(key, "OPSPILOT_") {
-		return os.Getenv("ONGRID_" + strings.TrimPrefix(key, "OPSPILOT_"))
-	}
-	if strings.HasPrefix(key, "ONGRID_") {
-		return os.Getenv("OPSPILOT_" + strings.TrimPrefix(key, "ONGRID_"))
-	}
-	return ""
-}
-
 // EnvDuration reads a positive duration, or returns fallback.
 func EnvDuration(key string, fallback time.Duration) time.Duration {
-	raw := strings.TrimSpace(getEnvWithFallback(key))
+	raw := strings.TrimSpace(os.Getenv(key))
 	if raw == "" {
 		return fallback
 	}
@@ -36,7 +22,7 @@ func EnvDuration(key string, fallback time.Duration) time.Duration {
 
 // EnvInt reads a positive integer, or returns fallback.
 func EnvInt(key string, fallback int) int {
-	raw := strings.TrimSpace(getEnvWithFallback(key))
+	raw := strings.TrimSpace(os.Getenv(key))
 	if raw == "" {
 		return fallback
 	}
@@ -49,7 +35,7 @@ func EnvInt(key string, fallback int) int {
 
 // EnvBool accepts the Edge boolean aliases, or returns fallback.
 func EnvBool(key string, fallback bool) bool {
-	raw := strings.TrimSpace(strings.ToLower(getEnvWithFallback(key)))
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
 	if raw == "" {
 		return fallback
 	}
@@ -65,7 +51,7 @@ func EnvBool(key string, fallback bool) bool {
 
 // EnvOr reads an env var, returning def when unset/empty.
 func EnvOr(key, def string) string {
-	if v := getEnvWithFallback(key); v != "" {
+	if v := os.Getenv(key); v != "" {
 		return v
 	}
 	return def

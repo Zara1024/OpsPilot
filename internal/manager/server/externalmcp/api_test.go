@@ -25,7 +25,7 @@ import (
 
 func apiFixture(t *testing.T, router chi.Router, writes bool) map[string]*biz.Tool {
 	t.Helper()
-	t.Setenv("ONGRID_SECRET_KEY", "test-only-external-api-encryption-key")
+	t.Setenv("OPSPILOT_SECRET_KEY", "test-only-external-api-encryption-key")
 	tools, err := APITools(router, writes)
 	require.NoError(t, err)
 	catalog, err := biz.NewCatalog(tools)
@@ -258,4 +258,3 @@ func TestAPIRiskPolicyKeepsDestructiveAndMixedChangesGated(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, policy.LowRisk)
 }
-

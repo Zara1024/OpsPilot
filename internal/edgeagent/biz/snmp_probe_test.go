@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Zara1024/OpsPilot/internal/pkg/tunnel"
 	"github.com/gosnmp/gosnmp"
+	"github.com/Zara1024/OpsPilot/internal/pkg/tunnel"
 )
 
 func TestProbeNetworkSNMPValidatesCredentialsBeforeNetworkCall(t *testing.T) {

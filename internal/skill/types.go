@@ -1,4 +1,4 @@
-// Package skill defines opspilot's L2 device-direct capability framework.
+// Package skill defines ongrid's L2 device-direct capability framework.
 //
 // A "skill" is one self-contained device-side capability — probe a TCP
 // port, tail a file, run a command, capture pcap, etc. Skills bundle:

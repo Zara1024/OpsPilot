@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	chatruntime "github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/chatruntime"
+	chatruntime "github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/runtime/v3/chatruntime"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/marketplace"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 )
@@ -29,12 +29,10 @@ type Config struct {
 	// TenantSkillsRoot nil.
 	SystemSkillsRoot string
 
-	// BuiltinSkillsRoots / BuiltinAgentsRoots are the image-baked
-	// directories the manager loaded at boot (`/skills`, `/agents` in
-	// the production container). They're passed back to the skill /
-	// agent registries on every Reload so a marketplace install doesn't
-	// drop the built-in skills (host_files, restart_service, bash) just
-	// because Reload's primary arg is the user-pack root.
+	// BuiltinSkillsRoots / BuiltinAgentsRoots are additional directories
+	// loaded at boot (optional skill roots and the image-baked /agents).
+	// Pass them on every Reload so installing a marketplace pack preserves
+	// the separately configured skills and agent personas.
 	BuiltinSkillsRoots []string
 	BuiltinAgentsRoots []string
 
@@ -49,12 +47,12 @@ type Config struct {
 
 	// AllowedSources is the source-name allowlist. Sources outside
 	// this list are rejected unless DevMode=true. Defaults to
-	// ["opspilot-official", "local"] in the production wiring.
+	// ["ongrid-official", "local"] in the production wiring.
 	AllowedSources []string
 
 	// RequireSignedSources lists source labels (Source.SourceLabel())
 	// for which an unsigned / failed signature is a hard reject. The
-	// production default in cmd/opspilot is ["opspilot-official"]: anything
+	// production default in cmd/ongrid is ["ongrid-official"]: anything
 	// claiming to ship from the official registry has to carry a valid
 	// signature.json. Local / git installs are intentionally not on
 	// this list — admins scp'ing a pack from their laptop don't need a
@@ -65,12 +63,12 @@ type Config struct {
 	// pubkey that signature.json's pub_key must match (DER-equal).
 	// Empty string disables the pin: any well-formed key passes
 	// signature verification but the gate above still applies. Wired
-	// from OPSPILOT_MARKETPLACE_PINNED_PUBKEY in cmd/opspilot.
+	// from OPSPILOT_MARKETPLACE_PINNED_PUBKEY in cmd/ongrid.
 	SignaturePinnedKey string
 
 	// DevMode skips the source allowlist + lets unsigned packs
 	// install. Default true in dev installs (env-flag-controlled in
-	// cmd/opspilot).
+	// cmd/ongrid).
 	DevMode bool
 
 	// HTTPClient is the client used for tarball downloads. nil →
@@ -518,9 +516,8 @@ func (uc *Usecase) Registries(_ context.Context, _ Caller) AllowedRegistries {
 // uninstall already mutated disk + DB, the operator deserves to see
 // the success even if the next chat needs a manual restart.
 //
-// Both reloads pass the builtin roots so the image-baked
-// skills/agents (host_files, restart_service, bash, default agent
-// personas) survive the hot-reload triggered by a pack change.
+// Both reloads pass the additional roots so configured skills and agent
+// personas survive the hot-reload triggered by a pack change.
 func (uc *Usecase) reloadRegistries() {
 	if uc.skillReg != nil && uc.cfg.SystemSkillsRoot != "" {
 		// SkillRegistry.Reload extras are walked as skills roots; the
@@ -746,7 +743,7 @@ func rebaseDirs(res *chatruntime.LoadResult, installPath string) {
 
 // buildCapabilityDeclaration is the SPA-facing capability snapshot
 // builder. It walks every skill in the LoadResult, pulls
-// metadata.requires + metadata.opspilot.edge_capabilities + tool
+// metadata.requires + metadata.ongrid.edge_capabilities + tool
 // classes, and dedupes a summary across them.
 func buildCapabilityDeclaration(packID, version string, res *chatruntime.LoadResult) CapabilityDeclaration {
 	caps := CapabilityDeclaration{
@@ -784,8 +781,8 @@ func buildCapabilityDeclaration(packID, version string, res *chatruntime.LoadRes
 		}
 		rec := SkillCapabilityRecord{
 			Name:             sk.Name,
-			Scope:            sk.Metadata.OpsPilot.Scope,
-			EdgeCapabilities: sk.Metadata.OpsPilot.EdgeCapabilities,
+			Scope:            sk.Metadata.Ongrid.Scope,
+			EdgeCapabilities: sk.Metadata.Ongrid.EdgeCapabilities,
 			Requires: RequiresRecord{
 				Bins:        append([]string(nil), sk.Metadata.Requires.Bins...),
 				Config:      append([]string(nil), sk.Metadata.Requires.Config...),

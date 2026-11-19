@@ -1,6 +1,6 @@
 // Package sqlite is the GORM-backed implementation of biz/device.Repo
 // and biz/device.EdgeDeviceRepo. Despite the package name it works
-// against MySQL too 鈥?GORM hides the dialect at this level.
+// against MySQL too — GORM hides the dialect at this level.
 package store
 
 import (
@@ -74,7 +74,7 @@ func (r *Repo) RebindFingerprint(ctx context.Context, oldFP, newFP string) error
 	if oldFP == "" || newFP == "" || oldFP == newFP {
 		return nil
 	}
-	// Skip if newFP already exists 鈥?the v2 device already won; nothing to
+	// Skip if newFP already exists — the v2 device already won; nothing to
 	// migrate (and the UPDATE would hit the unique index anyway).
 	var cnt int64
 	if err := dbx.WithContext(ctx, r.db).Model(&model.Device{}).
@@ -85,7 +85,7 @@ func (r *Repo) RebindFingerprint(ctx context.Context, oldFP, newFP string) error
 		return nil
 	}
 	// In-place rebind: same row, only the fingerprint column changes, so
-	// device.ID / junction / history all carry over. Idempotent 鈥?if no row
+	// device.ID / junction / history all carry over. Idempotent — if no row
 	// carries oldFP, this updates nothing.
 	return dbx.WithContext(ctx, r.db).Model(&model.Device{}).
 		Where("fingerprint = ?", oldFP).
@@ -93,7 +93,7 @@ func (r *Repo) RebindFingerprint(ctx context.Context, oldFP, newFP string) error
 }
 
 // UpdateHostFacts overwrites the host fact columns for the device. We
-// don't include online/last_seen_at here 鈥?those have a separate
+// don't include online/last_seen_at here — those have a separate
 // lifecycle (MarkOnline / MarkOffline).
 func (r *Repo) UpdateHostFacts(ctx context.Context, id uint64, f biz.HostFacts) error {
 	return r.updateHostFacts(ctx, id, nil, f)
@@ -124,7 +124,14 @@ func (r *Repo) updateHostFacts(ctx context.Context, id uint64, edgeID *uint64, f
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return errs.ErrNotFound
+		// MySQL may report no changed rows for an identical re-registration.
+		var count int64
+		if err := q.Count(&count).Error; err != nil {
+			return err
+		}
+		if count == 0 {
+			return errs.ErrNotFound
+		}
 	}
 	return nil
 }
@@ -157,7 +164,7 @@ func (r *Repo) UpdateRoles(ctx context.Context, id uint64, roles uint8) error {
 	return nil
 }
 
-// SetNodeID writes Device.NodeID 鈥?the link to the topology
+// SetNodeID writes Device.NodeID — the link to the topology
 // `nodes` table. Skip if the device already points at the same node
 // (idempotent so the NodeMirror hook is safe to call on every register
 // without redundant writes). Returns ErrNotFound when the device row
@@ -252,6 +259,7 @@ WHERE delete_marker = 0 AND online = ?
     SELECT 1 FROM edge_devices ed
     JOIN edges e ON e.id = ed.edge_id
     WHERE ed.device_id = devices.id
+      AND ed.edge_id = devices.current_edge_id
       AND ed.delete_marker = 0
       AND e.delete_marker = 0
       AND e.status = ?
@@ -368,6 +376,7 @@ func (r *Repo) ListWithoutLiveEdges(ctx context.Context, limit int) ([]*model.De
 			FROM edge_devices ed
 			JOIN edges e ON e.id = ed.edge_id
 			WHERE ed.device_id = devices.id
+      AND ed.edge_id = devices.current_edge_id
 			  AND ed.delete_marker = 0
 			  AND e.delete_marker = 0
 		)`).
@@ -481,4 +490,3 @@ func (r *Repo) UpdateHostPresence(ctx context.Context, hostID, edgeID uint64, on
 	}
 	return dbx.WithContext(ctx, r.db).Model(&model.Device{}).Where("id = ? AND current_edge_id = ?", hostID, edgeID).Updates(updates).Error
 }
-

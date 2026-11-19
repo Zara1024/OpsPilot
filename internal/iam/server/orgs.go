@@ -12,8 +12,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/Zara1024/OpsPilot/internal/iam/biz/org"
 	"github.com/Zara1024/OpsPilot/internal/iam/biz/user"
+	"github.com/Zara1024/OpsPilot/internal/iam/biz/org"
 	"github.com/Zara1024/OpsPilot/internal/iam/model"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 	"github.com/Zara1024/OpsPilot/internal/pkg/tenantctx"
@@ -22,13 +22,13 @@ import (
 // ----- DTOs -----
 
 type orgDTO struct {
-	ID          uint64 `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	ID          uint64    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
 	// ParentID nil → 顶级 org。前端用它在 list 之上构建树。
-	ParentID  *uint64   `json:"parent_id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ParentID    *uint64   `json:"parent_id"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type orgListResp struct {
@@ -88,10 +88,10 @@ type createOrgReq struct {
 // "parent_id_set" 是前端层面的 "用户确实想改 parent" 信号，避免 JSON null 与
 // "字段没传" 被同一种 zero-value 表示的歧义。
 type updateOrgReq struct {
-	Name        string  `json:"name"`
-	Description string  `json:"description"`
-	ParentIDSet bool    `json:"parent_id_set,omitempty"`
-	ParentID    *uint64 `json:"parent_id,omitempty"`
+	Name         string  `json:"name"`
+	Description  string  `json:"description"`
+	ParentIDSet  bool    `json:"parent_id_set,omitempty"`
+	ParentID     *uint64 `json:"parent_id,omitempty"`
 }
 
 type addMemberReq struct {
@@ -457,12 +457,7 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 		if orgs := h.svc.Orgs(); orgs != nil {
 			ms := h.svc.Memberships()
 			if seed, err := orgs.EnsureSeed(r.Context(), "默认组织", ""); err == nil && seed != nil && ms != nil {
-				// 组织成员角色联动系统角色：如果是 viewer，组织内赋予 viewer 角色；其他赋予 member 角色
-				orgRole := "member"
-				if u.Role == model.RoleViewer {
-					orgRole = "viewer"
-				}
-				if _, mErr := ms.AddOrUpdate(r.Context(), u.ID, seed.ID, orgRole); mErr != nil {
+				if _, mErr := ms.AddOrUpdate(r.Context(), u.ID, seed.ID, "member"); mErr != nil {
 					h.log.Warn("iam: auto-join default org",
 						"user_id", u.ID,
 						"err", mErr)

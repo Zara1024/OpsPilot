@@ -125,7 +125,7 @@ func TestWriteManagedSecretsInBaseDeletesSecret(t *testing.T) {
 func TestBuildManagedSecretPreservingPasswordForPostgresSkipVerify(t *testing.T) {
 	base := t.TempDir()
 	path := filepath.Join(base, "pg-prod.dsn")
-	current := "postgresql://opspilot:old-secret@127.0.0.1:15432/metrics_test?sslmode=verify-full&sslrootcert=%2Fold%2Fca.crt\n"
+	current := "postgresql://ongrid:old-secret@127.0.0.1:15432/metrics_test?sslmode=verify-full&sslrootcert=%2Fold%2Fca.crt\n"
 	if err := os.WriteFile(path, []byte(current), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
@@ -149,7 +149,7 @@ func TestBuildManagedSecretPreservingPasswordForPostgresSkipVerify(t *testing.T)
 	if err != nil {
 		t.Fatalf("buildManagedSecretPreservingPasswordInBase() error = %v", err)
 	}
-	if !strings.Contains(got, "postgresql://opspilot:old-secret@127.0.0.1:15432/metrics_test") {
+	if !strings.Contains(got, "postgresql://ongrid:old-secret@127.0.0.1:15432/metrics_test") {
 		t.Fatalf("secret = %q, want preserved password", got)
 	}
 	if !strings.Contains(got, "sslmode=require") {
@@ -163,7 +163,7 @@ func TestBuildManagedSecretPreservingPasswordForPostgresSkipVerify(t *testing.T)
 func TestBuildManagedSecretPreservingPasswordDoesNotLeakInvalidExistingURI(t *testing.T) {
 	base := t.TempDir()
 	path := filepath.Join(base, "pg-prod.dsn")
-	current := "postgresql://opspilot:old-secret@127.0.0.1:15432/%zz\n"
+	current := "postgresql://ongrid:old-secret@127.0.0.1:15432/%zz\n"
 	if err := os.WriteFile(path, []byte(current), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}

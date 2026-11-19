@@ -5,7 +5,7 @@
 //     (or POST /v1/knowledge/docs). We embed and upsert into qdrant.
 //  2. Repo sync: user registers a git URL; Sync() shells `git clone
 //     --no-single-branch` (or full-history fetch on existing clones) into
-//     /var/lib/opspilot/repos/<id>, walks the tree for .md / .txt /
+//     /var/lib/ongrid/repos/<id>, walks the tree for .md / .txt /
 //     .rst / .yaml / .yml / .toml / .json files, embeds each, replaces
 //     the qdrant point set for that repo.
 //
@@ -32,13 +32,13 @@ import (
 	"time"
 	"unicode/utf8"
 
+	markdownsplitter "github.com/cloudwego/eino-ext/components/document/transformer/splitter/markdown"
+	"github.com/cloudwego/eino-ext/components/document/transformer/splitter/recursive"
+	"github.com/cloudwego/eino/schema"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/knowledge"
 	"github.com/Zara1024/OpsPilot/internal/pkg/embedding"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 	"github.com/Zara1024/OpsPilot/internal/pkg/qdrantx"
-	markdownsplitter "github.com/cloudwego/eino-ext/components/document/transformer/splitter/markdown"
-	"github.com/cloudwego/eino-ext/components/document/transformer/splitter/recursive"
-	"github.com/cloudwego/eino/schema"
 )
 
 // RepoStore is the narrow relational-data surface. *store.Repo
@@ -77,8 +77,8 @@ type QdrantClient interface {
 	Scroll(ctx context.Context, collection string, opts qdrantx.ScrollOpts) (*qdrantx.ScrollResult, error)
 }
 
-// CollectionName is the single qdrant collection opspilot writes to.
-const CollectionName = "opspilot_knowledge"
+// CollectionName is the single qdrant collection ongrid writes to.
+const CollectionName = "ongrid_knowledge"
 
 // Re-exports so external callers stay on the biz alias.
 type (
@@ -120,7 +120,7 @@ func (u *Usecase) WithRepoDeleteHook(h func(ctx context.Context, url string)) *U
 	return u
 }
 
-// New returns a Usecase. cloneDir defaults to /var/lib/opspilot/repos.
+// New returns a Usecase. cloneDir defaults to /var/lib/ongrid/repos.
 // Synchronously calls EnsureCollection at boot when an embedder is
 // configured — without one we accept reads against any pre-existing
 // qdrant collection and reject writes (CreateManualDoc / Sync) with
@@ -129,7 +129,7 @@ func (u *Usecase) WithRepoDeleteHook(h func(ctx context.Context, url string)) *U
 // what's there before configuring the embedder.
 func New(ctx context.Context, repo RepoStore, vec QdrantClient, embed embedding.Embedder, cloneDir string, log *slog.Logger) (*Usecase, error) {
 	if cloneDir == "" {
-		cloneDir = "/var/lib/opspilot/repos"
+		cloneDir = "/var/lib/ongrid/repos"
 	}
 	if log == nil {
 		log = slog.Default()
@@ -2285,7 +2285,7 @@ func repoChunkPoint(repoID uint64, url string, chunkIndex, chunkTotal int, vec [
 //     pins -i + IdentitiesOnly so the key picked is the only one
 //     tried (avoids accidental fallback to the container's ~/.ssh).
 //   - anything else (https / http) → no auth env; git tries anonymous.
-//     Right for public repos like zara1024/vault. Private HTTPS repos
+//     Right for public repos like ongridio/vault. Private HTTPS repos
 //     will fail until P3 wires the credential.helper-based
 //     per-host token table.
 //
@@ -2325,7 +2325,7 @@ func (u *Usecase) buildGitAuthEnv(ctx context.Context, repoURL string) ([]string
 // at them. Returns the env + a cleanup func that removes both files.
 func buildSSHEnv(identity *model.SSHIdentity) ([]string, func(), error) {
 	noop := func() {}
-	keyFile, err := os.CreateTemp("", "opspilot-sshkey-*")
+	keyFile, err := os.CreateTemp("", "ongrid-sshkey-*")
 	if err != nil {
 		return nil, noop, fmt.Errorf("write ssh key tempfile: %w", err)
 	}
@@ -2348,7 +2348,7 @@ func buildSSHEnv(identity *model.SSHIdentity) ([]string, func(), error) {
 		return nil, noop, fmt.Errorf("chmod ssh key: %w", err)
 	}
 
-	khFile, err := os.CreateTemp("", "opspilot-known_hosts-*")
+	khFile, err := os.CreateTemp("", "ongrid-known_hosts-*")
 	if err != nil {
 		_ = os.Remove(keyFile.Name())
 		return nil, noop, fmt.Errorf("write known_hosts tempfile: %w", err)

@@ -189,7 +189,7 @@ type SkillMetadata struct {
 	Requires Requires `yaml:"requires" json:"requires"`
 
 	// Ongrid is the ongrid-private extension subtree.
-	Ongrid OngridExt `yaml:"ongrid" json:"ongrid"`
+	Ongrid OngridExt `yaml:"opspilot" json:"opspilot"`
 }
 
 // ToolDecl is a single tool declared by a skill. PR-2 stores the

@@ -9,7 +9,7 @@
 //
 // Three ops are exposed:
 //   - Test: build a Client from settings, hit /api/health
-//   - Sync: ensure the opspilot folder, upsert Prometheus plus the configured
+//   - Sync: ensure the ongrid folder, upsert Prometheus plus the configured
 //     log datasources, push every embedded dashboard with overwrite=true
 //   - SyncLoki: update only the managed Loki datasource after settings change
 //   - SyncLogsDatasource: reconcile the datasource for the active log backend
@@ -47,12 +47,12 @@ const (
 	datasourceUID  = promDatasourceUID
 	datasourceName = promDatasourceName
 
-	promDatasourceUID  = "opspilot-prometheus"
-	promDatasourceName = "opspilot-prometheus"
-	lokiDatasourceUID  = "opspilot-loki"
-	lokiDatasourceName = "opspilot-loki"
-	esDatasourceUID    = "opspilot-elasticsearch"
-	esDatasourceName   = "opspilot-elasticsearch"
+	promDatasourceUID  = "ongrid-prometheus"
+	promDatasourceName = "ongrid-prometheus"
+	lokiDatasourceUID  = "ongrid-loki"
+	lokiDatasourceName = "ongrid-loki"
+	esDatasourceUID    = "ongrid-elasticsearch"
+	esDatasourceName   = "ongrid-elasticsearch"
 )
 
 //go:embed dashboards/*.json
@@ -89,13 +89,13 @@ func New(settings *settingbiz.Service, tlsInsecure bool, log *slog.Logger) *Serv
 		settings:           settings,
 		log:                log,
 		tlsInsecure:        tlsInsecure,
-		panelDashboardUID:  "opspilot-monitor",
-		panelDashboardName: "opspilot Monitor (managed)",
+		panelDashboardUID:  "ongrid-monitor",
+		panelDashboardName: "ongrid Monitor (managed)",
 	}
 }
 
 // SetPanelDashboardUID overrides the Monitor mirror dashboard uid. cmd/
-// opspilot wires this from OPSPILOT_GRAFANA_PANEL_DASHBOARD_UID at startup.
+// ongrid wires this from OPSPILOT_GRAFANA_PANEL_DASHBOARD_UID at startup.
 // Empty input leaves the default in place.
 func (s *Service) SetPanelDashboardUID(uid string) {
 	uid = strings.TrimSpace(uid)
@@ -143,7 +143,7 @@ func grafanaHTTPClient(tlsInsecure bool) *http.Client {
 }
 
 // BootstrapEmbedded is a one-shot startup hook that auto-creates an
-// opspilot SA + token in the embedded Grafana so the operator doesn't
+// ongrid SA + token in the embedded Grafana so the operator doesn't
 // have to log into Grafana to wire up the integration on first run.
 //
 // Skip conditions (any one short-circuits to nil — log only):
@@ -197,7 +197,7 @@ func (s *Service) BootstrapEmbedded(ctx context.Context, adminUser, adminPasswor
 			return
 		}
 	}
-	token, err := c.CreateServiceAccountToken(ctx, sa.ID, "opspilot-bootstrap")
+	token, err := c.CreateServiceAccountToken(ctx, sa.ID, "ongrid-bootstrap")
 	if err != nil {
 		s.log.Warn("grafana bootstrap: token create failed; skipping", slog.Any("err", err))
 		return
@@ -582,8 +582,8 @@ func dashboardTitle(raw []byte, fallback string) string {
 }
 
 // SyncMonitorPanels mirrors the user-managed Monitor page panel list
-// into a single opspilot-managed Grafana dashboard. The dashboard's uid
-// is fixed (panelDashboardUID, default "opspilot-monitor") so re-pushes
+// into a single ongrid-managed Grafana dashboard. The dashboard's uid
+// is fixed (panelDashboardUID, default "ongrid-monitor") so re-pushes
 // always overwrite the same row instead of cluttering Grafana with
 // dashboards-per-edit.
 //
@@ -629,7 +629,7 @@ func (s *Service) SyncMonitorPanels(ctx context.Context, panels []*monitormodel.
 // They live in the frontend for instant first-paint without a Grafana round
 // trip, but the operator expects "在 Grafana 中打开" to show the SAME panels —
 // so we mirror them here and prepend to the user-managed list when building
-// the opspilot-monitor dashboard. $__rate_interval resolves natively in
+// the ongrid-monitor dashboard. $__rate_interval resolves natively in
 // Grafana. IDs are offset to 9000+ so they never collide with the
 // auto-increment monitor_panels row ids. KEEP IN LOCKSTEP WITH Monitor.tsx.
 func coreMonitorPanels() []*monitormodel.Panel {
@@ -703,7 +703,7 @@ func buildMonitorDashboardJSON(uid, title string, panels []*monitormodel.Panel) 
 	return map[string]any{
 		"uid":           uid,
 		"title":         title,
-		"description":   "Auto-managed by opspilot. Edits in Grafana will be overwritten — change panels in the opspilot Monitor page.",
+		"description":   "Auto-managed by ongrid. Edits in Grafana will be overwritten — change panels in the ongrid Monitor page.",
 		"tags":          []string{"opspilot", "managed"},
 		"editable":      true,
 		"timezone":      "",
@@ -716,8 +716,8 @@ func buildMonitorDashboardJSON(uid, title string, panels []*monitormodel.Panel) 
 	}
 }
 
-// mapPanelType normalises opspilot's panel type into Grafana's. Today
-// they're 1:1, but we keep the indirection so future opspilot types
+// mapPanelType normalises ongrid's panel type into Grafana's. Today
+// they're 1:1, but we keep the indirection so future ongrid types
 // (e.g. "table") can map onto a Grafana variant or fall back to
 // timeseries.
 func mapPanelType(t string) string {

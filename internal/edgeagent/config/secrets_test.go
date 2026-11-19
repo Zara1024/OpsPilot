@@ -68,3 +68,4 @@ func TestLoadSecrets_EmptyFile(t *testing.T) {
 		t.Fatal("expected error for empty file, got nil")
 	}
 }
+

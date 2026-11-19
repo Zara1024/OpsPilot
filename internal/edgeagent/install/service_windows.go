@@ -54,7 +54,7 @@ func (sc *SCServiceController) Create(binPath string) error {
 	cmd := exec.Command(exe, "create", sc.name,
 		"binPath=", binPath,
 		"start=", "auto",
-		"DisplayName=", "OpsPilot Edge Agent",
+		"DisplayName=", "Ongrid Edge Agent",
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("sc.exe create: %w (output: %s)", err, out)
@@ -81,7 +81,7 @@ func (sc *SCServiceController) ConfigureRecovery() error {
 	return nil
 }
 
-// ConfigureDefenderExclusion 为 opspilot 目录添加 Windows Defender exclusion。
+// ConfigureDefenderExclusion 为 ongrid 目录添加 Windows Defender exclusion。
 // 仅在 Windows Server with Defender 时生效；
 // 第三方 AV 或 Defender 已禁用时返回 error，调用方仅 warn 不阻断。
 //

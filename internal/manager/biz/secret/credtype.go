@@ -30,7 +30,7 @@ type CredType struct {
 	// InjectEnv maps ENV_VAR -> "{{field}}" template. Empty for "custom"
 	// (each field injects as an env var of the same name).
 	InjectEnv map[string]string `json:"inject_env,omitempty"`
-	// Builtin marks types shipped by opspilot (vs pack-supplied later).
+	// Builtin marks types shipped by ongrid (vs pack-supplied later).
 	Builtin bool `json:"builtin"`
 }
 

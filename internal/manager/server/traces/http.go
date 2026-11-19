@@ -4,7 +4,7 @@
 // plane /v1/traces ingest route is auth_request-gated for OTLP push
 // only —).
 //
-// Routes mounted under /api/v1 by cmd/opspilot/main.go:
+// Routes mounted under /api/v1 by cmd/ongrid/main.go:
 //
 //	GET /v1/traces/search — proxy /api/search
 //	GET /v1/traces/{trace_id} — proxy /api/traces/<id>
@@ -48,8 +48,7 @@ func NewHandler(q Querier) *Handler {
 }
 
 // Register attaches routes on r. Caller must wrap r in the auth
-// middleware before calling — this handler trusts the caller is
-// authenticated (any role; traces are not org-scoped post-pivot).
+// middleware before calling. The querier must enforce built-in chat ownership.
 func (h *Handler) Register(r chi.Router) {
 	r.Get("/v1/traces/search", h.search)
 	r.Get("/v1/traces/tags/{tag}/values", h.tagValues)
@@ -166,12 +165,17 @@ func (h *Handler) getTrace(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	out, err := h.q.GetTrace(ctx, id)
 	if err != nil {
+		if errors.Is(err, errs.ErrNotFound) {
+			writeErr(w, http.StatusNotFound, http.StatusText(http.StatusNotFound))
+			return
+		}
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	// Tempo returns OTLP-shaped JSON; pass it through verbatim so the SPA
 	// can walk resourceSpans / scopeSpans / spans without a re-encode.
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(out.Body)
 }
@@ -220,6 +224,7 @@ func parseTime(s string) (time.Time, error) {
 
 func writeJSON(w http.ResponseWriter, code int, body any) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(body)
 }

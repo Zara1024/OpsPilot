@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/chatruntime"
+	chatruntime "github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/runtime/contract"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/report"
 )
 
@@ -74,7 +74,7 @@ func NewWorkerGenerator(repo Repo, facts FactsCollector, spawner WorkerSpawner, 
 		cfg.Timeout = 120 * time.Second
 	}
 	if cfg.DefaultLocale == "" {
-		cfg.DefaultLocale = "zh"
+		cfg.DefaultLocale = "en"
 	}
 	if log == nil {
 		log = slog.Default()
@@ -318,7 +318,7 @@ func localeDirective(locale string) string {
 	case "zh":
 		return "LANGUAGE: 叙事 headline、所有叙事段落、以及每条 advice 全部用简体中文撰写。"
 	default:
-		return "LANGUAGE: 叙事 headline、所有叙事段落、以及每条 advice 全部用简体中文撰写。"
+		return ""
 	}
 }
 

@@ -500,7 +500,7 @@ func compileLogQL(req SearchRequest) (string, error) {
 		}
 	}
 	if len(matchers) == 0 {
-		// Every Edge log stream is enriched with device_id. opspilot_source is
+		// Every Edge log stream is enriched with device_id. ongrid_source is
 		// optional and is absent from ordinary journald/file/Kubernetes streams,
 		// so using it as the required non-empty Loki matcher would leave only
 		// connection-check probe logs visible in an unfiltered search.

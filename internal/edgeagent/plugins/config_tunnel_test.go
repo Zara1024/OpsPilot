@@ -103,7 +103,8 @@ func TestTunnelConfigFetcherAppliesKubernetesLogsDefaults(t *testing.T) {
 	t.Setenv("OPSPILOT_K8S_ENROLL_TLS_INSECURE", "true")
 
 	client := &fakeTunnelClient{resp: tunnel.GetPluginConfigsResponse{
-		EdgeID: 100,
+		EdgeID:   999,
+		DeviceID: 100,
 		Configs: map[string]tunnel.GetPluginConfigsEntry{
 			"logs": {
 				Enabled: true, Endpoint: "https://127.0.0.1/loki/api/v1/push",
@@ -287,7 +288,7 @@ func TestTunnelConfigFetcherAppliesKubernetesGatewayTracesDefaults(t *testing.T)
 	t.Setenv("OPSPILOT_K8S_ROLE", "controller")
 	t.Setenv("OPSPILOT_K8S_MODE", "full-node")
 	t.Setenv("OPSPILOT_K8S_CLUSTER_ID", "9")
-	t.Setenv("OPSPILOT_K8S_POD_NAMESPACE", "opspilot-system")
+	t.Setenv("OPSPILOT_K8S_POD_NAMESPACE", "ongrid-system")
 	t.Setenv("OPSPILOT_K8S_TELEMETRY_GATEWAY_ENABLED", "true")
 	t.Setenv("OPSPILOT_MANAGER_PUBLIC_URL", "https://manager.example.com/")
 	t.Setenv("OPSPILOT_K8S_ENROLL_TLS_INSECURE", "true")
@@ -326,8 +327,8 @@ func TestTunnelConfigFetcherAppliesKubernetesGatewayTracesDefaults(t *testing.T)
 	if extra["telemetry_gateway"] != "kubernetes" {
 		t.Fatalf("extra_attrs.telemetry_gateway = %#v, want kubernetes", extra["telemetry_gateway"])
 	}
-	if extra["gateway_namespace"] != "opspilot-system" {
-		t.Fatalf("extra_attrs.gateway_namespace = %#v, want opspilot-system", extra["gateway_namespace"])
+	if extra["gateway_namespace"] != "ongrid-system" {
+		t.Fatalf("extra_attrs.gateway_namespace = %#v, want ongrid-system", extra["gateway_namespace"])
 	}
 }
 
@@ -529,7 +530,7 @@ func TestTunnelConfigFetcherMaterializesExternalElasticsearchSecret(t *testing.T
 				"backend_generation":        float64(3),
 				"elasticsearch_secret_slot": "elasticsearch_api_key",
 				"elasticsearch_ca_pem":      "test-ca",
-				"log_probe_id":              "opspilot-log-probe-abcdefghijklmnopqrstuvwx",
+				"log_probe_id":              "ongrid-log-probe-abcdefghijklmnopqrstuvwx",
 			}},
 		}},
 		secret: &tunnel.GetPluginSecretResponse{
@@ -599,7 +600,7 @@ func TestTunnelConfigFetcherMaterializesExternalElasticsearchSecret(t *testing.T
 	if err != nil {
 		t.Fatalf("read probe file: %v", err)
 	}
-	if string(probe) != "opspilot-log-probe-abcdefghijklmnopqrstuvwx\n" {
+	if string(probe) != "ongrid-log-probe-abcdefghijklmnopqrstuvwx\n" {
 		t.Fatalf("probe content = %q", probe)
 	}
 	if err := fetcher.ReportPluginConfigApplied(context.Background(), "logs", cfg, nil); err != nil {
@@ -728,8 +729,8 @@ func TestMaterializeLogsRuntimeUsesUniqueProbePathForSameGenerationRetry(t *test
 		return cfg, path
 	}
 
-	firstID := "opspilot-log-probe-abcdefghijklmnopqrstuvwx"
-	secondID := "opspilot-log-probe-zyxwvutsrqponmlkjihgfedc"
+	firstID := "ongrid-log-probe-abcdefghijklmnopqrstuvwx"
+	secondID := "ongrid-log-probe-zyxwvutsrqponmlkjihgfedc"
 	_, firstPath := materialize(firstID)
 	_, secondPath := materialize(secondID)
 	if firstPath == secondPath {

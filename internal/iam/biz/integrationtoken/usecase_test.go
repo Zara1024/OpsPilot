@@ -157,4 +157,3 @@ func TestLifecycleAndAuthority(t *testing.T) {
 	require.Error(t, err)
 	require.Empty(t, raw)
 }
-

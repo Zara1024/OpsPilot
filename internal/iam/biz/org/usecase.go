@@ -17,7 +17,7 @@ import (
 
 // defaultSeedName is the canonical name of the platform's single
 // top-level org. Service.Create auto-reparents new orgs under it when
-// no explicit parent is supplied; cmd/opspilot/main.go calls EnsureSeed
+// no explicit parent is supplied; cmd/ongrid/main.go calls EnsureSeed
 // with this name on boot. Kept as a const so the value can't drift
 // between the seed-side and the auto-reparent-side.
 const defaultSeedName = "默认组织"
@@ -63,7 +63,7 @@ type CreateInput struct {
 	Name        string
 	Description string
 	// ParentID nil → 顶级组织。非 nil 时必须指向已存在的 org。
-	ParentID *uint64
+	ParentID    *uint64
 }
 
 // Create validates + persists.
@@ -72,7 +72,7 @@ type CreateInput struct {
 // AND ONLY top-level org. Any new org without an explicit parent is
 // auto-reparented under the seed so the org tree always has a single
 // root. Without this, the UI's "create org" form which omits parent
-// produced rogue top-level orgs (observed in May 2026 — zara1024
+// produced rogue top-level orgs (observed in May 2026 — ongridio
 // appeared as a sibling of 默认组织 instead of a child).
 func (s *Service) Create(ctx context.Context, in CreateInput) (*model.Org, error) {
 	name := strings.TrimSpace(in.Name)

@@ -8,15 +8,15 @@ import (
 )
 
 // Migrate creates the IM bridge tables — im_apps for platform bot
-// credentials, im_threads for the IM-conversation → opspilot-session
-// mapping. cmd/opspilot wires this through dbx.RunMigrations at boot.
+// credentials, im_threads for the IM-conversation → ongrid-session
+// mapping. cmd/ongrid wires this through dbx.RunMigrations at boot.
 func Migrate(db *gorm.DB) error {
 	if dbx.NeedsDeleteMarkerMigration(db, model.ImApp{}.TableName()) {
 		if err := dbx.DropIndexes(db, &model.ImApp{}, "uk_provider_app_id"); err != nil {
 			return err
 		}
 	}
-	if err := db.AutoMigrate(&model.ImApp{}, &model.ImThread{}); err != nil {
+	if err := db.AutoMigrate(&model.ImApp{}, &model.ImThread{}, &model.ApprovalTarget{}, &model.ApprovalNotification{}, &model.BindingChallenge{}, &model.IdentityBinding{}, &model.ActionToken{}, &model.DecisionCommand{}, &model.DeliveryGate{}); err != nil {
 		return err
 	}
 	return dbx.BackfillDeleteMarker(db, model.ImApp{}.TableName())

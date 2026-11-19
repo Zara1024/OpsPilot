@@ -41,7 +41,7 @@ func TestCompileLogQLSearchSupportsPortableSelectorAndLineFilters(t *testing.T) 
 func TestCompileLogQLSearchPreservesExactLineFilterSemantics(t *testing.T) {
 	start := time.Date(2026, 8, 24, 1, 0, 0, 0, time.UTC)
 	req, err := CompileLogQLSearch(QueryRangeOptions{
-		Query: `{opspilot_source="kubernetes:pod",filename="/var/log/app.log"} |= "timeout" |= "upstream" != "health"`,
+		Query: `{ongrid_source="kubernetes:pod",filename="/var/log/app.log"} |= "timeout" |= "upstream" != "health"`,
 		Start: start, End: start.Add(time.Hour), Limit: 20,
 	})
 	if err != nil {
@@ -58,7 +58,7 @@ func TestCompileLogQLSearchPreservesExactLineFilterSemantics(t *testing.T) {
 func TestCompileLogQLSearchConvertsLegacySelectorPrefixes(t *testing.T) {
 	start := time.Date(2026, 8, 24, 1, 0, 0, 0, time.UTC)
 	req, err := CompileLogQLSearch(QueryRangeOptions{
-		Query: `{opspilot_source=~"journald:.+",namespace=~".+"} |~ "(?i)panic|oom|fatal"`,
+		Query: `{ongrid_source=~"journald:.+",namespace=~".+"} |~ "(?i)panic|oom|fatal"`,
 		Start: start, End: start.Add(time.Hour), Limit: 20,
 	})
 	if err != nil {
@@ -78,7 +78,7 @@ func TestCompileLogQLSearchConvertsLegacySelectorPrefixes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileLogQL() error = %v", err)
 	}
-	if !strings.Contains(lokiQuery, `opspilot_source=~"journald:.*"`) || !strings.Contains(lokiQuery, `namespace=~".+"`) {
+	if !strings.Contains(lokiQuery, `ongrid_source=~"journald:.*"`) || !strings.Contains(lokiQuery, `namespace=~".+"`) {
 		t.Fatalf("Loki prefix/exists query = %q", lokiQuery)
 	}
 	esQuery, err := buildElasticsearchQuery(req)
@@ -86,7 +86,7 @@ func TestCompileLogQLSearchConvertsLegacySelectorPrefixes(t *testing.T) {
 		t.Fatalf("buildElasticsearchQuery() error = %v", err)
 	}
 	esJSON := mustJSON(t, esQuery)
-	if !strings.Contains(esJSON, `"prefix":{"resource.attributes.opspilot_source":"journald:"}`) || !strings.Contains(esJSON, `"exists":{"field":"resource.attributes.namespace"}`) {
+	if !strings.Contains(esJSON, `"prefix":{"resource.attributes.ongrid_source":"journald:"}`) || !strings.Contains(esJSON, `"exists":{"field":"resource.attributes.namespace"}`) {
 		t.Fatalf("Elasticsearch prefix/exists query = %s", esJSON)
 	}
 }
@@ -114,7 +114,7 @@ func TestCompileLogQLSearchRejectsSyntaxThatCannotKeepItsMeaning(t *testing.T) {
 		{name: "metric expression", query: `sum(count_over_time({device_id="42"}[5m]))`},
 		{name: "parser stage", query: `{device_id="42"} | json | level="error"`},
 		{name: "arbitrary regex", query: `{device_id=~"4[0-9].*"} |= "error"`},
-		{name: "negative prefix", query: `{opspilot_source!~"journald:.*"} |= "error"`},
+		{name: "negative prefix", query: `{ongrid_source!~"journald:.*"} |= "error"`},
 		{name: "metric step", query: `{device_id="42"}`, step: time.Minute},
 		{name: "unknown label", query: `{job="api"} |= "error"`},
 	}

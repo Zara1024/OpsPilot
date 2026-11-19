@@ -15,7 +15,7 @@
 //
 // All callers then use the global tracer via otel.Tracer("opspilot").
 // HTTP middleware: wrap the chi router with otelhttp.NewMiddleware
-// (see cmd/opspilot/main.go for the wiring).
+// (see cmd/ongrid/main.go for the wiring).
 package tracing
 
 import (

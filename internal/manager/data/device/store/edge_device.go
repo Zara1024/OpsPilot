@@ -3,8 +3,8 @@ package store
 import (
 	"context"
 	"errors"
-
 	edgemodel "github.com/Zara1024/OpsPilot/internal/manager/model/edge"
+
 	"github.com/Zara1024/OpsPilot/internal/pkg/dbx"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -75,12 +75,7 @@ func (r *EdgeDeviceRepo) Link(ctx context.Context, edgeID, deviceID uint64, t mo
 			}
 		}
 		row := model.EdgeDevice{EdgeID: edgeID, DeviceID: deviceID, Type: t}
-		return tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{
-				{Name: "edge_id"}, {Name: "device_id"}, {Name: "type"}, {Name: "delete_marker"},
-			},
-			DoNothing: true,
-		}).Create(&row).Error
+		return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "edge_id"}, {Name: "device_id"}, {Name: "type"}, {Name: "delete_marker"}}, DoNothing: true}).Create(&row).Error
 	})
 }
 
@@ -111,10 +106,8 @@ func (r *EdgeDeviceRepo) LookupHostDevice(ctx context.Context, edgeID uint64) (u
 	return row.DeviceID, nil
 }
 
-// LookupEdgeForDevice resolves device_id → owning edge_id (for the given
-// relation type). When more than one edge has a junction to the same
-// device under the same type (a multi-agent host), the most recently
-// created junction wins.
+// LookupEdgeForDevice uses the authoritative current binding for Host execution.
+// Historical reverse links never determine the current installation.
 func (r *EdgeDeviceRepo) LookupEdgeForDevice(ctx context.Context, deviceID uint64, t model.EdgeDeviceRelationType) (uint64, error) {
 	if t == model.EdgeDeviceRelationHost {
 		var host model.Device
@@ -136,6 +129,7 @@ func (r *EdgeDeviceRepo) LookupEdgeForDevice(ctx context.Context, deviceID uint6
 		}
 		return link.EdgeID, nil
 	}
+
 	var row model.EdgeDevice
 	if err := dbx.WithContext(ctx, r.db).
 		Where("device_id = ? AND type = ?", deviceID, t).

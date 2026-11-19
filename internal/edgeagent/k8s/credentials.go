@@ -28,12 +28,9 @@ import (
 	"github.com/Zara1024/OpsPilot/internal/pkg/tunnel"
 )
 
-func k8sServiceAccountDir() string {
-	if d := strings.TrimSpace(edgeconfig.EnvOr("OPSPILOT_K8S_SERVICE_ACCOUNT_DIR", "")); d != "" {
-		return d
-	}
-	return "/var/run/secrets/kubernetes.io/serviceaccount"
-}
+const (
+	k8sServiceAccountDir = "/var/run/secrets/kubernetes.io/serviceaccount"
+)
 
 type k8sStoredCredential struct {
 	ClusterID        uint64 `json:"cluster_id"`
@@ -57,7 +54,7 @@ type k8sSecretClient struct {
 }
 
 func loadStoredK8sCredential(ctx context.Context, cfg *config.Config, info *tunnel.KubernetesInfo, log *slog.Logger) (*k8sStoredCredential, error) {
-	if filePath := strings.TrimSpace(os.Getenv("ONGRID_K8S_CREDENTIAL_FILE")); filePath != "" {
+	if filePath := strings.TrimSpace(os.Getenv("OPSPILOT_K8S_CREDENTIAL_FILE")); filePath != "" {
 		return loadStoredK8sCredentialFile(cfg, info, filePath, log)
 	}
 	client, err := newK8sSecretClient(info)
@@ -103,7 +100,7 @@ func loadStoredK8sCredential(ctx context.Context, cfg *config.Config, info *tunn
 }
 
 func storeK8sCredential(ctx context.Context, info *tunnel.KubernetesInfo, out k8sEnrollResponse, cfg *config.Config) error {
-	if filePath := strings.TrimSpace(os.Getenv("ONGRID_K8S_CREDENTIAL_FILE")); filePath != "" {
+	if filePath := strings.TrimSpace(os.Getenv("OPSPILOT_K8S_CREDENTIAL_FILE")); filePath != "" {
 		return storeK8sCredentialFile(info, out, cfg, filePath)
 	}
 	client, err := newK8sSecretClient(info)
@@ -140,7 +137,7 @@ func storeK8sCredential(ctx context.Context, info *tunnel.KubernetesInfo, out k8
 		telemetry := *out.Telemetry
 		applyManagerTelemetryTLS(&telemetry, out.ManagerPublicURL, telemetry.ManagerPublicURL)
 		telemetryClient := *client
-		if secretName := strings.TrimSpace(os.Getenv("ONGRID_K8S_TELEMETRY_SECRET")); secretName != "" {
+		if secretName := strings.TrimSpace(os.Getenv("OPSPILOT_K8S_TELEMETRY_SECRET")); secretName != "" {
 			telemetryClient.secretName = secretName
 		}
 		if err := telemetryClient.patchDataKeys(ctx, telemetrySecretData(telemetry)); err != nil {
@@ -161,7 +158,7 @@ func storeK8sTelemetryConfig(ctx context.Context, info *tunnel.KubernetesInfo, t
 	if client == nil {
 		return fmt.Errorf("kubernetes credential secret client is unavailable")
 	}
-	if secretName := strings.TrimSpace(os.Getenv("ONGRID_K8S_TELEMETRY_SECRET")); secretName != "" {
+	if secretName := strings.TrimSpace(os.Getenv("OPSPILOT_K8S_TELEMETRY_SECRET")); secretName != "" {
 		client.secretName = secretName
 	}
 	desired := telemetrySecretData(telemetry)
@@ -186,7 +183,7 @@ func loadK8sTelemetryCredential(ctx context.Context, info *tunnel.KubernetesInfo
 	if client == nil {
 		return "", "", false, fmt.Errorf("kubernetes credential secret client is unavailable")
 	}
-	if secretName := strings.TrimSpace(os.Getenv("ONGRID_K8S_TELEMETRY_SECRET")); secretName != "" {
+	if secretName := strings.TrimSpace(os.Getenv("OPSPILOT_K8S_TELEMETRY_SECRET")); secretName != "" {
 		client.secretName = secretName
 	}
 	data, found, err := client.getData(ctx)
@@ -316,7 +313,7 @@ func k8sCredentialKey(info *tunnel.KubernetesInfo) string {
 }
 
 func newK8sSecretClient(info *tunnel.KubernetesInfo) (*k8sSecretClient, error) {
-	secretName := strings.TrimSpace(os.Getenv("ONGRID_K8S_CREDENTIAL_SECRET"))
+	secretName := strings.TrimSpace(os.Getenv("OPSPILOT_K8S_CREDENTIAL_SECRET"))
 	if secretName == "" {
 		return nil, nil
 	}
@@ -333,7 +330,7 @@ func newK8sSecretClient(info *tunnel.KubernetesInfo) (*k8sSecretClient, error) {
 	}
 	namespace := strings.TrimSpace(info.Namespace)
 	if namespace == "" {
-		raw, err := os.ReadFile(path.Join(k8sServiceAccountDir(), "namespace"))
+		raw, err := os.ReadFile(path.Join(k8sServiceAccountDir, "namespace"))
 		if err != nil {
 			return nil, fmt.Errorf("read serviceaccount namespace: %w", err)
 		}
@@ -342,7 +339,7 @@ func newK8sSecretClient(info *tunnel.KubernetesInfo) (*k8sSecretClient, error) {
 	if namespace == "" {
 		return nil, fmt.Errorf("k8s credential namespace is empty")
 	}
-	tokenRaw, err := os.ReadFile(path.Join(k8sServiceAccountDir(), "token"))
+	tokenRaw, err := os.ReadFile(path.Join(k8sServiceAccountDir, "token"))
 	if err != nil {
 		return nil, fmt.Errorf("read serviceaccount token: %w", err)
 	}
@@ -351,7 +348,7 @@ func newK8sSecretClient(info *tunnel.KubernetesInfo) (*k8sSecretClient, error) {
 		return nil, fmt.Errorf("serviceaccount token is empty")
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	caRaw, err := os.ReadFile(path.Join(k8sServiceAccountDir(), "ca.crt"))
+	caRaw, err := os.ReadFile(path.Join(k8sServiceAccountDir, "ca.crt"))
 	if err == nil && len(caRaw) > 0 {
 		pool := x509.NewCertPool()
 		if pool.AppendCertsFromPEM(caRaw) {
@@ -494,7 +491,7 @@ func dataContainsValues(current, desired map[string][]byte) bool {
 // Manager-origin signals only. External backends keep the TLS policy resolved
 // by Manager from their integration settings.
 func applyManagerTelemetryTLS(in *k8sTelemetryConfig, managerURLs ...string) {
-	if in == nil || !edgeconfig.EnvBool("ONGRID_K8S_ENROLL_TLS_INSECURE", false) {
+	if in == nil || !edgeconfig.EnvBool("OPSPILOT_K8S_ENROLL_TLS_INSECURE", false) {
 		return
 	}
 	managerOrigins := make([]*url.URL, 0, len(managerURLs))
@@ -552,7 +549,7 @@ func LoadAppMetricsScope(ctx context.Context, info *tunnel.KubernetesInfo) (auto
 	if client == nil {
 		return autoapm.MetricsScope{}, nil
 	}
-	client.secretName = edgeconfig.EnvOr("ONGRID_K8S_TELEMETRY_SECRET", client.secretName)
+	client.secretName = edgeconfig.EnvOr("OPSPILOT_K8S_TELEMETRY_SECRET", client.secretName)
 	data, _, err := client.getData(ctx)
 	if err != nil {
 		return autoapm.MetricsScope{}, err

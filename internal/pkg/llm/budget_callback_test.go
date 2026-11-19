@@ -14,14 +14,14 @@ import (
 
 // recordingChecker is a BudgetChecker stub for the callback tests.
 type recordingChecker struct {
-	limit       int   // 0 = unlimited
-	used        int   // accumulated by Record
-	checks      int   // # of Check calls
-	records     int   // # of Record calls
-	lastUsage   Usage // last Usage seen by Record
-	lastEst     int   // last estPromptTokens passed to Check
-	checkErr    error // override Check return
-	recordError error // override Record return
+	limit       int        // 0 = unlimited
+	used        int        // accumulated by Record
+	checks      int        // # of Check calls
+	records     int        // # of Record calls
+	lastUsage   Usage      // last Usage seen by Record
+	lastEst     int        // last estPromptTokens passed to Check
+	checkErr    error      // override Check return
+	recordError error      // override Record return
 }
 
 func (r *recordingChecker) Check(_ context.Context, _ uint64, est int) error {

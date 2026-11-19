@@ -8,7 +8,7 @@ import (
 )
 
 // Migrate registers the manager/edge model with gorm's AutoMigrate. It is
-// dialect-agnostic and suitable for both MySQL and SQLite; cmd/opspilot wires
+// dialect-agnostic and suitable for both MySQL and SQLite; cmd/ongrid wires
 // it through dbx.RunMigrations at startup.
 func Migrate(db *gorm.DB) error {
 	if dbx.NeedsDeleteMarkerMigration(db, model.Edge{}.TableName()) {

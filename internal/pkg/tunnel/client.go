@@ -23,7 +23,7 @@ import (
 
 // NewClient returns a Client backed by github.com/singchia/geminio. The
 // underlying geminio RetryEnd re-dials transparently on connection loss;
-// this wrapper adds opspilot-shaped APIs (JSON encoding, slog, method-named
+// this wrapper adds ongrid-shaped APIs (JSON encoding, slog, method-named
 // Handler signature) and controls the first-dial backoff.
 func NewClient(cfg ClientConfig) Client {
 	log := cfg.Log

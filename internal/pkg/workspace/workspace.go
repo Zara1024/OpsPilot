@@ -11,7 +11,7 @@
 //     (holds IaC state, git checkouts, etc.). [P2 — not yet wired.]
 //
 // A skill like terraform-runner then runs inside the agent's workspace
-// (cwd = the session dir) instead of inventing its own /var/lib/opspilot/iac
+// (cwd = the session dir) instead of inventing its own /var/lib/ongrid/iac
 // directory — the executor supplies the cwd, the skill stays directory-blind.
 package workspace
 

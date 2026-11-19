@@ -90,7 +90,7 @@ var RestartServiceSchema = json.RawMessage(`{
     "device_id": {"type": "integer", "description": "Device id to restart on (same id as the @-mention chip and the Prom device_id label)."},
     "service": {
       "type": "string",
-      "enum": ["nginx", "redis", "prometheus", "loki", "tempo", "grafana", "mysql", "ongrid"],
+      "enum": ["nginx", "redis", "prometheus", "loki", "tempo", "grafana", "mysql", "opspilot"],
       "description": "Systemd unit short name (no .service suffix)."
     },
     "reason": {"type": "string", "description": "Why the restart is being requested. Written verbatim to the audit row; encouraged for post-mortem trail."}
@@ -102,7 +102,7 @@ var RestartServiceSchema = json.RawMessage(`{
 // sandbox. Exported so the reviewer / SPA approval UI can render the
 // same list without duplicating the literal.
 var AllowedRestartServices = []string{
-	"nginx", "redis", "prometheus", "loki", "tempo", "grafana", "mysql", "ongrid",
+	"nginx", "redis", "prometheus", "loki", "tempo", "grafana", "mysql", "opspilot",
 }
 
 // allowedRestartServicesSet is the lookup form, computed once at

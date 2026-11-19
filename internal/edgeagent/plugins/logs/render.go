@@ -32,9 +32,9 @@ var (
 	selectedPodLogPattern = regexp.MustCompile(`^/var/log/pods/[a-z0-9][a-z0-9-]*_(\*|[a-zA-Z0-9][a-zA-Z0-9.-]*)_(\*|[a-zA-Z0-9][a-zA-Z0-9.-]*)/(\*|[a-z0-9][a-z0-9-]*)/\*\.log$`)
 	sourceIDPattern       = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
 	resourceKeyRegex      = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9._-]{0,127}$`)
-	datasetPattern        = regexp.MustCompile(`^opspilot\.[a-z0-9][a-z0-9._-]{0,91}$`)
+	datasetPattern        = regexp.MustCompile(`^ongrid\.[a-z0-9][a-z0-9._-]{0,91}$`)
 	namespacePattern      = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,99}$`)
-	logsProbeIDPattern    = regexp.MustCompile(`^opspilot-log-probe-[A-Za-z0-9_-]{20,64}$`)
+	logsProbeIDPattern    = regexp.MustCompile(`^ongrid-log-probe-[A-Za-z0-9_-]{20,64}$`)
 )
 
 type fileSource struct {
@@ -177,9 +177,9 @@ func render(cfg plugins.PluginConfig) ([]byte, error) {
 		if err := validateLogPattern(probeFile); err != nil {
 			return nil, fmt.Errorf("logs plugin: probe file: %w", err)
 		}
-		const receiverID = "filelog/opspilot-probe"
+		const receiverID = "filelog/ongrid-probe"
 		receivers[receiverID] = fileReceiver(cfg.EdgeID, fileSource{
-			ID: "opspilot-probe", ServiceName: "opspilot-edge", Include: []string{probeFile}, Parser: "plain", StartAt: "beginning",
+			ID: "ongrid-probe", ServiceName: "opspilot-edge", Include: []string{probeFile}, Parser: "plain", StartAt: "beginning",
 		})
 		receiverIDs = append(receiverIDs, receiverID)
 	}
@@ -209,7 +209,7 @@ func render(cfg plugins.PluginConfig) ([]byte, error) {
 		fmt.Sprintf(`replace_pattern(log.body, %s, "$1=<redacted>") where IsString(log.body)`, strconv.Quote(sensitiveBodyPattern)),
 		fmt.Sprintf(`delete_matching_keys(log.attributes, %s)`, strconv.Quote(sensitiveAttributeKeyPattern)),
 		fmt.Sprintf(`delete_matching_keys(resource.attributes, %s)`, strconv.Quote(sensitiveAttributeKeyPattern)),
-		`limit(log.attributes, 64, ["log.file.path", "systemd.unit", "opspilot.probe_id"])`,
+		`limit(log.attributes, 64, ["log.file.path", "systemd.unit", "ongrid.probe_id"])`,
 		`truncate_all(log.attributes, 4096)`,
 		`set(log.attributes["systemd.unit"], log.attributes["_SYSTEMD_UNIT"]) where log.attributes["_SYSTEMD_UNIT"] != nil`,
 	)
@@ -284,7 +284,7 @@ func render(cfg plugins.PluginConfig) ([]byte, error) {
 			"pipelines":  pipelines,
 			"telemetry": map[string]interface{}{
 				"resource": map[string]interface{}{
-					"opspilot.plugin": "logs", "opspilot.backend": backend,
+					"ongrid.plugin": "logs", "ongrid.backend": backend,
 				},
 				"logs": map[string]interface{}{"level": "info", "encoding": "json"},
 				"metrics": map[string]interface{}{
@@ -353,7 +353,7 @@ func levelDetectionStatements() []string {
 }
 
 func journaldReceiver(spec map[string]interface{}, edgeID uint64, startAt string) map[string]interface{} {
-	resource := map[string]interface{}{"device_id": strconv.FormatUint(edgeID, 10), "opspilot_source": "journald"}
+	resource := map[string]interface{}{"device_id": strconv.FormatUint(edgeID, 10), "ongrid_source": "journald"}
 	operators := resourceAddOperators(resource)
 	operators = append(operators, map[string]interface{}{
 		"id": "journald-message", "type": "move", "from": "body.MESSAGE", "to": "body",
@@ -374,17 +374,17 @@ func journaldReceiver(spec map[string]interface{}, edgeID uint64, startAt string
 
 func kubernetesReceiver(spec map[string]interface{}, edgeID uint64, clusterID, nodeName string, podPaths []string, startAt string) map[string]interface{} {
 	resource := map[string]interface{}{
-		"device_id": strconv.FormatUint(edgeID, 10), "cluster_id": clusterID, "opspilot_source": "kubernetes:pod",
+		"device_id": strconv.FormatUint(edgeID, 10), "cluster_id": clusterID, "ongrid_source": "kubernetes:pod",
 	}
 	if nodeName != "" {
 		resource["k8s.node.name"] = nodeName
 	}
 	excludes := normalizedStrings(stringSlice(spec, "pod_log_exclude"), maxSourcePatterns)
 	excludes = append(excludes,
-		"/var/log/pods/opspilot-system_opspilot-node-*/*/*.log",
-		"/var/log/pods/opspilot_opspilot-node-*/*/*.log",
-		"/var/log/pods/opspilot-system_opspilot-edge-node-*/*/*.log",
-		"/var/log/pods/opspilot_opspilot-edge-node-*/*/*.log",
+		"/var/log/pods/ongrid-system_ongrid-node-*/*/*.log",
+		"/var/log/pods/ongrid_ongrid-node-*/*/*.log",
+		"/var/log/pods/ongrid-system_opspilot-edge-node-*/*/*.log",
+		"/var/log/pods/ongrid_opspilot-edge-node-*/*/*.log",
 	)
 	if ownPod := stringSpec(spec, "pod_log_self_exclude"); ownPod != "" {
 		excludes = append(excludes, ownPod)
@@ -414,9 +414,9 @@ const (
 
 func kubernetesLogOperators() []map[string]interface{} {
 	const (
-		stream = `attributes.opspilot_java.stream`
-		line   = `attributes.opspilot_java.line`
-		tail   = `attributes.opspilot_java.tail`
+		stream = `attributes.ongrid_java.stream`
+		line   = `attributes.ongrid_java.line`
+		tail   = `attributes.ongrid_java.tail`
 		// Docker includes its line ending in body. Keep the original body for single records.
 		plainLine = `trimSuffix(trimSuffix(body, "\n"), "\r")`
 	)
@@ -445,13 +445,13 @@ func kubernetesLogOperators() []map[string]interface{} {
 		{"id": "java-header-body", "type": "add", "field": line, "if": tail + ` != "" && ` + header,
 			"value": `EXPR(` + line + ` + "\n" + ` + tail + `)`},
 		{"id": "java-body", "type": "add", "if": line + " != " + plainLine, "field": "body", "value": "EXPR(" + line + ")"},
-		{"type": "remove", "field": "attributes.opspilot_java"},
+		{"type": "remove", "field": "attributes.ongrid_java"},
 	}
 }
 
 func fileReceiver(edgeID uint64, source fileSource) map[string]interface{} {
 	resource := map[string]interface{}{
-		"device_id": strconv.FormatUint(edgeID, 10), "opspilot_source": source.ID,
+		"device_id": strconv.FormatUint(edgeID, 10), "ongrid_source": source.ID,
 	}
 	if source.ServiceName != "" {
 		resource["service.name"] = source.ServiceName
@@ -562,9 +562,9 @@ func commonResourceActions(cfg plugins.PluginConfig, spec map[string]interface{}
 }
 
 func backendResourceActions(spec map[string]interface{}, backend string) ([]interface{}, error) {
-	actions := []interface{}{resourceAction("opspilot.backend", backend)}
+	actions := []interface{}{resourceAction("ongrid.backend", backend)}
 	if generation := strings.TrimSpace(stringSpec(spec, "backend_generation")); generation != "" {
-		actions = append(actions, resourceAction("opspilot.backend_generation", generation))
+		actions = append(actions, resourceAction("ongrid.backend_generation", generation))
 	}
 	if backend != backendExternalES {
 		return actions, nil
@@ -812,7 +812,7 @@ func parseFileSource(entry map[string]interface{}, defaultStartAt string) (fileS
 		return fileSource{}, errors.New("service_name is too long")
 	}
 	if source.Dataset != "" && !datasetPattern.MatchString(source.Dataset) {
-		return fileSource{}, errors.New("dataset must match opspilot.<safe-slug>")
+		return fileSource{}, errors.New("dataset must match ongrid.<safe-slug>")
 	}
 	source.Include = normalizedStrings(stringSliceOrScalar(entry, "include"), maxSourcePatterns)
 	source.Exclude = normalizedStrings(stringSliceOrScalar(entry, "exclude"), maxSourcePatterns)

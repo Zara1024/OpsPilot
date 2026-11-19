@@ -521,7 +521,7 @@ func TestClient_BindAndUnbindTransport(t *testing.T) {
 		t.Fatalf("canonicalizeEdgeID after unbind = %d, want 0 (unknown sentinel)", got)
 	}
 	if got, ok := c.resolveTransportID(2); ok {
-		t.Fatalf("resolveTransportID after unbind = %d, want no mapping", got)
+		t.Fatalf("resolveTransportID after unbind = %d, true, want no mapping", got)
 	}
 	if c.isKubernetesController(2) {
 		t.Fatal("unbound edge should not remain tracked as a Kubernetes controller")

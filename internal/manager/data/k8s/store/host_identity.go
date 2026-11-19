@@ -165,4 +165,3 @@ func nodeHostFingerprint(clusterID uint64, identity string) string {
 func sameUserID(a, b *uint64) bool {
 	return a == nil && b == nil || a != nil && b != nil && *a == *b
 }
-

@@ -24,7 +24,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "opspilot-prometheus"
+        "uid": "ongrid-prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -110,7 +110,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "opspilot-prometheus"
+            "uid": "ongrid-prometheus"
           },
           "editorMode": "code",
           "expr": "100 * (1 - avg by (edge_id) (rate(node_cpu_seconds_total{edge_id=\"$edge_id\",mode=\"idle\"}[5m])))",
@@ -125,7 +125,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "opspilot-prometheus"
+        "uid": "ongrid-prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -211,7 +211,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "opspilot-prometheus"
+            "uid": "ongrid-prometheus"
           },
           "editorMode": "code",
           "expr": "100 * (1 - (node_memory_MemAvailable_bytes{edge_id=\"$edge_id\"} / node_memory_MemTotal_bytes{edge_id=\"$edge_id\"}))",
@@ -226,7 +226,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "opspilot-prometheus"
+        "uid": "ongrid-prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -310,7 +310,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "opspilot-prometheus"
+            "uid": "ongrid-prometheus"
           },
           "editorMode": "code",
           "expr": "node_load1{edge_id=\"$edge_id\"}",
@@ -325,7 +325,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "opspilot-prometheus"
+        "uid": "ongrid-prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -392,7 +392,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "opspilot-prometheus"
+            "uid": "ongrid-prometheus"
           },
           "editorMode": "code",
           "expr": "sum by (edge_id) (rate(node_network_receive_bytes_total{edge_id=\"$edge_id\"}[5m]))",
@@ -407,7 +407,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "opspilot-prometheus"
+        "uid": "ongrid-prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -493,7 +493,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "opspilot-prometheus"
+            "uid": "ongrid-prometheus"
           },
           "editorMode": "code",
           "expr": "100 * (1 - node_filesystem_avail_bytes{edge_id=\"$edge_id\"} / node_filesystem_size_bytes{edge_id=\"$edge_id\"})",
@@ -508,7 +508,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "opspilot-prometheus"
+        "uid": "ongrid-prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -575,7 +575,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "opspilot-prometheus"
+            "uid": "ongrid-prometheus"
           },
           "editorMode": "code",
           "expr": "rate(node_network_receive_bytes_total{edge_id=\"$edge_id\"}[5m])",
@@ -586,7 +586,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "opspilot-prometheus"
+            "uid": "ongrid-prometheus"
           },
           "editorMode": "code",
           "expr": "rate(node_network_transmit_bytes_total{edge_id=\"$edge_id\"}[5m])",
@@ -601,7 +601,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "opspilot-prometheus"
+        "uid": "ongrid-prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -685,7 +685,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "opspilot-prometheus"
+            "uid": "ongrid-prometheus"
           },
           "editorMode": "code",
           "expr": "node_load1{edge_id=\"$edge_id\"}",
@@ -696,7 +696,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "opspilot-prometheus"
+            "uid": "ongrid-prometheus"
           },
           "editorMode": "code",
           "expr": "node_load5{edge_id=\"$edge_id\"}",
@@ -707,7 +707,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "opspilot-prometheus"
+            "uid": "ongrid-prometheus"
           },
           "editorMode": "code",
           "expr": "node_load15{edge_id=\"$edge_id\"}",
@@ -736,7 +736,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "opspilot-prometheus"
+          "uid": "ongrid-prometheus"
         },
         "definition": "label_values(node_load1, edge_id)",
         "hide": 0,
@@ -765,7 +765,7 @@
   "timepicker": {},
   "timezone": "browser",
   "title": "服务器详情",
-  "uid": "opspilot-server-detail",
+  "uid": "ongrid-server-detail",
   "version": 1,
   "weekStart": ""
 }

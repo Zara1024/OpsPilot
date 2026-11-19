@@ -3,7 +3,7 @@
 // 前置）和 --self-rename（验证运行中进程能否 rename 自己的 .exe）。
 // 三种模式：
 //   - 默认：sleep 60s 然后退出 0（模拟运行中的 supervisor.exe 被外部 rename）
-//   - --version：输出 "opspilot-dummy v0.0.1" 并退出 0（模拟 supervisor --version）
+//   - --version：输出 "ongrid-dummy v0.0.1" 并退出 0（模拟 supervisor --version）
 //   - --self-rename <path>：尝试 os.Rename(path, path+".old")，
 //     通过 stdout JSON 报告结果后立即退出（验证进程内自 rename 语义）
 //
@@ -25,7 +25,7 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Println("opspilot-dummy v0.0.1")
+		fmt.Println("ongrid-dummy v0.0.1")
 		return
 	}
 

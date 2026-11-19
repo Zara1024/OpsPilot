@@ -35,14 +35,14 @@ type Sink interface {
 // listing + admin kill. Mirrors what's interesting from the audit row
 // without needing a DB hit per request.
 type ActiveSession struct {
-	SessionID      string
-	OpsPilotUserID uint64
-	SSHUser        string
-	SSHPort        uint16
-	DeviceID       uint64
-	EdgeID         uint64
-	StartedAt      time.Time
-	LastInputAt    time.Time // updated on every browser → edge frame
+	SessionID    string
+	OngridUserID uint64
+	SSHUser      string
+	SSHPort      uint16
+	DeviceID     uint64
+	EdgeID       uint64
+	StartedAt    time.Time
+	LastInputAt  time.Time // updated on every browser → edge frame
 }
 
 // Killer is what Sink also implements when the bridge wants to be
@@ -119,7 +119,7 @@ func (r *Router) CountByUser(userID uint64) int {
 	defer r.mu.RUnlock()
 	n := 0
 	for _, m := range r.meta {
-		if m.OpsPilotUserID == userID {
+		if m.OngridUserID == userID {
 			n++
 		}
 	}
@@ -204,7 +204,7 @@ func (r *Router) StdoutBytes(sid string) uint64 {
 }
 
 // Recorder is the narrow audit surface. *data/webshell/store.Repo
-// satisfies it via the small adapter in cmd/opspilot wiring.
+// satisfies it via the small adapter in cmd/ongrid wiring.
 type Recorder interface {
 	Open(ctx context.Context, s *wsmodel.Session) error
 	SetHostFingerprint(ctx context.Context, sessionID, fingerprint string) error

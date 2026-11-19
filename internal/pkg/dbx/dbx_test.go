@@ -110,7 +110,7 @@ func TestDatabaseCollection_ExtractsSafeTableNames(t *testing.T) {
 	}{
 		{"SELECT * FROM `users` WHERE id = 1", "SELECT", "users"},
 		{"INSERT INTO audit_events (id) VALUES (1)", "INSERT", "audit_events"},
-		{"UPDATE `opspilot`.`devices` SET name = 'x'", "UPDATE", "devices"},
+		{"UPDATE `ongrid`.`devices` SET name = 'x'", "UPDATE", "devices"},
 		{"DELETE FROM sessions WHERE id = 1", "DELETE", "sessions"},
 		{"SELECT 1", "SELECT", ""},
 		{"SELECT * FROM users;DROP", "SELECT", ""},
@@ -126,7 +126,7 @@ func TestOpen_DefaultsToMySQL(t *testing.T) {
 	// Empty Dialect should route to the MySQL branch. We only assert that
 	// we hit the MySQL ping failure (no server available in tests) and not
 	// the "unsupported dialect" path; the error message is the contract.
-	cfg := config.DBConfig{DSN: "opspilot:opspilot@tcp(127.0.0.1:1)/opspilot"}
+	cfg := config.DBConfig{DSN: "ongrid:ongrid@tcp(127.0.0.1:1)/ongrid"}
 	_, err := Open(cfg, nil)
 	if err == nil {
 		t.Fatal("expected error (no mysql reachable), got nil")
@@ -149,6 +149,18 @@ func TestOpen_UnsupportedDialect(t *testing.T) {
 	}
 	if !contains(err.Error(), "unsupported dialect") {
 		t.Errorf("error = %q, want to contain %q", err.Error(), "unsupported dialect")
+	}
+}
+
+func TestOpen_RejectsInvalidMySQLPoolBeforeDial(t *testing.T) {
+	for _, limits := range [][2]int{{-1, 10}, {50, -1}, {5, 10}} {
+		_, err := Open(config.DBConfig{
+			DSN:          "ongrid:test@tcp(127.0.0.1:1)/ongrid",
+			MaxOpenConns: limits[0], MaxIdleConns: limits[1],
+		}, nil)
+		if err == nil || !contains(err.Error(), "mysql pool requires") {
+			t.Fatalf("limits %v: %v, want pool validation error", limits, err)
+		}
 	}
 }
 
@@ -214,8 +226,8 @@ func TestRedactDSN(t *testing.T) {
 		in, want string
 	}{
 		{
-			in:   "opspilot:opspilot@tcp(127.0.0.1:3306)/opspilot?parseTime=true",
-			want: "opspilot:***@tcp(127.0.0.1:3306)/opspilot?parseTime=true",
+			in:   "ongrid:ongrid@tcp(127.0.0.1:3306)/ongrid?parseTime=true",
+			want: "ongrid:***@tcp(127.0.0.1:3306)/ongrid?parseTime=true",
 		},
 		{
 			in:   "root:hunter2@tcp(mysql:3306)/db",

@@ -5,7 +5,6 @@ package server
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -17,9 +16,7 @@ import (
 
 	"github.com/Zara1024/OpsPilot/internal/iam/model"
 	"github.com/Zara1024/OpsPilot/internal/iam/service"
-	bizaudit "github.com/Zara1024/OpsPilot/internal/manager/biz/audit"
-	auditmodel "github.com/Zara1024/OpsPilot/internal/manager/model/audit"
-	auditmw "github.com/Zara1024/OpsPilot/internal/manager/server/middleware"
+	"github.com/Zara1024/OpsPilot/internal/pkg/auditctx"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 	"github.com/Zara1024/OpsPilot/internal/pkg/tenantctx"
 )
@@ -188,7 +185,7 @@ func (h *Handler) RegisterProtected(r chi.Router) {
 type registerReq struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
-	// 安全加固（C-6/H-11）：公网注册严禁指定角色，移除并忽略客户端传入角色
+	Role     string `json:"role,omitempty"`
 }
 
 type userDTO struct {
@@ -225,20 +222,15 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	// 安全加固（LOW-01）：登录入口前置长度校验，超长直接返回 400 Bad Request，防止算力消耗
-	if len(in.Password) > 128 || len(in.Email) > 128 {
-		writeErr(w, fmt.Errorf("%w: password or email exceeds max length of 128 characters", errs.ErrInvalid))
-		return
-	}
 	ip := clientIP(r)
 	emailKey := strings.ToLower(strings.TrimSpace(in.Email))
 	if err := h.throttle.check(ip, emailKey); err != nil {
-		auditmw.SetAuditEvent(r, bizaudit.Event{
-			Action:       auditmodel.ActionAuthLoginFailed,
-			ResourceType: auditmodel.ResourceAuth,
+		auditctx.SetAuditEvent(r, auditctx.Event{
+			Action:       auditctx.ActionAuthLoginFailed,
+			ResourceType: auditctx.ResourceAuth,
 			ResourceID:   emailKey,
 			UserEmail:    emailKey,
-			Status:       auditmodel.StatusFailure,
+			Status:       auditctx.StatusFailure,
 			ErrorMessage: "rate limited",
 		})
 		writeErr(w, err)
@@ -249,12 +241,12 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		h.throttle.recordFailure(ip, emailKey)
 		// HLD-010: record failed login. UserID stays nil; email comes
 		// from request body so we can spot password-spraying patterns.
-		auditmw.SetAuditEvent(r, bizaudit.Event{
-			Action:       auditmodel.ActionAuthLoginFailed,
-			ResourceType: auditmodel.ResourceAuth,
+		auditctx.SetAuditEvent(r, auditctx.Event{
+			Action:       auditctx.ActionAuthLoginFailed,
+			ResourceType: auditctx.ResourceAuth,
 			ResourceID:   emailKey,
 			UserEmail:    emailKey,
-			Status:       auditmodel.StatusFailure,
+			Status:       auditctx.StatusFailure,
 			ErrorMessage: err.Error(),
 		})
 		writeErr(w, err)
@@ -302,23 +294,17 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	// 安全加固（LOW-03）：注册接口入参严格长度校验，防止超长数据探测与拒绝服务
-	if len(in.Password) > 128 || len(in.Email) > 128 {
-		writeErr(w, fmt.Errorf("%w: password or email exceeds max length of 128 characters", errs.ErrInvalid))
-		return
-	}
-	// 安全加固（C-6/H-11）：强制赋予默认安全普通角色，严禁透传客户端传入角色
-	u, err := h.svc.Register(r.Context(), in.Email, in.Password, "")
+	u, err := h.svc.Register(r.Context(), in.Email, in.Password, in.Role)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	auditmw.SetAuditEvent(r, bizaudit.Event{
-		Action:       auditmodel.ActionUserCreate,
-		ResourceType: auditmodel.ResourceUser,
+	auditctx.SetAuditEvent(r, auditctx.Event{
+		Action:       auditctx.ActionUserCreate,
+		ResourceType: auditctx.ResourceUser,
 		ResourceID:   strconv.FormatUint(u.ID, 10),
 		ResourceName: u.Email,
-		Status:       auditmodel.StatusSuccess,
+		Status:       auditctx.StatusSuccess,
 		Payload:      map[string]any{"role": u.Role},
 	})
 	writeJSON(w, http.StatusCreated, userDTO{ID: u.ID, Email: u.Email, Role: u.Role})
@@ -367,11 +353,11 @@ func (h *Handler) deleteUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	auditmw.SetAuditEvent(r, bizaudit.Event{
-		Action:       auditmodel.ActionUserDelete,
-		ResourceType: auditmodel.ResourceUser,
+	auditctx.SetAuditEvent(r, auditctx.Event{
+		Action:       auditctx.ActionUserDelete,
+		ResourceType: auditctx.ResourceUser,
 		ResourceID:   strconv.FormatUint(id, 10),
-		Status:       auditmodel.StatusSuccess,
+		Status:       auditctx.StatusSuccess,
 	})
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -394,21 +380,11 @@ func (h *Handler) setRole(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	// 联动同步组织成员角色及 Casbin 权限：当降级为 viewer 时，组织角色同步调整为 viewer
-	if in.Role == model.RoleViewer {
-		if ms := h.svc.Memberships(); ms != nil {
-			if userMemberships, err := ms.ListByUser(r.Context(), id); err == nil {
-				for _, m := range userMemberships {
-					_, _ = ms.AddOrUpdate(r.Context(), id, m.OrgID, "viewer")
-				}
-			}
-		}
-	}
-	auditmw.SetAuditEvent(r, bizaudit.Event{
-		Action:       auditmodel.ActionUserUpdate,
-		ResourceType: auditmodel.ResourceUser,
+	auditctx.SetAuditEvent(r, auditctx.Event{
+		Action:       auditctx.ActionUserUpdate,
+		ResourceType: auditctx.ResourceUser,
 		ResourceID:   strconv.FormatUint(id, 10),
-		Status:       auditmodel.StatusSuccess,
+		Status:       auditctx.StatusSuccess,
 		Payload:      map[string]any{"field": "role", "new_role": in.Role},
 	})
 	w.WriteHeader(http.StatusNoContent)
@@ -455,10 +431,5 @@ func writeJSON(w http.ResponseWriter, code int, body any) {
 }
 
 func writeErr(w http.ResponseWriter, err error) {
-	status := errs.HTTPStatus(err)
-	if status == http.StatusTooManyRequests {
-		// 安全加固（429无Retry-After）：当触发频率限制时，标准注入 Retry-After 响应头，指示客户端 60 秒后重试
-		w.Header().Set("Retry-After", "60")
-	}
-	http.Error(w, err.Error(), status)
+	http.Error(w, err.Error(), errs.HTTPStatus(err))
 }

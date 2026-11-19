@@ -16,7 +16,7 @@ import (
 // flushAt or every batchSz rows, whichever comes first (writes).
 //
 // Push is non-blocking: when bufCh fills past capacity the oldest entry
-// is evicted and an opspilot_ingest_dropped_total{reason="buffer_full"}
+// is evicted and an ongrid_ingest_dropped_total{reason="buffer_full"}
 // counter is incremented. Metrics are lossy-OK; callers do not retry.
 //
 // Flusher goroutine retries failed writes with 100ms / 500ms / 2s
@@ -58,10 +58,10 @@ var flushBackoffs = []time.Duration{
 
 // ingestMetrics is the owned prometheus counter/histogram handle set.
 type ingestMetrics struct {
-	writes     *prometheus.CounterVec // label: result=success|fail
-	flushFails *prometheus.CounterVec // label: reason
-	dropped    *prometheus.CounterVec // label: reason
-	batchSize  prometheus.Histogram   // observed batch size on flush
+	writes     *prometheus.CounterVec   // label: result=success|fail
+	flushFails *prometheus.CounterVec   // label: reason
+	dropped    *prometheus.CounterVec   // label: reason
+	batchSize  prometheus.Histogram     // observed batch size on flush
 }
 
 // NewIngester builds an Ingester with defaults and registers its
@@ -75,19 +75,19 @@ func NewIngester(w Writer, reg *prometheus.Registry, log *slog.Logger) *Ingester
 
 	m := &ingestMetrics{
 		writes: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "opspilot_ingest_writes_total",
+			Name: "ongrid_ingest_writes_total",
 			Help: "Host-metric ingest batches persisted, labelled by flush result.",
 		}, []string{"result"}),
 		flushFails: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "opspilot_ingest_flush_failures_total",
+			Name: "ongrid_ingest_flush_failures_total",
 			Help: "Host-metric ingest batches that exhausted retries.",
 		}, []string{"reason"}),
 		dropped: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "opspilot_ingest_dropped_total",
+			Name: "ongrid_ingest_dropped_total",
 			Help: "Host-metric points dropped before flush.",
 		}, []string{"reason"}),
 		batchSize: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name:    "opspilot_ingest_batch_size",
+			Name:    "ongrid_ingest_batch_size",
 			Help:    "Size of host-metric batches at flush time.",
 			Buckets: []float64{10, 50, 100, 250, 500},
 		}),

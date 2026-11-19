@@ -126,6 +126,7 @@ func detachKubernetesControllerHosts(db *gorm.DB) error {
 	}
 
 	return db.Transaction(func(tx *gorm.DB) error {
+
 		if err := tx.Where("edge_id IN ? AND type = ?", controllerEdgeIDs, model.EdgeDeviceRelationHost).
 			Delete(&model.EdgeDevice{}).Error; err != nil {
 			return fmt.Errorf("detach kubernetes controller host links: %w", err)

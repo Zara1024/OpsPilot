@@ -24,7 +24,7 @@ func (r *Repo) CreateCredential(ctx context.Context, credential *webshell.Creden
 func (r *Repo) ListCredentials(ctx context.Context, userID, deviceID uint64) ([]*webshell.Credential, error) {
 	var out []*webshell.Credential
 	err := r.db.WithContext(ctx).
-		Where("opspilot_user_id = ? AND device_id = ?", userID, deviceID).
+		Where("ongrid_user_id = ? AND device_id = ?", userID, deviceID).
 		Order("label asc").Find(&out).Error
 	return out, err
 }
@@ -32,7 +32,7 @@ func (r *Repo) ListCredentials(ctx context.Context, userID, deviceID uint64) ([]
 func (r *Repo) GetCredential(ctx context.Context, id, userID, deviceID uint64) (*webshell.Credential, error) {
 	var out webshell.Credential
 	err := r.db.WithContext(ctx).
-		Where("id = ? AND opspilot_user_id = ? AND device_id = ?", id, userID, deviceID).
+		Where("id = ? AND ongrid_user_id = ? AND device_id = ?", id, userID, deviceID).
 		First(&out).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, errs.ErrNotFound
@@ -42,7 +42,7 @@ func (r *Repo) GetCredential(ctx context.Context, id, userID, deviceID uint64) (
 
 func (r *Repo) DeleteCredential(ctx context.Context, id, userID, deviceID uint64) error {
 	res := r.db.WithContext(ctx).
-		Where("id = ? AND opspilot_user_id = ? AND device_id = ?", id, userID, deviceID).
+		Where("id = ? AND ongrid_user_id = ? AND device_id = ?", id, userID, deviceID).
 		Delete(&webshell.Credential{})
 	if res.Error != nil {
 		return res.Error
@@ -55,14 +55,14 @@ func (r *Repo) DeleteCredential(ctx context.Context, id, userID, deviceID uint64
 
 func (r *Repo) MarkCredentialUsed(ctx context.Context, id, userID, deviceID uint64, at time.Time) error {
 	return r.db.WithContext(ctx).Model(&webshell.Credential{}).
-		Where("id = ? AND opspilot_user_id = ? AND device_id = ?", id, userID, deviceID).
+		Where("id = ? AND ongrid_user_id = ? AND device_id = ?", id, userID, deviceID).
 		Update("last_used_at", at).Error
 }
 
 func (r *Repo) GetKnownHost(ctx context.Context, userID, deviceID uint64, port uint16) (*webshell.KnownHost, error) {
 	var out webshell.KnownHost
 	err := r.db.WithContext(ctx).
-		Where("opspilot_user_id = ? AND device_id = ? AND ssh_port = ?", userID, deviceID, port).
+		Where("ongrid_user_id = ? AND device_id = ? AND ssh_port = ?", userID, deviceID, port).
 		First(&out).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, errs.ErrNotFound
@@ -76,7 +76,7 @@ func (r *Repo) CreateKnownHost(ctx context.Context, host *webshell.KnownHost) er
 
 func (r *Repo) DeleteKnownHost(ctx context.Context, userID, deviceID uint64, port uint16) error {
 	return r.db.WithContext(ctx).
-		Where("opspilot_user_id = ? AND device_id = ? AND ssh_port = ?", userID, deviceID, port).
+		Where("ongrid_user_id = ? AND device_id = ? AND ssh_port = ?", userID, deviceID, port).
 		Delete(&webshell.KnownHost{}).Error
 }
 

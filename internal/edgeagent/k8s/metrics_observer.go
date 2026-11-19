@@ -43,27 +43,27 @@ func newMetricsObserver(reg prometheus.Registerer) (*metricsObserver, error) {
 		return observer, nil
 	}
 	observer.scrapeSamples = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "opspilot_edge_k8s_metrics_scrape_samples_total",
+		Name: "ongrid_edge_k8s_metrics_scrape_samples_total",
 		Help: "Kubernetes metrics samples admitted by the edge streaming scraper.",
 	}, []string{"source"})
 	observer.scrapeLimitExceeded = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "opspilot_edge_k8s_metrics_scrape_limit_exceeded_total",
+		Name: "ongrid_edge_k8s_metrics_scrape_limit_exceeded_total",
 		Help: "Kubernetes metrics scrapes stopped after exceeding the configured sample limit.",
 	}, []string{"source"})
 	observer.pushBatches = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "opspilot_edge_k8s_metrics_push_batches_total",
+		Name: "ongrid_edge_k8s_metrics_push_batches_total",
 		Help: "Kubernetes metrics batches sent to the configured data-plane sink, partitioned by result.",
 	}, []string{"source", "result"})
 	observer.pushSamples = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "opspilot_edge_k8s_metrics_push_samples_total",
+		Name: "ongrid_edge_k8s_metrics_push_samples_total",
 		Help: "Kubernetes metrics samples sent to the configured data-plane sink, partitioned by result.",
 	}, []string{"source", "result"})
 	observer.lastSuccess = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "opspilot_edge_k8s_metrics_last_success_timestamp_seconds",
+		Name: "ongrid_edge_k8s_metrics_last_success_timestamp_seconds",
 		Help: "Unix timestamp of the last complete Kubernetes metrics scrape and data-plane write.",
 	}, []string{"source"})
 	observer.scrapeDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "opspilot_edge_k8s_metrics_scrape_duration_seconds",
+		Name:    "ongrid_edge_k8s_metrics_scrape_duration_seconds",
 		Help:    "End-to-end duration of a Kubernetes metrics scrape and data-plane write.",
 		Buckets: []float64{0.1, 0.25, 0.5, 1, 2.5, 5, 10, 15, 30},
 	}, []string{"source"})

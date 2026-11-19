@@ -716,9 +716,6 @@ func newInClusterAPIClient() (*apiClient, error) {
 	}
 	serviceAccountDir := strings.TrimSpace(os.Getenv("OPSPILOT_K8S_SERVICE_ACCOUNT_DIR"))
 	if serviceAccountDir == "" {
-		serviceAccountDir = strings.TrimSpace(os.Getenv("ONGRID_K8S_SERVICE_ACCOUNT_DIR"))
-	}
-	if serviceAccountDir == "" {
 		serviceAccountDir = defaultServiceAccountDir
 	}
 	tokenBytes, err := os.ReadFile(filepath.Join(serviceAccountDir, "token"))

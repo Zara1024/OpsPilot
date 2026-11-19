@@ -376,7 +376,7 @@ func (h *Handler) getIncidentInvestigation(w http.ResponseWriter, r *http.Reques
 			"incident_id": id,
 			"status":      "feature_disabled",
 			"status_reason": "investigator not wired on this manager " +
-				"(set ONGRID_INVESTIGATOR_ENABLED=true and configure an LLM)",
+				"(set OPSPILOT_INVESTIGATOR_ENABLED=true and configure an LLM)",
 		})
 		return
 	}
@@ -417,7 +417,7 @@ func (h *Handler) triggerIncidentInvestigation(w http.ResponseWriter, r *http.Re
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"incident_id":   id,
 			"status":        "feature_disabled",
-			"status_reason": "investigator not wired on this manager (set ONGRID_INVESTIGATOR_ENABLED=true and configure an LLM)",
+			"status_reason": "investigator not wired on this manager (set OPSPILOT_INVESTIGATOR_ENABLED=true and configure an LLM)",
 		})
 		return
 	}
@@ -1038,7 +1038,7 @@ func localeFromRequest(r *http.Request) string {
 // getRuntimeInfo exposes the alert pipeline's runtime cadence knobs so
 // the SPA can show operators "this rule evaluates every N minutes" without
 // the operator having to read env vars. Values come from env at startup
-// (ONGRID_ALERT_EVAL_INTERVAL / ONGRID_ALERT_COOLDOWN) — they're per-
+// (OPSPILOT_ALERT_EVAL_INTERVAL / OPSPILOT_ALERT_COOLDOWN) — they're per-
 // deployment, not per-rule, so the SPA shows them as a global banner /
 // chip rather than per-rule editable fields.
 func (h *Handler) getRuntimeInfo(w http.ResponseWriter, r *http.Request) {

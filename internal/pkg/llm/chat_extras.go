@@ -14,8 +14,7 @@ import (
 
 // The SDK drops Gemini thought signatures in extra_content. Preserve them in
 // private history and replay only against the unchanged assistant message.
-const chatExtrasPrefix = "opspilot:chat-extras:v1:"
-const legacyChatExtrasPrefix = "ongrid:chat-extras:v1:"
+const chatExtrasPrefix = "ongrid:chat-extras:v1:"
 
 type chatExtrasHistory struct {
 	Model   string          `json:"model"`
@@ -26,17 +25,11 @@ func restoreChatExtras(payload any, chat openai.ChatCompletionRequest) (any, err
 	var messages []map[string]json.RawMessage
 	var fields map[string]json.RawMessage
 	for i, message := range chat.Messages {
-		pfx := ""
-		if strings.HasPrefix(message.ReasoningContent, chatExtrasPrefix) {
-			pfx = chatExtrasPrefix
-		} else if strings.HasPrefix(message.ReasoningContent, legacyChatExtrasPrefix) {
-			pfx = legacyChatExtrasPrefix
-		}
-		if pfx == "" {
+		if !strings.HasPrefix(message.ReasoningContent, chatExtrasPrefix) {
 			continue
 		}
 		var history chatExtrasHistory
-		if err := json.Unmarshal([]byte(strings.TrimPrefix(message.ReasoningContent, pfx)), &history); err != nil {
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(message.ReasoningContent, chatExtrasPrefix)), &history); err != nil {
 			return nil, fmt.Errorf("chat signature history: %w", err)
 		}
 		var recorded openai.ChatCompletionMessage

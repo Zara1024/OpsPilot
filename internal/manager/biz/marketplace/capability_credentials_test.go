@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/chatruntime"
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/runtime/v3/chatruntime"
 )
 
 // TestBuildCapabilityDeclaration_BareSkillCredentials guards the terraform-runner
@@ -30,7 +30,7 @@ metadata:
         inject:
           env:
             TF_VAR_secret_id: "{{secret_id}}"
-  opspilot:
+  ongrid:
     scope: manager
     activation:
       mode: keyword

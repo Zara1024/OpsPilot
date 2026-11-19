@@ -38,7 +38,7 @@ du -xh --max-depth=1 /var 2>/dev/null | sort -hr | head -15
 du -xh --max-depth=1 /var/log 2>/dev/null | sort -hr | head -15
 ```
 
-opspilot 用户优先用专用工具（速度快 + 自带覆盖率检查）：
+ongrid 用户优先用专用工具（速度快 + 自带覆盖率检查）：
 
 ```
 host_du_summary(device_id=N, paths=["/", "/var", "/opt", "/home"], depth=1)
@@ -54,8 +54,8 @@ host_du_summary(device_id=N, paths=["/", "/var", "/opt", "/home"], depth=1)
 find / -xdev -type f -size +100M -printf '%s\t%p\n' 2>/dev/null \
   | sort -rn | head -20
 
-# opspilot 工具
-# host_find_large_files(device_id=N, path="/var", size_gt_mb=100, top_n=20)
+# ongrid 工具
+# host_find_large_files(device_id=N, paths=["/var"], min_size_bytes=104857600, top_n=20)
 ```
 
 常见大头清单（按概率排）：

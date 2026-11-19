@@ -28,37 +28,13 @@ var (
 	keyWeak bool // true only when neither configured secret is usable
 )
 
-const legacyFallback = "opspilot-insecure-default-secret-key-set-OPSPILOT_SECRET_KEY"
-
-func getSecret() string {
-	if s := strings.TrimSpace(os.Getenv("OPSPILOT_SECRET_KEY")); s != "" {
-		return s
-	}
-	return strings.TrimSpace(os.Getenv("ONGRID_SECRET_KEY"))
-}
-
-func getJWT() string {
-	if s := strings.TrimSpace(os.Getenv("OPSPILOT_JWT_SECRET")); s != "" {
-		return s
-	}
-	return strings.TrimSpace(os.Getenv("ONGRID_JWT_SECRET"))
-}
-
-func getKey() ([32]byte, bool) {
-	keyOnce.Do(func() {
-		keyVal, keyWeak = deriveKey(getSecret(), getJWT())
-	})
-	if keyWeak {
-		if k, weak := deriveKey(getSecret(), getJWT()); !weak {
-			keyVal, keyWeak = k, weak
-		}
-	}
-	return keyVal, keyWeak
-}
+const legacyFallback = "ongrid-insecure-default-secret-key-set-OPSPILOT_SECRET_KEY"
 
 // loadKey derives the 32-byte AES key from the configured secret source.
 func loadKey() {
-	getKey()
+	keyOnce.Do(func() {
+		keyVal, keyWeak = deriveKey(os.Getenv("OPSPILOT_SECRET_KEY"), os.Getenv("OPSPILOT_JWT_SECRET"))
+	})
 }
 
 // deriveKey keeps OPSPILOT_SECRET_KEY as the preferred independent key. A normal
@@ -71,15 +47,15 @@ func deriveKey(secret, jwt string) ([32]byte, bool) {
 	}
 	jwt = strings.TrimSpace(jwt)
 	if jwt != "" && jwt != "dev-insecure-secret-change-me" && jwt != "change-me-to-a-long-random-string" {
-		return sha256.Sum256([]byte("opspilot-secretbox-v1:" + jwt)), false
+		return sha256.Sum256([]byte("ongrid-secretbox-v1:" + jwt)), false
 	}
 	return sha256.Sum256([]byte(legacyFallback)), true
 }
 
 // KeyIsWeak reports whether neither a dedicated nor a real JWT secret exists.
 func KeyIsWeak() bool {
-	_, weak := getKey()
-	return weak
+	loadKey()
+	return keyWeak
 }
 
 // Encrypt seals plaintext with AES-256-GCM and returns the versioned,
@@ -89,8 +65,8 @@ func Encrypt(plaintext string) (string, error) {
 	if plaintext == "" {
 		return "", nil
 	}
-	key, _ := getKey()
-	block, err := aes.NewCipher(key[:])
+	loadKey()
+	block, err := aes.NewCipher(keyVal[:])
 	if err != nil {
 		return "", err
 	}
@@ -116,12 +92,12 @@ func Decrypt(enc string) (string, error) {
 	if !strings.HasPrefix(enc, prefix) {
 		return enc, nil // legacy plaintext — read through
 	}
-	key, _ := getKey()
+	loadKey()
 	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(enc, prefix))
 	if err != nil {
 		return "", fmt.Errorf("secretbox: base64: %w", err)
 	}
-	block, err := aes.NewCipher(key[:])
+	block, err := aes.NewCipher(keyVal[:])
 	if err != nil {
 		return "", err
 	}
@@ -138,10 +114,10 @@ func Decrypt(enc string) (string, error) {
 		// Rows written before JWT-derived fallback support used the fixed key.
 		// Read them without forcing an operator migration; all new writes use the
 		// stronger derived key when a real JWT secret is available.
-		jwtKey, jwtWeak := deriveKey("", getJWT())
+		jwtKey, jwtWeak := deriveKey("", os.Getenv("OPSPILOT_JWT_SECRET"))
 		legacy := sha256.Sum256([]byte(legacyFallback))
 		for _, candidate := range [][32]byte{jwtKey, legacy} {
-			if (candidate == jwtKey && jwtWeak) || candidate == key {
+			if (candidate == jwtKey && jwtWeak) || candidate == keyVal {
 				continue
 			}
 			candidateBlock, blockErr := aes.NewCipher(candidate[:])

@@ -13,7 +13,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// Claims is the JWT payload used by opspilot. It embeds RegisteredClaims so
+// Claims is the JWT payload used by ongrid. It embeds RegisteredClaims so
 // standard fields (exp, iat, sub, ...) are signed too.
 //
 // IsSuperuser is the system-administrator flag (independent of Role and
@@ -29,7 +29,7 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-// Signer issues and verifies opspilot JWTs.
+// Signer issues and verifies ongrid JWTs.
 type Signer struct {
 	secret     []byte
 	accessTTL  time.Duration

@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	telemetryBackendLabel                = "opspilot.io/telemetry-backend"
+	telemetryBackendLabel                = "ongrid.io/telemetry-backend"
 	kubernetesStrategicMergePatchContent = "application/strategic-merge-patch+json"
 	defaultUpgradePollInterval           = time.Second
 )

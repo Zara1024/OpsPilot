@@ -26,7 +26,7 @@ import (
 )
 
 // Authenticator is the narrow contract this handler needs. The concrete
-// implementation lives in cmd/opspilot wiring so this package does not depend
+// implementation lives in cmd/ongrid wiring so this package does not depend
 // on either the edge identity or Kubernetes telemetry credential domain.
 type Authenticator interface {
 	AuthenticateDataPlane(ctx context.Context, accessKey, secretKey string) (Identity, error)
@@ -67,7 +67,7 @@ func (h *Handler) RegisterAt(r chi.Router, path string) {
 func (h *Handler) verify(w http.ResponseWriter, r *http.Request) {
 	user, pass, ok := parseBasicAuth(r.Header.Get("Authorization"))
 	if !ok {
-		w.Header().Set("WWW-Authenticate", `Basic realm="opspilot-data-plane"`)
+		w.Header().Set("WWW-Authenticate", `Basic realm="ongrid-data-plane"`)
 		http.Error(w, "missing or malformed Authorization header", http.StatusUnauthorized)
 		return
 	}

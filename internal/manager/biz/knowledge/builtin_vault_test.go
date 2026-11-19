@@ -37,11 +37,11 @@ func TestBuiltinVault_Embedded(t *testing.T) {
 
 func TestIsBuiltinVaultURL(t *testing.T) {
 	cases := map[string]bool{
-		BuiltinVaultURL:                           true,
-		"  builtin://vault  ":                     true,
-		"BUILTIN://VAULT":                         true,
-		"https://github.com/zara1024/vault.git": false,
-		"": false,
+		BuiltinVaultURL:                         true,
+		"  builtin://vault  ":                   true,
+		"BUILTIN://VAULT":                       true,
+		"https://github.com/ongridio/vault.git": false,
+		"":                                      false,
 	}
 	for in, want := range cases {
 		if got := IsBuiltinVaultURL(in); got != want {

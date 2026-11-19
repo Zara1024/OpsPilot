@@ -1,6 +1,6 @@
 // Package llm is the real OpenAI-backed chat/tool-calling client.
 //
-// Red line: no provider abstraction â€?interface follows OpenAI's
+// Red line: no provider abstraction — interface follows OpenAI's
 // shape. SDK is github.com/sashabaranov/go-openai.
 //
 // Red line: Prom metric labels MUST NOT contain user_id / org_id /
@@ -40,7 +40,7 @@ var (
 
 // defaultTimeout is the fallback for callers that build a Chat request
 // without putting a deadline on their context. 120s is the project-wide
-// unification floor â€?short enough that a stuck request still gives up
+// unification floor — short enough that a stuck request still gives up
 // on a human-grade timescale, long enough that the slowest mainstream
 // reasoning model finishes a tool-rich turn without false-failing
 // (Anthropic Opus 4.x extended, DeepSeek v4 reasoning, GPT-5.x). The
@@ -114,7 +114,7 @@ type Usage struct {
 // ChatReq is the input to Client.Chat.
 //
 // Provider is the optional provider override (e.g. "openai", "anthropic",
-// "zhipu", "gemini"). Empty â†?router uses the default provider. The
+// "zhipu", "gemini"). Empty → router uses the default provider. The
 // non-multi-provider single-client path ignores Provider.
 type ChatReq struct {
 	ReasoningEffort string
@@ -213,7 +213,7 @@ func New(cfg Config, budget BudgetChecker, reg *prometheus.Registry) Client {
 // fall back to cfg, which itself was env-seeded at startup.
 //
 // When the effective API key is empty (neither resolver nor cfg has one),
-// Chat returns ErrNoAPIKey â€?the same behaviour as the noop client.
+// Chat returns ErrNoAPIKey — the same behaviour as the noop client.
 func NewWithResolver(cfg Config, resolver Resolver, budget BudgetChecker, reg *prometheus.Registry) Client {
 	log := slog.Default().With(slog.String("component", "llm"))
 
@@ -224,7 +224,7 @@ func NewWithResolver(cfg Config, resolver Resolver, budget BudgetChecker, reg *p
 	// With no resolver and no env key, fall back to noop so callers see a
 	// clean ErrNoAPIKey instead of a confusing 401 from the OpenAI SDK.
 	if resolver == nil && cfg.APIKey == "" {
-		log.Warn("OPENAI_API_KEY empty and no Resolver wired â€?returning noop client; Chat will fail with ErrNoAPIKey")
+		log.Warn("OPENAI_API_KEY empty and no Resolver wired — returning noop client; Chat will fail with ErrNoAPIKey")
 		return &noopClient{}
 	}
 
@@ -258,7 +258,7 @@ type openaiClient struct {
 	resolvedAt time.Time
 
 	// noSampling records models discovered at runtime to reject custom
-	// sampling params (temperature / top_p / n / penalties) â€?the OpenAI
+	// sampling params (temperature / top_p / n / penalties) — the OpenAI
 	// reasoning families (o-series, gpt-5.x) fix these at 1/0 and 400 on any
 	// other value. Seeded reactively from CreateChatCompletion's "params
 	// fixed at 1" rejection so every later call for that model proactively
@@ -319,8 +319,8 @@ func (c *openaiClient) effectiveCreds(ctx context.Context) (string, string, stri
 // For Zhipu (open.bigmodel.cn) we install a custom HTTP transport that
 // rewrites Authorization to a freshly-signed JWT on every request
 // (raw <id>.<secret>) gets rejected by Zhipu's v4 endpoints with
-// 401). The SDK's static apiKey field becomes irrelevant â€?our
-// transport always overrides â€?but we still feed it the raw key so the
+// 401). The SDK's static apiKey field becomes irrelevant — our
+// transport always overrides — but we still feed it the raw key so the
 // (apiKey, baseURL) cache key stays stable across calls.
 func (c *openaiClient) sdkFor(apiKey, baseURL string) *openai.Client {
 	baseURL = normalizeOpenAIBaseURL(baseURL)
@@ -352,20 +352,20 @@ func (c *openaiClient) sdkFor(apiKey, baseURL string) *openai.Client {
 
 // normalizeOpenAIBaseURL prepares a user-supplied base URL for the
 // go-openai SDK. The SDK builds every request as
-// TrimRight(BaseURL,"/") + "/chat/completions" â€?it does NOT insert a
+// TrimRight(BaseURL,"/") + "/chat/completions" — it does NOT insert a
 // "/v1" version segment. OpenAI's own default base URL already ends in
 // "/v1", and so does every hosted provider's documented endpoint, so the
 // SDK works as long as the configured base URL carries that segment.
 //
 // Operators pointing the Custom (OpenAI-compatible) provider at a local
 // Ollama / LM Studio / vLLM box routinely paste just the bare address
-// they use everywhere else â€?e.g. "http://192.168.8.5:11434". The SDK
+// they use everywhere else — e.g. "http://192.168.8.5:11434". The SDK
 // then POSTs to ".../chat/completions", which Ollama serves nothing on
 // (its OpenAI-compatible route is "/v1/chat/completions"), so the request
 // 404s and the chat surfaces a "stream error". When the base URL has no
 // path of its own we append "/v1" so the request lands on the
 // OpenAI-compatible route. A URL that already carries a path (".../v1",
-// ".../openai", a gateway prefix) is trusted verbatim â€?named providers
+// ".../openai", a gateway prefix) is trusted verbatim — named providers
 // whose defaults include "/v1" are therefore untouched.
 func normalizeOpenAIBaseURL(raw string) string {
 	s := strings.TrimSpace(raw)
@@ -399,7 +399,7 @@ func (t *zhipuJWTTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	if err != nil {
 		return nil, err
 	}
-	// Clone first â€?Go's RoundTripper contract forbids mutating the
+	// Clone first — Go's RoundTripper contract forbids mutating the
 	// request the caller passed in (some HTTP middleware reuses it).
 	cloned := req.Clone(req.Context())
 	cloned.Header.Set("Authorization", "Bearer "+token)
@@ -432,7 +432,7 @@ func (c *openaiClient) Chat(ctx context.Context, req ChatReq) (result *ChatResp,
 	if c.budget != nil {
 		if err := c.budget.Check(ctx, req.UserID, estimatePromptTokens(req.Messages)); err != nil {
 			c.metrics.requestsTotal.WithLabelValues(model, "budget_exceeded").Inc()
-			// Never log user content â€?we only note the fact and the user bucket.
+			// Never log user content — we only note the fact and the user bucket.
 			c.log.Warn("llm budget check refused",
 				slog.Uint64("user_id", req.UserID),
 				slog.String("model", model),
@@ -451,7 +451,7 @@ func (c *openaiClient) Chat(ctx context.Context, req ChatReq) (result *ChatResp,
 		effort = "default"
 	}
 	// Record the request choice, not an inferred provider compute budget.
-	span.SetAttributes(attribute.String("opspilot.llm.reasoning_effort", effort))
+	span.SetAttributes(attribute.String("ongrid.llm.reasoning_effort", effort))
 	if !callbackOwned {
 		tracing.RecordAgentContent(span, "input.value", sdkReq.Messages)
 	}
@@ -475,7 +475,7 @@ func (c *openaiClient) Chat(ctx context.Context, req ChatReq) (result *ChatResp,
 	// temperature/top_p/n at 1 and penalties at 0, and 400 on any other
 	// value. If that's what we hit AND we actually sent a sampling param,
 	// remember the model, strip the params, and retry once. Safe: this is
-	// still the single completion call â€?no tool has executed yet, so the
+	// still the single completion call — no tool has executed yet, so the
 	// no-retry-on-tools rule below does not apply.
 	if err != nil && isSamplingParamError(err) && hasCustomSampling(sdkReq) {
 		c.rememberNoSampling(model)
@@ -489,7 +489,7 @@ func (c *openaiClient) Chat(ctx context.Context, req ChatReq) (result *ChatResp,
 	c.metrics.requestSeconds.WithLabelValues(model).Observe(dur.Seconds())
 
 	if err != nil {
-		// 5. Error path â€?no Record, no retry (tools not idempotent).
+		// 5. Error path — no Record, no retry (tools not idempotent).
 		c.metrics.requestsTotal.WithLabelValues(model, "error").Inc()
 		c.log.Error("llm chat completion failed",
 			slog.String("model", model),
@@ -540,7 +540,7 @@ func (c *openaiClient) Chat(ctx context.Context, req ChatReq) (result *ChatResp,
 		}
 	}
 
-	// 8. Structured log â€?NEVER the message content; only shape + usage.
+	// 8. Structured log — NEVER the message content; only shape + usage.
 	c.log.Info("llm chat completion",
 		slog.String("model", model),
 		slog.Uint64("user_id", req.UserID),
@@ -689,8 +689,10 @@ func fromOpenAIMessage(m openai.ChatCompletionMessage) (Message, error) {
 // reactively by isSamplingParamError + the noSampling cache.
 //
 // Covered families:
-//   - OpenAI o-series: o1, o1-mini, o3, o3-mini, o4-mini, â€?//   - GPT-5 family: gpt-5, gpt-5.5, gpt-5-mini, gpt-5.6-sol, â€?(all reasoning)
-//   - Kimi K2/K3 families: kimi-k2.5, kimi-k2.6, kimi-k3, â€?//   - Any name tagged "reasoner"/"reasoning" (e.g. deepseek-reasoner)
+//   - OpenAI o-series: o1, o1-mini, o3, o3-mini, o4-mini, …
+//   - GPT-5 family: gpt-5, gpt-5.5, gpt-5-mini, gpt-5.6-sol, … (all reasoning)
+//   - Kimi K2/K3 families: kimi-k2.5, kimi-k2.6, kimi-k3, …
+//   - Any name tagged "reasoner"/"reasoning" (e.g. deepseek-reasoner)
 func isReasoningModel(model string) bool {
 	m := strings.ToLower(strings.TrimSpace(model))
 	if m == "" {
@@ -737,9 +739,9 @@ func (c *openaiClient) rememberNoSampling(model string) {
 }
 
 // isSamplingParamError reports whether err is a provider 400 rejecting a
-// sampling param (temperature/top_p/n/penalties) as unsupported/fixed â€?the
+// sampling param (temperature/top_p/n/penalties) as unsupported/fixed — the
 // signature of a reasoning model. Matched on message text because the shape
-// differs across the OpenAI-compatible gateways we front (dmxapi, Azure, â€?.
+// differs across the OpenAI-compatible gateways we front (dmxapi, Azure, …).
 func isSamplingParamError(err error) bool {
 	if err == nil {
 		return false

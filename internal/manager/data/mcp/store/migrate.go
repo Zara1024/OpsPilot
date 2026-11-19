@@ -7,7 +7,7 @@ import (
 )
 
 // Migrate AutoMigrates the mcp_servers table. Registered in
-// cmd/opspilot/main.go alongside the other data-package migrations.
+// cmd/ongrid/main.go alongside the other data-package migrations.
 func Migrate(db *gorm.DB) error {
 	return db.AutoMigrate(&model.Server{})
 }

@@ -164,7 +164,7 @@ tshark -r /tmp/cap.pcap -Y 'tcp.analysis.zero_window'
 tshark -r /tmp/cap.pcap -Y 'tcp.flags.reset == 1'
 ```
 
-## opspilot 工具提示
+## ongrid 工具提示
 
 - 派 `specialist-network`：自带 `host_probe_dns / host_probe_tcp / host_probe_http` 三件套，比手敲 nc/dig/curl 快
 - 路由 / 网卡查看：`host_bash` 跑 `ip route`、`ip -s link`、`iptables -L -n`

@@ -111,7 +111,7 @@ func TestTailFile_Execute_InvalidParams(t *testing.T) {
 
 func TestTailFile_Execute_NotFound(t *testing.T) {
 	// 用 os.TempDir 拼路径，保证跨平台绝对路径（Windows 上 /tmp/... 不是 absolute）
-	notExistPath := filepath.Join(os.TempDir(), "this-file-does-not-exist-opspilot-test")
+	notExistPath := filepath.Join(os.TempDir(), "this-file-does-not-exist-ongrid-test")
 	params, _ := json.Marshal(map[string]any{
 		"path": notExistPath,
 	})

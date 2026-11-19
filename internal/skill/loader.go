@@ -40,7 +40,7 @@ type SkillManifest struct {
 	EnvAllow []string `json:"env_allow,omitempty"`
 
 	// TimeoutSeconds caps the subprocess runtime. Zero falls back to
-	// DefaultSubprocessTimeout (30s).
+	// DefaultSubprocessTimeout (5m).
 	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
 
 	// Class follows the same {safe, mutating, dangerous} taxonomy as
@@ -58,7 +58,7 @@ type LoaderConfig struct {
 	// files. Each directory's tree is walked recursively; we register
 	// every skill.json we find. Non-absolute or non-existent paths are
 	// skipped (with a log line) rather than erroring out — a fresh
-	// install with no /etc/opspilot/skills directory should boot fine.
+	// install with no /etc/ongrid/skills directory should boot fine.
 	Dirs []string
 
 	// Logger receives one entry per registered / skipped manifest so

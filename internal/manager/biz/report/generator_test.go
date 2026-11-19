@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/chatruntime"
+	chatruntime "github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/runtime/contract"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/report"
 )
 

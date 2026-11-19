@@ -70,7 +70,7 @@ func TestUnprotect_EmptyInput_ReturnsError(t *testing.T) {
 
 // TestProtect_LargeInput 验证大块数据（1MB+）正确加密解密。
 func TestProtect_LargeInput(t *testing.T) {
-	plaintext := bytes.Repeat([]byte("OPSPILOT"), 200*1024) // ~1.2MB
+	plaintext := bytes.Repeat([]byte("ONGRID"), 200*1024) // ~1.2MB
 	encrypted, err := Protect(plaintext)
 	if err != nil {
 		t.Fatalf("Protect 1MB+ failed: %v", err)

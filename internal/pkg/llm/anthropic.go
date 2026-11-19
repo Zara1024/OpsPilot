@@ -14,8 +14,7 @@ import (
 
 // Signed thinking blocks stay in the private reasoning field and are replayed
 // only to the same model with unchanged visible text and tool calls.
-const anthropicHistoryPrefix = "opspilot:anthropic:v1:"
-const legacyAnthropicHistoryPrefix = "ongrid:anthropic:v1:"
+const anthropicHistoryPrefix = "ongrid:anthropic:v1:"
 
 type anthropicHistory struct {
 	Model   string            `json:"model"`
@@ -46,17 +45,9 @@ func (t *responsesTransport) roundTripAnthropic(original *http.Request, chat ope
 			if role != "assistant" && role != "user" {
 				return nil, fmt.Errorf("anthropic: unsupported message role %q", role)
 			}
-			pfx := ""
-			if role == "assistant" {
-				if strings.HasPrefix(message.ReasoningContent, anthropicHistoryPrefix) {
-					pfx = anthropicHistoryPrefix
-				} else if strings.HasPrefix(message.ReasoningContent, legacyAnthropicHistoryPrefix) {
-					pfx = legacyAnthropicHistoryPrefix
-				}
-			}
-			if pfx != "" {
+			if role == "assistant" && strings.HasPrefix(message.ReasoningContent, anthropicHistoryPrefix) {
 				var history anthropicHistory
-				if err := json.Unmarshal([]byte(strings.TrimPrefix(message.ReasoningContent, pfx)), &history); err != nil {
+				if err := json.Unmarshal([]byte(strings.TrimPrefix(message.ReasoningContent, anthropicHistoryPrefix)), &history); err != nil {
 					return nil, fmt.Errorf("anthropic history: %w", err)
 				}
 				recorded, err := anthropicAssistant(history.Content)

@@ -25,7 +25,7 @@ func TestMigrateLegacyLogRulesCanonicalizesPortableRules(t *testing.T) {
 	repo := newFakeRepo()
 	repo.rules["panic"] = &model.Rule{
 		ID: 1, RuleKey: "panic", Kind: model.RuleKindLogMatch, ScopeType: model.RuleScopeGlobal,
-		ConditionsJSON: `{"stream_selector":"{opspilot_source=~\"journald:.+\"}","line_filter":"(?i)panic|oom|fatal","window":"5m","operator":">=","threshold":1}`,
+		ConditionsJSON: `{"stream_selector":"{ongrid_source=~\"journald:.+\"}","line_filter":"(?i)panic|oom|fatal","window":"5m","operator":">=","threshold":1}`,
 	}
 	repo.rules["errors"] = &model.Rule{
 		ID: 2, RuleKey: "errors", Kind: model.RuleKindLogVolume, ScopeType: model.RuleScopeGlobal,

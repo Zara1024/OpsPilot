@@ -1,13 +1,13 @@
 // Package monitor is the biz layer for user-managed Monitor panels.
 // Operators create / edit / delete panels through the SPA; this package
 // owns persistence (via store.Repo) and asynchronously mirrors every
-// change into a single opspilot-managed Grafana dashboard.
+// change into a single ongrid-managed Grafana dashboard.
 //
-// Sync is one-way (opspilot → Grafana). Edits made directly in Grafana are
-// NOT pulled back; on the next mirror push from opspilot they get
+// Sync is one-way (ongrid → Grafana). Edits made directly in Grafana are
+// NOT pulled back; on the next mirror push from ongrid they get
 // overwritten. This is intentional — it keeps the data model simple
 // (one source of truth, no merge conflicts) and matches the operator
-// mental model: "build it in opspilot, view it in Grafana".
+// mental model: "build it in ongrid, view it in Grafana".
 //
 // API contract (server/monitor/http.go):
 //
@@ -224,7 +224,7 @@ func (s *Service) Delete(ctx context.Context, id uint64) error {
 
 // SyncNow pushes the Grafana mirror synchronously: lists the current
 // user-managed panels and hands them to the syncer (which prepends the
-// core fleet panels). Used at boot so the opspilot-monitor dashboard exists
+// core fleet panels). Used at boot so the ongrid-monitor dashboard exists
 // — populated with at least the core panels — before the operator makes
 // the first panel edit. Best-effort: returns the syncer error so the
 // caller can log it; a boot-time Grafana hiccup is non-fatal (the next

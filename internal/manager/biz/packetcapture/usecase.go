@@ -141,7 +141,7 @@ type LocalRawStore struct {
 func NewLocalRawStore(dir string) (*LocalRawStore, error) {
 	dir = strings.TrimSpace(dir)
 	if dir == "" {
-		dir = "/var/lib/opspilot/packet-captures/raw"
+		dir = "/var/lib/ongrid/packet-captures/raw"
 	}
 	clean := filepath.Clean(dir)
 	if clean == "." || clean == string(filepath.Separator) {

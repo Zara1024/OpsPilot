@@ -431,4 +431,3 @@ func (r Resources) managePanel(ctx context.Context, a biz.Arguments) (any, error
 	}
 	return panelResult(result), nil
 }
-

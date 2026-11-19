@@ -49,14 +49,14 @@ func TestLokiCountGroupedPreservesProductDimensions(t *testing.T) {
 			return
 		}
 		query := r.URL.Query().Get("query")
-		if !strings.Contains(query, "sum by (device_id,opspilot_source)") {
+		if !strings.Contains(query, "sum by (device_id,ongrid_source)") {
 			t.Fatalf("query = %q, want mapped grouping", query)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"status": "success",
 			"data": map[string]any{"resultType": "vector", "result": []any{
-				map[string]any{"metric": map[string]string{"device_id": "42", "opspilot_source": "journald"}, "value": []any{1787054400, "3"}},
-				map[string]any{"metric": map[string]string{"device_id": "43", "opspilot_source": "kubernetes:pod"}, "value": []any{1787054400, "2"}},
+				map[string]any{"metric": map[string]string{"device_id": "42", "ongrid_source": "journald"}, "value": []any{1787054400, "3"}},
+				map[string]any{"metric": map[string]string{"device_id": "43", "ongrid_source": "kubernetes:pod"}, "value": []any{1787054400, "2"}},
 			}},
 		})
 	}))
@@ -332,7 +332,7 @@ func TestCompileLogQL_DefaultSelectorDoesNotRequireOptionalSourceLabel(t *testin
 	if !strings.Contains(got, `device_id=~".+"`) {
 		t.Fatalf("compileLogQL() = %q, want device-wide default selector", got)
 	}
-	if strings.Contains(got, "opspilot_source") {
+	if strings.Contains(got, "ongrid_source") {
 		t.Fatalf("compileLogQL() = %q, optional source label must not gate unfiltered search", got)
 	}
 }
@@ -351,7 +351,7 @@ func TestDecodeLokiRecords_ProducesStableRecord(t *testing.T) {
 				"severity_number": "17",
 				"service_name":    "unknown_service",
 				"device_id":       "42",
-				"opspilot_source": "journald",
+				"ongrid_source":   "journald",
 			},
 		}},
 	}})

@@ -66,7 +66,7 @@ func NewStreamHealthStore() *StreamHealthStore {
 // changed: re-recording the same state keeps the original timestamp (LastError
 // is still refreshed). Without that, a client that fails and retries every few
 // seconds re-stamped UpdatedAt on every attempt, so the Channels UI could never
-// show how long the app had been broken: it kept resetting to "just now". An appID of 0 is ignored.
+// show how long the app had been broken. An appID of 0 is ignored.
 func (s *StreamHealthStore) Record(appID uint64, h StreamHealth) {
 	if s == nil || appID == 0 {
 		return

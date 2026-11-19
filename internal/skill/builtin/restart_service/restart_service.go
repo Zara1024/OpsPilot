@@ -1,12 +1,12 @@
 // Package restart_service registers the **first mutating skill** in the
-// opspilot skill registry — / SOP double-sign. The
+// ongrid skill registry — / SOP double-sign. The
 // skill is ScopeHost + ClassMutating, which means:
 //
 //   - The manager-side AI tool wrapper requires an `edge_id` argument
 //     and the actual restart runs on the edge.
 //   - The framework's permission gate refuses to invoke this skill
 //     directly from the LLM. Instead, the manager BaseTool counterpart
-//     (internal/manager/biz/aiops/tools/restart_service_basetool.go) is
+//     (internal/manager/biz/aiops/tools/restart_service.go) is
 //     wrapped by the ReviewGate decorator (decorators/review_gate.go),
 //     which spawns a reviewer worker (agents/reviewer.md) and only
 //     dispatches if the reviewer returns "Decision: approve".
@@ -43,8 +43,7 @@ import (
 	"github.com/Zara1024/OpsPilot/internal/skill"
 )
 
-// Key is the skill's stable identifier. Lowercase-snake; same string
-// the SKILL.md frontmatter declares. Manager-side BaseTool routes by
+// Key is the skill's stable identifier. Manager-side BaseTool routes by
 // the wire tool name (ToolNameRestartService = "host_restart_service"); the
 // two are deliberately equal so audit logs and catalogs cross-link.
 const Key = "host_restart_service"

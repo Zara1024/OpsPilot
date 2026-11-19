@@ -91,7 +91,7 @@ func (r *Repo) DeleteApp(ctx context.Context, id uint64) error {
 // GetOrCreateThread looks up the thread mapping for (im_app_id,
 // im_chat_id, im_thread_id). Returns (row, isNew, err). isNew=true
 // means the caller should also create a fresh chat_session and
-// then set OpsPilotSessionID; we don't do that here because the
+// then set OngridSessionID; we don't do that here because the
 // session creation belongs to the aiops biz layer (encapsulates
 // owner_user_id resolution, model defaults, etc.).
 // FindThread looks up the per-chat session mapping. One session is
@@ -122,7 +122,7 @@ func (r *Repo) TouchThread(ctx context.Context, id uint64) error {
 	return r.db.WithContext(ctx).Model(&model.ImThread{}).Where("id = ?", id).Update("last_seen_at", time.Now().UTC()).Error
 }
 
-// RotateThreadSession overwrites opspilot_session_id on an existing
+// RotateThreadSession overwrites ongrid_session_id on an existing
 // thread mapping — used when the previous session aged out
 // (LastSeenAt > IdleTimeout) or the user explicitly asked for a new
 // one via /new. Also bumps last_seen_at so the new session doesn't
@@ -131,7 +131,7 @@ func (r *Repo) RotateThreadSession(ctx context.Context, threadID uint64, newSess
 	return r.db.WithContext(ctx).Model(&model.ImThread{}).
 		Where("id = ?", threadID).
 		Updates(map[string]any{
-			"opspilot_session_id": newSessionID,
-			"last_seen_at":        time.Now().UTC(),
+			"ongrid_session_id": newSessionID,
+			"last_seen_at":      time.Now().UTC(),
 		}).Error
 }

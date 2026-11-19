@@ -297,4 +297,3 @@ func (u *Usecase) validate(ctx context.Context, row *model.IntegrationToken) (in
 	}
 	return integrationauth.Identity{TokenID: row.PublicID, Owner: tenantctx.Tenant{UserID: owner.ID, Email: owner.Email, Role: owner.Role, IsSuperuser: true}, Scopes: token.Scopes}, nil
 }
-

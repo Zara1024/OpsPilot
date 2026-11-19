@@ -6,7 +6,7 @@
 //	source.go — Source / SourceType / Caller value types
 //	signature.go — VerifySignature stub (cosign skeleton)
 //	repo.go — Repo interface + InstallResult / CapabilityDeclaration
-//	usecase.go — Usecase = the orchestrator wired in cmd/opspilot
+//	usecase.go — Usecase = the orchestrator wired in cmd/ongrid
 package marketplace
 
 // SourceType is a constant set of install transports —
@@ -29,7 +29,7 @@ const (
 
 	// SourceTypeRegistry resolves (Registry, PackID, Version) through a
 	// configured registry proxy. v1 only knows
-	// "opspilot-official" — the proxy implementation lands in a
+	// "ongrid-official" — the proxy implementation lands in a
 	// follow-up PR; today the manager rejects this type unless the
 	// caller hands it the resolved tarball URL via the Registry+URL
 	// route (i.e. effectively a tarball install with a labelled source).
@@ -56,7 +56,7 @@ type Source struct {
 	Ref string `json:"ref,omitempty"`
 
 	// Registry is the configured registry name for SourceTypeRegistry
-	// (e.g. "opspilot-official"). Must appear in cfg.AllowedSources or
+	// (e.g. "ongrid-official"). Must appear in cfg.AllowedSources or
 	// cfg.DevMode must be true.
 	Registry string `json:"registry,omitempty"`
 

@@ -220,4 +220,3 @@ func (r Resources) manageRule(ctx context.Context, a biz.Arguments) (any, error)
 	}
 	return ruleResult(result), nil
 }
-

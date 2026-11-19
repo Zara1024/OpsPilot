@@ -46,4 +46,3 @@ func TestResourceRiskOnlyExemptsApprovedCreationAndMetadata(t *testing.T) {
 		require.Equal(t, tc.low, policy.LowRisk, "%s %v", tc.name, tc.args)
 	}
 }
-

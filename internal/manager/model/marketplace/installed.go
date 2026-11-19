@@ -49,7 +49,7 @@ type InstalledPack struct {
 	Version string `gorm:"size:64"`
 
 	// Source is the install path family — see biz/marketplace.Source.Type:
-	//   - "opspilot-builtin" shipped in the manager binary tree
+	//   - "ongrid-builtin" shipped in the manager binary tree
 	//   - "local" copied from a host path
 	//   - "git" git clone --depth=1
 	//   - "tarball" curl + tar -xz
@@ -89,7 +89,7 @@ type InstalledPack struct {
 	// (requires.credentials[].slot) to the NAME of a stored vault credential
 	// — the operator's "which credential fills this slot" choice (HLD-017).
 	// JSON object {slot: credential_name}; empty until bound. At skill exec
-	// opspilot resolves the slot's declared inject mapping against the bound
+	// ongrid resolves the slot's declared inject mapping against the bound
 	// credential's fields.
 	BindingsJSON string `gorm:"type:text"`
 

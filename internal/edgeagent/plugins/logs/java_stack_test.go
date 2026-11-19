@@ -43,9 +43,6 @@ func TestJavaStackBoundaries(t *testing.T) {
 func TestCollectorRecombinesKubernetesJavaStacks(t *testing.T) {
 	binary := os.Getenv("OPSPILOT_TEST_OTELCOL_BINARY")
 	if binary == "" {
-		binary = os.Getenv("ONGRID_TEST_OTELCOL_BINARY")
-	}
-	if binary == "" {
 		t.Skip("OPSPILOT_TEST_OTELCOL_BINARY is not set")
 	}
 	dir := t.TempDir()

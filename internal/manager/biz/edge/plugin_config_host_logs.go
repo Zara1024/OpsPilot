@@ -43,7 +43,7 @@ func (uc *PluginConfigUC) hostLogsConfig(ctx context.Context, edgeID uint64, cfg
 		cfg.Spec["enable_journald"] = false
 		delete(cfg.Spec, "sources")
 		// Also fail closed with older Edges which cannot read service_capture yet.
-		cfg.Spec["file_paths"] = []string{"/var/log/.opspilot-unselected/*.log"}
+		cfg.Spec["file_paths"] = []string{"/var/log/.ongrid-unselected/*.log"}
 	}
 	cfg.Enabled = true
 	return cfg, nil

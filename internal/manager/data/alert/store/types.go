@@ -10,7 +10,7 @@ import (
 
 type IncidentFilter struct {
 	Status   string
-	DeviceID *uint64
+	DeviceID   *uint64
 	RuleID   *uint64
 	Severity string
 	Limit    int

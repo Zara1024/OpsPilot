@@ -64,7 +64,7 @@ type queryTranslateResp struct {
 var dialectGuide = map[string]string{
 	"logql": `LogQL（Loki 查询语言）。规则：
 - 必须以 stream selector 开头：{label="value"} 或 {label=~"regex"}
-- opspilot 标签：device_id (string数字), service, level, unit (systemd unit), filename, host
+- ongrid 标签：device_id (string数字), service, level, unit (systemd unit), filename, host
 - 行过滤：|= "substring" 或 |~ "regex"
 - 反向过滤：!= 或 !~
 - 多个匹配用 | 串联
@@ -79,16 +79,16 @@ var dialectGuide = map[string]string{
 - 支持 resource.service.name / span.http.status_code / span.http.method / span.name / status
 - duration 比较：duration > 1s / duration < 100ms
 - 多过滤逻辑：{ a && b }
-- 严禁编造没有 opspilot 实际有的标签
+- 严禁编造没有 ongrid 实际有的标签
 示例：
 "超过 1 秒的 API 调用" → {span.http.status_code != 0 && duration > 1s}
 "出错的 trace" → {status=error}
 "k8s 服务里慢的请求" → {resource.service.name="k8s" && duration > 500ms}`,
 
 	"promql": `PromQL（Prometheus 查询语言）。规则：
-- 用 opspilot 已有的 metric：node_cpu_seconds_total, node_memory_MemAvailable_bytes,
+- 用 ongrid 已有的 metric：node_cpu_seconds_total, node_memory_MemAvailable_bytes,
   node_filesystem_avail_bytes, node_load1, node_network_*_bytes_total,
-  node_disk_*_bytes_total, host_cpu_pct, host_mem_pct, host_disk_used_pct, opspilot_edge_status
+  node_disk_*_bytes_total, host_cpu_pct, host_mem_pct, host_disk_used_pct, ongrid_edge_status
 - by/without 聚合：sum by (device_id) / avg by (host)
 - 速率：rate(metric[5m])
 - 严禁编造 metric 名

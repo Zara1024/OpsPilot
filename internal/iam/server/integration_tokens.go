@@ -112,4 +112,3 @@ func tokenError(w http.ResponseWriter, err error) {
 	status := errs.HTTPStatus(err)
 	http.Error(w, http.StatusText(status), status)
 }
-

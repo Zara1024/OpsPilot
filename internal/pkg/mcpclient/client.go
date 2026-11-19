@@ -96,7 +96,7 @@ func (c *Client) Initialize(ctx context.Context) error {
 	params := map[string]any{
 		"protocolVersion": ProtocolVersion,
 		"capabilities":    map[string]any{},
-		"clientInfo":      map[string]any{"name": "ongrid", "version": "1"},
+		"clientInfo":      map[string]any{"name": "opspilot", "version": "1"},
 	}
 	raw, err := c.call(ctx, "initialize", params)
 	if err != nil {

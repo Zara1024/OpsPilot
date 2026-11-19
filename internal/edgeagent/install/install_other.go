@@ -15,7 +15,7 @@ func NewSecretStore(_ string) SecretStore {
 
 func (unsupportedSecretStore) Install(_ []byte) error { return ErrUnsupportedPlatform }
 func (unsupportedSecretStore) Rotate(_ []byte) error  { return ErrUnsupportedPlatform }
-func (unsupportedSecretStore) Remove() error          { return ErrUnsupportedPlatform }
+func (unsupportedSecretStore) Remove() error           { return ErrUnsupportedPlatform }
 
 // unsupportedServiceController 是非 Windows 平台的 ServiceController stub。
 type unsupportedServiceController struct{}
@@ -25,12 +25,12 @@ func NewServiceController(_ string) ServiceController {
 	return unsupportedServiceController{}
 }
 
-func (unsupportedServiceController) Create(_ string) error             { return ErrUnsupportedPlatform }
-func (unsupportedServiceController) ConfigureRecovery() error          { return ErrUnsupportedPlatform }
-func (unsupportedServiceController) ConfigureDefenderExclusion() error { return ErrUnsupportedPlatform }
-func (unsupportedServiceController) Start() error                      { return ErrUnsupportedPlatform }
-func (unsupportedServiceController) Stop() error                       { return ErrUnsupportedPlatform }
-func (unsupportedServiceController) Delete() error                     { return ErrUnsupportedPlatform }
+func (unsupportedServiceController) Create(_ string) error                  { return ErrUnsupportedPlatform }
+func (unsupportedServiceController) ConfigureRecovery() error              { return ErrUnsupportedPlatform }
+func (unsupportedServiceController) ConfigureDefenderExclusion() error     { return ErrUnsupportedPlatform }
+func (unsupportedServiceController) Start() error                          { return ErrUnsupportedPlatform }
+func (unsupportedServiceController) Stop() error                           { return ErrUnsupportedPlatform }
+func (unsupportedServiceController) Delete() error                         { return ErrUnsupportedPlatform }
 
 // unsupportedEnvWriter 是非 Windows 平台的 EnvWriter stub。
 type unsupportedEnvWriter struct{}

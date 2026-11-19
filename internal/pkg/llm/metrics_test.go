@@ -24,13 +24,13 @@ func TestMetricsIncrementOnSuccess(t *testing.T) {
 		t.Fatalf("Chat: %v", err)
 	}
 
-	if got := counterValue(t, reg, "opspilot_llm_requests_total", "gpt-4o", "success"); got != 1 {
+	if got := counterValue(t, reg, "ongrid_llm_requests_total", "gpt-4o", "success"); got != 1 {
 		t.Errorf("success counter = %v, want 1", got)
 	}
-	if got := counterValue(t, reg, "opspilot_llm_tokens_total", "gpt-4o", "prompt"); got != 42 {
+	if got := counterValue(t, reg, "ongrid_llm_tokens_total", "gpt-4o", "prompt"); got != 42 {
 		t.Errorf("prompt tokens counter = %v, want 42", got)
 	}
-	if got := counterValue(t, reg, "opspilot_llm_tokens_total", "gpt-4o", "completion"); got != 8 {
+	if got := counterValue(t, reg, "ongrid_llm_tokens_total", "gpt-4o", "completion"); got != 8 {
 		t.Errorf("completion tokens counter = %v, want 8", got)
 	}
 }

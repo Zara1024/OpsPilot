@@ -118,7 +118,7 @@ Loki itself doesn't read log files; an agent does. Options:
 - **Vector / Fluent Bit** — third-party; richer transform pipeline,
   multi-sink
 
-OpsPilot edge runs a bundled `otelcol-contrib` subprocess as the `logs`
+Ongrid edge runs a bundled `otelcol-contrib` subprocess as the `logs`
 plugin. For built-in Loki the data plane is Edge → nginx OTLP endpoint
 → Loki; for an external backend it is Edge → Elasticsearch directly.
 Log payloads never traverse the control tunnel or Manager Go process.

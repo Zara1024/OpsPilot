@@ -28,8 +28,8 @@ func TestMarshalQueryLogQLToolResult_ElasticsearchKeepsOnlyKeyFields(t *testing.
 				"device_id":    "123",
 				"cluster_id":   "48",
 				"namespace":    "ongrid-system",
-				"workload":     "ongrid-edge-node",
-				"pod":          "ongrid-edge-node-hgzlq",
+				"workload":     "opspilot-edge-node",
+				"pod":          "opspilot-edge-node-hgzlq",
 				"container":    "edge-node",
 				"node":         "worker1",
 				"source_id":    "kubernetes:pod",
@@ -63,7 +63,7 @@ func TestMarshalQueryLogQLToolResult_ElasticsearchKeepsOnlyKeyFields(t *testing.
 		t.Fatalf("record core fields = %#v", record)
 	}
 	if record.DeviceID != "123" || record.ClusterID != "48" || record.Namespace != "ongrid-system" ||
-		record.Workload != "ongrid-edge-node" || record.Pod != "ongrid-edge-node-hgzlq" ||
+		record.Workload != "opspilot-edge-node" || record.Pod != "opspilot-edge-node-hgzlq" ||
 		record.Container != "edge-node" || record.Node != "worker1" {
 		t.Fatalf("record location fields = %#v", record)
 	}

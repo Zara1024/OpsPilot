@@ -31,9 +31,9 @@ func newDialectTestRepo(t *testing.T, dialect string) *Repo {
 		t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
 		return repo
 	}
-	dsn := os.Getenv("ONGRID_TEST_MYSQL_DSN")
+	dsn := os.Getenv("OPSPILOT_TEST_MYSQL_DSN")
 	if dsn == "" {
-		t.Skip("set ONGRID_TEST_MYSQL_DSN to run MySQL alert store tests")
+		t.Skip("set OPSPILOT_TEST_MYSQL_DSN to run MySQL alert store tests")
 	}
 	cfg, err := driver.ParseDSN(dsn)
 	require.NoError(t, err)

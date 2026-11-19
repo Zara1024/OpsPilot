@@ -189,7 +189,7 @@ type GenerateSSHIdentityInput struct {
 // authorise this key for the target repo.
 //
 // ed25519 is the right default: smaller than RSA, faster, modern.
-// Comment is fixed to "opspilot-deploy" so a quick `ssh-keygen -lf`
+// Comment is fixed to "ongrid-deploy" so a quick `ssh-keygen -lf`
 // against the public side tells the admin where the key came from.
 func (u *Usecase) GenerateSSHIdentity(ctx context.Context, in GenerateSSHIdentityInput) (*model.SSHIdentity, error) {
 	name := strings.TrimSpace(in.Name)
@@ -217,20 +217,20 @@ func (u *Usecase) GenerateSSHIdentity(ctx context.Context, in GenerateSSHIdentit
 	// produces the modern `BEGIN OPENSSH PRIVATE KEY` format that
 	// every contemporary git client accepts; the comment field becomes
 	// the per-key annotation visible when running `ssh-keygen -lf`.
-	block, err := ssh.MarshalPrivateKey(priv, "opspilot-deploy")
+	block, err := ssh.MarshalPrivateKey(priv, "ongrid-deploy")
 	if err != nil {
 		return nil, fmt.Errorf("marshal private key: %w", err)
 	}
 	privPEM := string(pem.EncodeToMemory(block))
 
 	// Derive the public side in OpenSSH "authorized_keys" line shape
-	// (e.g. `ssh-ed25519 AAAA... opspilot-deploy`). This is exactly what
+	// (e.g. `ssh-ed25519 AAAA... ongrid-deploy`). This is exactly what
 	// gets pasted into the host's Deploy keys page.
 	sshPub, err := ssh.NewPublicKey(pub)
 	if err != nil {
 		return nil, fmt.Errorf("derive ssh public: %w", err)
 	}
-	pubLine := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPub))) + " opspilot-deploy"
+	pubLine := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPub))) + " ongrid-deploy"
 	fingerprint := sshFingerprintSHA256(sshPub)
 
 	now := time.Now().UTC()

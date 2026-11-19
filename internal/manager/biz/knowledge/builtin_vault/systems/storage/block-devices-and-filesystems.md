@@ -37,7 +37,7 @@ from `bfq` if the workload mixes interactive and batch IO.
 | btrfs | Snapshots / subvolumes are core to the workflow | metadata cost; balance / scrub overhead |
 | zfs   | Multi-disk arrays, checksumming, compression | not in the upstream kernel; ARC RAM appetite |
 
-OpsPilot edge nodes default to **ext4** for the OS volume and **xfs** for
+Ongrid edge nodes default to **ext4** for the OS volume and **xfs** for
 the data volume (Prometheus TSDB / Loki chunks / Tempo blocks all do
 better on xfs's allocator under heavy parallel writes).
 

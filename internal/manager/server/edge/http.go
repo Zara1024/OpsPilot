@@ -58,8 +58,8 @@ type EdgeService interface {
 // triple. The HTTP handler's upgrade-package endpoint queries this to
 // auto-fill (url, sha256) before dispatching the RPC.
 //
-// Implementation lives at the wiring site (cmd/opspilot/main.go) and reads
-// from the host-mounted /usr/share/opspilot/edge-bundles/ directory; nginx
+// Implementation lives at the wiring site (cmd/ongrid/main.go) and reads
+// from the host-mounted /usr/share/ongrid/edge-bundles/ directory; nginx
 // serves the corresponding host files through /edge/.
 type PackageResolver interface {
 	ResolveBundle(arch, version string) (url, sha256, resolvedVersion string, err error)
@@ -197,6 +197,8 @@ func (h *Handler) Register(r chi.Router) {
 	r.Get("/v1/edges/{id}/processes", h.getProcesses)
 	// Plugin runtime
 	r.Get("/v1/edges/{id}/plugins", h.listPlugins)
+	r.Get("/v1/devices/{id}/plugins", h.listHostPlugins)
+	r.With(h.writeMW("edge:plugin")).Put("/v1/devices/{id}/plugins/{name}", h.setHostPlugin)
 	r.Get("/v1/integrations/autoapm-options", h.autoAPMOptions)
 	r.With(h.writeMW("edge:plugin")).Put("/v1/edges/{id}/plugins/{name}", h.setPlugin)
 	r.Get("/v1/integrations/plugin-counts", h.pluginCounts)
@@ -219,6 +221,10 @@ func (h *Handler) listPlugins(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	h.writePluginRows(w, r, id, rows)
+}
+
+func (h *Handler) writePluginRows(w http.ResponseWriter, r *http.Request, id uint64, rows []biz.PluginRow) {
 	// Merge in live runtime health (heartbeat-fed, in-memory) keyed by
 	// plugin name so each toggle row also shows running/crashed + the
 	// crash reason. Health absent (edge offline / pre-introduction agent)
@@ -254,11 +260,12 @@ func (h *Handler) listPlugins(w http.ResponseWriter, r *http.Request) {
 	items := make([]pluginItemDTO, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, pluginItemDTO{
-			PluginName: row.PluginName,
-			Enabled:    row.Enabled,
-			Spec:       row.Spec,
-			Defaults:   row.Defaults,
-			Health:     healthByName[row.PluginName],
+			ClusterManaged: row.ClusterManaged,
+			PluginName:     row.PluginName,
+			Enabled:        row.Enabled,
+			Spec:           row.Spec,
+			Defaults:       row.Defaults,
+			Health:         healthByName[row.PluginName],
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
@@ -267,11 +274,12 @@ func (h *Handler) listPlugins(w http.ResponseWriter, r *http.Request) {
 // pluginItemDTO is one row of the per-edge plugins list: static config
 // (enabled/spec) plus the optional live runtime health.
 type pluginItemDTO struct {
-	PluginName string                 `json:"plugin_name"`
-	Enabled    bool                   `json:"enabled"`
-	Spec       map[string]interface{} `json:"spec,omitempty"`
-	Defaults   *biz.AutoAPMDefaults   `json:"defaults,omitempty"`
-	Health     *pluginHealthDTO       `json:"health,omitempty"`
+	ClusterManaged bool                   `json:"cluster_managed,omitempty"`
+	PluginName     string                 `json:"plugin_name"`
+	Enabled        bool                   `json:"enabled"`
+	Spec           map[string]interface{} `json:"spec,omitempty"`
+	Defaults       *biz.AutoAPMDefaults   `json:"defaults,omitempty"`
+	Health         *pluginHealthDTO       `json:"health,omitempty"`
 }
 
 // autoAPMOptions lists values already used in saved capture settings.

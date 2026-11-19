@@ -215,6 +215,7 @@ func TestMigratePreservesDeviceReferencedByNonControllerEdge(t *testing.T) {
 	if err := NewEdgeDeviceRepo(db).Link(context.Background(), host.ID, device.ID, model.EdgeDeviceRelationHost); err != nil {
 		t.Fatal(err)
 	}
+
 	cluster := &k8smodel.Cluster{
 		Name:                   "shared-cluster",
 		Mode:                   k8smodel.ModeFullNode,
@@ -271,6 +272,7 @@ func assertControllerHasNoHostDevice(t *testing.T, db *gorm.DB, edgeID uint64) {
 	if links != 0 {
 		t.Fatalf("controller host links = %d, want 0", links)
 	}
+
 }
 
 func TestFindOrCreateByFingerprintSoftDeleteAllowsReuse(t *testing.T) {
@@ -380,7 +382,7 @@ func TestEdgeDeviceHostLinkRejectsIdentityChange(t *testing.T) {
 		t.Fatalf("ListDevicesForEdge: %v", err)
 	}
 	if len(rows) != 1 || rows[0].DeviceID != 2 {
-		t.Fatalf("active host rows = %#v, want only device 2", rows)
+		t.Fatalf("active host rows = %#v, want only device 3", rows)
 	}
 }
 
@@ -409,7 +411,7 @@ func TestReconcileOfflineOrphans(t *testing.T) {
 		if err := db.Create(e).Error; err != nil {
 			t.Fatalf("create edge %s: %v", ak, err)
 		}
-		if err := db.Create(&model.EdgeDevice{EdgeID: e.ID, DeviceID: deviceID, Type: model.EdgeDeviceRelationHost}).Error; err != nil {
+		if err := NewEdgeDeviceRepo(db).Link(ctx, e.ID, deviceID, model.EdgeDeviceRelationHost); err != nil {
 			t.Fatalf("link edge %s: %v", ak, err)
 		}
 		if deleted {

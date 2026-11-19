@@ -1,4 +1,4 @@
-// Package logger wraps log/slog with opspilot conventions.
+// Package logger wraps log/slog with ongrid conventions.
 //
 // gospec red line: structured logs only, JSON handler, never log raw user
 // content (chat messages, request bodies, secrets). Context-aware log calls
@@ -23,7 +23,7 @@ func New(level slog.Level) *slog.Logger {
 }
 
 // WithService returns a logger decorated with a "service" attribute.
-// Used by cmd/opspilot and cmd/opspilot-edge at startup.
+// Used by cmd/ongrid and cmd/opspilot-edge at startup.
 func WithService(l *slog.Logger, name string) *slog.Logger {
 	return l.With(slog.String("service", name))
 }

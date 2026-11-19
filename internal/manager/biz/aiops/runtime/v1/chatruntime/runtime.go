@@ -2,7 +2,7 @@
 // agent path goes through. PR-9 of — the cutover layer that
 // pre-PR-9 callers (legacy agent.go) bypass entirely. After this PR
 // the manager's HTTP service can pick which path runs based on the
-// ONGRID_AGENT_KERNEL feature flag (default = legacy).
+// OPSPILOT_AGENT_KERNEL feature flag (default = legacy).
 //
 // Responsibilities:
 //
@@ -360,7 +360,7 @@ func (rt *Runtime) SkillRegistry() *SkillRegistry {
 
 // ToolCount returns how many tools are bound into the toolBag. Used
 // at boot time + tests for visibility (the spec asks us to log this
-// when ONGRID_AGENT_KERNEL=graph).
+// when OPSPILOT_AGENT_KERNEL=graph).
 func (rt *Runtime) ToolCount() int {
 	if rt == nil {
 		return 0

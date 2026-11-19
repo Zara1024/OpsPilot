@@ -59,7 +59,7 @@ func (a *Access) CreateCredential(ctx context.Context, userID, deviceID uint64, 
 	if err != nil {
 		return nil, fmt.Errorf("encrypt SSH credential: %w", err)
 	}
-	row := &wsmodel.Credential{OpsPilotUserID: userID, DeviceID: deviceID, Label: sshUser, SSHUser: sshUser, SSHPort: port, PasswordCiphertext: sealed}
+	row := &wsmodel.Credential{OngridUserID: userID, DeviceID: deviceID, Label: sshUser, SSHUser: sshUser, SSHPort: port, PasswordCiphertext: sealed}
 	if err := a.repo.CreateCredential(ctx, row); err != nil {
 		return nil, err
 	}
@@ -112,7 +112,7 @@ func (a *Access) VerifyHostKey(ctx context.Context, userID, deviceID uint64, por
 	if accepted == "" || accepted != actual {
 		return &HostKeyError{Kind: "unknown", Actual: actual}
 	}
-	if err := a.repo.CreateKnownHost(ctx, &wsmodel.KnownHost{OpsPilotUserID: userID, DeviceID: deviceID, SSHPort: port, Fingerprint: actual}); err != nil {
+	if err := a.repo.CreateKnownHost(ctx, &wsmodel.KnownHost{OngridUserID: userID, DeviceID: deviceID, SSHPort: port, Fingerprint: actual}); err != nil {
 		// A concurrent first connection may have won the unique insert.
 		known, getErr := a.repo.GetKnownHost(ctx, userID, deviceID, port)
 		if getErr != nil || known.Fingerprint != actual {

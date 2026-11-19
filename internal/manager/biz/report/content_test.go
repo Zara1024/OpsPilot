@@ -105,10 +105,10 @@ func TestRenderMarkdown_Locale(t *testing.T) {
 
 func TestFlattenEntities(t *testing.T) {
 	cases := map[string]string{
-		"plain text":                       "plain text",
-		"{{entity:edge:7|db-prod-3}} down": "db-prod-3 down",
+		"plain text":                              "plain text",
+		"{{entity:edge:7|db-prod-3}} down":        "db-prod-3 down",
 		"a {{entity:incident:1|I-1}} b {{entity:edge:2|n2}} c": "a I-1 b n2 c",
-		"{{entity:malformed": "{{entity:malformed", // no closer → left as-is
+		"{{entity:malformed":                      "{{entity:malformed", // no closer → left as-is
 	}
 	for in, want := range cases {
 		if got := flattenEntities(in); got != want {

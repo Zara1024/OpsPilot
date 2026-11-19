@@ -368,4 +368,3 @@ func reviewAPIArguments(a biz.Arguments) biz.Arguments {
 	sort.Strings(fields)
 	return biz.Arguments{"action": a["action"], "path": a["path"], "reason": a["reason"], "body_fields": fields, "body_sha256": hex.EncodeToString(digest[:]), "body": "[ENCRYPTED]"}
 }
-

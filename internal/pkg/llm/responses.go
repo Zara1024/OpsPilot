@@ -16,8 +16,7 @@ import (
 
 // The existing private reasoning field survives graph and database round trips.
 // A versioned envelope keeps Responses items out of visible text and other APIs.
-const responsesHistoryPrefix = "opspilot:responses:v1:"
-const legacyResponsesHistoryPrefix = "ongrid:responses:v1:"
+const responsesHistoryPrefix = "ongrid:responses:v1:"
 
 type responsesHistory struct {
 	Model  string            `json:"model"`
@@ -70,10 +69,7 @@ func (t *responsesTransport) RoundTrip(req *http.Request) (*http.Response, error
 	}
 	clean.Messages = append([]openai.ChatCompletionMessage(nil), chat.Messages...)
 	for i := range clean.Messages {
-		rc := clean.Messages[i].ReasoningContent
-		if strings.HasPrefix(rc, responsesHistoryPrefix) || strings.HasPrefix(rc, legacyResponsesHistoryPrefix) ||
-			strings.HasPrefix(rc, anthropicHistoryPrefix) || strings.HasPrefix(rc, legacyAnthropicHistoryPrefix) ||
-			strings.HasPrefix(rc, chatExtrasPrefix) || strings.HasPrefix(rc, legacyChatExtrasPrefix) {
+		if strings.HasPrefix(clean.Messages[i].ReasoningContent, responsesHistoryPrefix) || strings.HasPrefix(clean.Messages[i].ReasoningContent, anthropicHistoryPrefix) || strings.HasPrefix(clean.Messages[i].ReasoningContent, chatExtrasPrefix) {
 			clean.Messages[i].ReasoningContent = ""
 		}
 	}
@@ -157,17 +153,9 @@ func requestWithJSON(original *http.Request, value any) (*http.Request, error) {
 func (t *responsesTransport) roundTripResponses(original *http.Request, chat openai.ChatCompletionRequest) (*http.Response, error) {
 	input := make([]any, 0, len(chat.Messages))
 	for _, msg := range chat.Messages {
-		pfx := ""
-		if msg.Role == "assistant" {
-			if strings.HasPrefix(msg.ReasoningContent, responsesHistoryPrefix) {
-				pfx = responsesHistoryPrefix
-			} else if strings.HasPrefix(msg.ReasoningContent, legacyResponsesHistoryPrefix) {
-				pfx = legacyResponsesHistoryPrefix
-			}
-		}
-		if pfx != "" {
+		if msg.Role == "assistant" && strings.HasPrefix(msg.ReasoningContent, responsesHistoryPrefix) {
 			var history responsesHistory
-			if err := json.Unmarshal([]byte(strings.TrimPrefix(msg.ReasoningContent, pfx)), &history); err != nil {
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(msg.ReasoningContent, responsesHistoryPrefix)), &history); err != nil {
 				return nil, fmt.Errorf("responses history: %w", err)
 			}
 			recorded, err := responseMessage(history.Output)

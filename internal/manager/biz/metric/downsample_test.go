@@ -42,7 +42,7 @@ type dsWriter struct {
 	bucket1h []model.Bucket1h
 }
 
-func (w *dsWriter) WriteRaw(context.Context, []model.Point) error                { return nil }
+func (w *dsWriter) WriteRaw(context.Context, []model.Point) error         { return nil }
 func (w *dsWriter) WriteDeadLetter(context.Context, []model.Point, string) error { return nil }
 func (w *dsWriter) Write5m(_ context.Context, b []model.Bucket5m) error {
 	w.bucket5m = append(w.bucket5m, b...)

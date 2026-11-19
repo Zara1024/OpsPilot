@@ -72,7 +72,7 @@ func parseSpec(spec map[string]interface{}) (specView, error) {
 	}
 	if spec == nil {
 		// Empty source label = manager-side Ingester won't attach an
-		// `opspilot_source` label, so push samples land looking identical
+		// `ongrid_source` label, so push samples land looking identical
 		// to old direct-scrape series. This is the desired default after
 		// retired host.docker.internal scrape — there is
 		// only one source now, no need to disambiguate.
@@ -141,7 +141,7 @@ func parseSpec(spec map[string]interface{}) (specView, error) {
 		}
 	}
 	// SourceLabel is opt-in via spec.source_label. Default empty so
-	// push samples don't carry an opspilot_source label (see comment in
+	// push samples don't carry an ongrid_source label (see comment in
 	// the spec==nil branch). Operators can still set one explicitly
 	// when running multiple metrics plugins side-by-side.
 	if v := stringFrom(spec, "source_label"); v != "" {
@@ -152,7 +152,7 @@ func parseSpec(spec map[string]interface{}) (specView, error) {
 
 // sourceLabelForURL builds the wire-side `source` label. We use
 // "metrics:<host>:<port>" so multiple metrics plugins (future) stay
-// distinguishable in `opspilot_source` queries.
+// distinguishable in `ongrid_source` queries.
 func sourceLabelForURL(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {

@@ -27,7 +27,7 @@ type LLMSettingsResolver struct {
 	defaults map[string]EnvProviderDefaults
 
 	// envDefaultProvider is the env-seeded default provider id (e.g.
-	// from ONGRID_LLM_DEFAULT_PROVIDER). Used when the DB has no
+	// from OPSPILOT_LLM_DEFAULT_PROVIDER). Used when the DB has no
 	// default_provider row.
 	envDefaultProvider string
 }
@@ -37,7 +37,7 @@ type LLMSettingsResolver struct {
 // deployments survive without an admin filling in the UI first.
 type EnvProviderDefaults struct {
 	Label   string   // "OpenAI" / "Anthropic" / "智谱 GLM" / "Gemini"
-	APIKey  string   // env-seeded key (e.g. ONGRID_OPENAI_API_KEY)
+	APIKey  string   // env-seeded key (e.g. OPSPILOT_OPENAI_API_KEY)
 	Model   string   // env-seeded default model
 	BaseURL string   // env-seeded base URL
 	Models  []string // env-seeded model list

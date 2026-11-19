@@ -20,7 +20,7 @@
 //     trio, host_restart_service, alert detail, ranking helpers).
 //
 // Threshold gating: when len(all) > threshold (default 30, env
-// ONGRID_TOOLBAG_DEFERRAL_THRESHOLD) the bag splits core / specialty
+// OPSPILOT_TOOLBAG_DEFERRAL_THRESHOLD) the bag splits core / specialty
 // and SchemasForLLM returns the redacted-wrapped slice. Below
 // threshold ALL tools keep their full schema (PR-7 behavioural parity).
 //
@@ -325,7 +325,7 @@ func (b *ToolBag) WithExtra(t basetool.BaseTool) *ToolBag {
 // append 3 more to a 9-tool bag. The deferral decision is made once at
 // NewToolBag — main.go chains AppendHostFilesTools right after
 // BuildBaseTools so the natural way to flip on deferral is to bump
-// ONGRID_TOOLBAG_DEFERRAL_THRESHOLD or wait for marketplace tools to
+// OPSPILOT_TOOLBAG_DEFERRAL_THRESHOLD or wait for marketplace tools to
 // land in NewToolBag's input slice directly.
 func (b *ToolBag) Append(t basetool.BaseTool) *ToolBag {
 	t = basetool.WithValidation(t)

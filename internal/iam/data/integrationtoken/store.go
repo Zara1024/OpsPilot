@@ -44,4 +44,3 @@ func (s *Store) Update(ctx context.Context, ownerID uint64, publicID string, fie
 func (s *Store) Delete(ctx context.Context, ownerID uint64, publicID string) error {
 	return dbx.WithContext(ctx, s.db).Where("owner_user_id = ? AND public_id = ?", ownerID, publicID).Delete(&model.IntegrationToken{}).Error
 }
-

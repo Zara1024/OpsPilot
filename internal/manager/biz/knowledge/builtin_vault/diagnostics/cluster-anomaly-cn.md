@@ -13,7 +13,7 @@ applies_to: [manager]
 ## 第 1 步 — 拿到全局视图，先别看单条
 
 ```bash
-# opspilot 平台
+# ongrid 平台
 get_topology()                  # 集群节点数 / 在线数 / 监控组件状态
 query_incidents(status=open)    # 当前所有未恢复告警
 ```
@@ -81,7 +81,7 @@ curl -s 'http://prometheus:9090/api/v1/query?query=count(up==0)' | jq '.data.res
 | **P2** | 内部影响 / 资源紧张但有冗余 | 当天找出原因，可延迟修 |
 | **P3** | 趋势预警 / 噪音偏多的规则 | 看是否要调阈值，不是真要响应 |
 
-opspilot 平台：
+ongrid 平台：
 - `correlate_incident(incident_id)` 一次拿到 metric+log+trace 三件套
 - `query_incidents(severity=critical, status=open)` 只看 critical 未恢复
 
@@ -130,7 +130,7 @@ inhibit_rules:
   equal: [instance]
 ```
 
-opspilot 平台：
+ongrid 平台：
 - 在告警规则页可临时 silence 一条规则 N 分钟
 - 永久调阈值要走变更（review 后改 PromQL 表达式）
 
@@ -141,12 +141,12 @@ opspilot 平台：
 2. 写 / 更新对应 runbook（如果还没有），下次相同模式不用从头查
 3. 如果是监控自身抖动 —— 加 self-monitoring 告警（Prometheus 自己挂的提醒走独立渠道）
 
-## opspilot 工具提示
+## ongrid 工具提示
 
 - `specialist-sre`：专门看集群健康度 / 告警优先级 / 趋势异常
 - `incident-investigator`：单条 incident 端到端关联分析
 - `correlate_incident(incident_id)`：一次拉 metric / log / trace 三件套
-- `find_outlier_edges` / `rank_edges`：找集群里"不一样"的那台
+- `find_outlier_hosts` / `rank_hosts`：找集群里"不一样"的那台
 
 ## 决策树
 

@@ -11,7 +11,7 @@ import (
 // Manager-side self-observability metrics. These are package-globals so the
 // hot-path call sites (alert evaluator tick, promwrite Push) don't need to
 // thread a struct handle through their constructors. RegisterManagerMetrics
-// must be called once at boot (cmd/opspilot/main.go) with the shared registry
+// must be called once at boot (cmd/ongrid/main.go) with the shared registry
 // returned by NewRegistry; subsequent calls are no-ops (already-registered
 // downgrades to a warn).
 //
@@ -92,7 +92,7 @@ var (
 
 	// DBPoolOpenConns / DBPoolInUse / DBPoolWaitCountTotal expose the
 	// database/sql pool stats. Sampled into the gauges by a 10s ticker
-	// in cmd/opspilot/main.go (StartDBPoolSampler). WaitCount is a
+	// in cmd/ongrid/main.go (StartDBPoolSampler). WaitCount is a
 	// monotone counter inside database/sql so we expose it as such.
 	DBPoolOpenConns      prometheus.Gauge
 	DBPoolInUse          prometheus.Gauge
@@ -202,45 +202,45 @@ func RegisterManagerMetrics(reg *prometheus.Registry, log *slog.Logger) {
 
 	httpReqs := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "opspilot_http_requests_total",
+			Name: "ongrid_http_requests_total",
 			Help: "API requests served by the manager, labelled by method, route template, and status class (2xx/3xx/4xx/5xx).",
 		},
 		[]string{"method", "route", "status"},
 	)
 	httpDur := prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "opspilot_http_request_duration_seconds",
+			Name:    "ongrid_http_request_duration_seconds",
 			Help:    "API request handler latency in seconds, labelled by method + route template.",
 			Buckets: httpRequestBuckets,
 		},
 		[]string{"method", "route"},
 	)
 	dbOpen := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "opspilot_db_pool_open_connections",
+		Name: "ongrid_db_pool_open_connections",
 		Help: "database/sql DBStats.OpenConnections sampled every 10s.",
 	})
 	dbInUse := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "opspilot_db_pool_in_use",
+		Name: "ongrid_db_pool_in_use",
 		Help: "database/sql DBStats.InUse sampled every 10s.",
 	})
 	dbIdle := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "opspilot_db_pool_idle",
+		Name: "ongrid_db_pool_idle",
 		Help: "database/sql DBStats.Idle sampled every 10s.",
 	})
 	dbWait := prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "opspilot_db_pool_wait_count_total",
+		Name: "ongrid_db_pool_wait_count_total",
 		Help: "database/sql DBStats.WaitCount cumulative — early-warning signal for pool capacity tuning.",
 	})
 	llmCalls := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "opspilot_llm_calls_total",
+			Name: "ongrid_llm_calls_total",
 			Help: "LLM provider invocations labelled by provider, model, and outcome (ok|error|timeout|rate_limited).",
 		},
 		[]string{"provider", "model", "status"},
 	)
 	llmDur := prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "opspilot_llm_call_duration_seconds",
+			Name:    "ongrid_llm_call_duration_seconds",
 			Help:    "LLM provider call latency in seconds, labelled by provider + model.",
 			Buckets: llmCallBuckets,
 		},
@@ -248,57 +248,57 @@ func RegisterManagerMetrics(reg *prometheus.Registry, log *slog.Logger) {
 	)
 	llmToks := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			// Named opspilot_llm_router_tokens_total to avoid colliding
-			// with the legacy opspilot_llm_tokens_total registered by
+			// Named ongrid_llm_router_tokens_total to avoid colliding
+			// with the legacy ongrid_llm_tokens_total registered by
 			// internal/pkg/llm/metrics.go (different labels: legacy
 			// uses {model,kind}, this one adds provider). v0.7.45
 			// upgrade panic'd on the duplicate-with-different-labels
 			// registration; the suffix disambiguates without breaking
 			// either consumer.
-			Name: "opspilot_llm_router_tokens_total",
+			Name: "ongrid_llm_router_tokens_total",
 			Help: "LLM tokens consumed at the router layer, by provider + model + direction (input|output).",
 		},
 		[]string{"provider", "model", "kind"},
 	)
 	workerSess := prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "opspilot_chatruntime_worker_sessions",
+			Name: "ongrid_chatruntime_worker_sessions",
 			Help: "Live chatruntime worker sessions by status (running|pending). Sampled every 15s.",
 		},
 		[]string{"status"},
 	)
 	alertTicks := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "opspilot_alert_eval_ticks_total",
+			Name: "ongrid_alert_eval_ticks_total",
 			Help: "Alert evaluator ticks by rule kind and outcome (ok|error|skip).",
 		},
 		[]string{"rule_kind", "status"},
 	)
 	edgeConns := prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "opspilot_edge_connections",
+			Name: "ongrid_edge_connections",
 			Help: "Tunnel-connected edges by status (connected|disconnected). Sampled by the tunnel hub every 15s.",
 		},
 		[]string{"status"},
 	)
 	investigatorInflight := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "opspilot_investigator_inflight",
+		Name: "ongrid_investigator_inflight",
 		Help: "Live RCA investigator workers; capped at investigator.Config.MaxConcurrent.",
 	})
 
-	HTTPRequestsTotal = registerOrExistingCounterVec2(registerer, httpReqs, log, "opspilot_http_requests_total")
+	HTTPRequestsTotal = registerOrExistingCounterVec2(registerer, httpReqs, log, "ongrid_http_requests_total")
 	HTTPRequestDuration = registerOrExistingHistogramVec(registerer, httpDur, log)
-	DBPoolOpenConns = registerOrExistingGauge(registerer, dbOpen, log, "opspilot_db_pool_open_connections")
-	DBPoolInUse = registerOrExistingGauge(registerer, dbInUse, log, "opspilot_db_pool_in_use")
-	DBPoolIdle = registerOrExistingGauge(registerer, dbIdle, log, "opspilot_db_pool_idle")
-	DBPoolWaitCountTotal = registerOrExistingCounter(registerer, dbWait, log, "opspilot_db_pool_wait_count_total")
-	LLMCallsTotal = registerOrExistingCounterVec2(registerer, llmCalls, log, "opspilot_llm_calls_total")
+	DBPoolOpenConns = registerOrExistingGauge(registerer, dbOpen, log, "ongrid_db_pool_open_connections")
+	DBPoolInUse = registerOrExistingGauge(registerer, dbInUse, log, "ongrid_db_pool_in_use")
+	DBPoolIdle = registerOrExistingGauge(registerer, dbIdle, log, "ongrid_db_pool_idle")
+	DBPoolWaitCountTotal = registerOrExistingCounter(registerer, dbWait, log, "ongrid_db_pool_wait_count_total")
+	LLMCallsTotal = registerOrExistingCounterVec2(registerer, llmCalls, log, "ongrid_llm_calls_total")
 	LLMCallDuration = registerOrExistingHistogramVec(registerer, llmDur, log)
-	LLMTokensTotal = registerOrExistingCounterVec2(registerer, llmToks, log, "opspilot_llm_router_tokens_total")
+	LLMTokensTotal = registerOrExistingCounterVec2(registerer, llmToks, log, "ongrid_llm_router_tokens_total")
 	ChatRuntimeWorkerSessions = registerOrExistingGaugeVec(registerer, workerSess, log)
-	AlertEvalTicksTotal = registerOrExistingCounterVec2(registerer, alertTicks, log, "opspilot_alert_eval_ticks_total")
+	AlertEvalTicksTotal = registerOrExistingCounterVec2(registerer, alertTicks, log, "ongrid_alert_eval_ticks_total")
 	EdgeConnections = registerOrExistingGaugeVec(registerer, edgeConns, log)
-	InvestigatorInflight = registerOrExistingGauge(registerer, investigatorInflight, log, "opspilot_investigator_inflight")
+	InvestigatorInflight = registerOrExistingGauge(registerer, investigatorInflight, log, "ongrid_investigator_inflight")
 
 	// Go runtime + process collectors give us goroutines / heap / GC / fd
 	// for free. Idempotent — ignore AlreadyRegisteredError so a second

@@ -247,7 +247,7 @@ func splitLogQLMatchers(selector string) ([]string, error) {
 
 func portableLogQLField(label string) (string, bool) {
 	switch label {
-	case "opspilot_source":
+	case "ongrid_source":
 		// Loki and the product search API expose the same dimension under
 		// different canonical names.
 		return "source_id", true

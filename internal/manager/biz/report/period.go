@@ -42,8 +42,8 @@ func PeriodFor(kind string, fireAt time.Time, loc *time.Location, prevFireAt tim
 	switch kind {
 	case model.KindDaily:
 		// Yesterday relative to the fire moment.
-		end := startOfDay(f)           // today 00:00
-		start := end.AddDate(0, 0, -1) // yesterday 00:00
+		end := startOfDay(f)              // today 00:00
+		start := end.AddDate(0, 0, -1)    // yesterday 00:00
 		return Period{Start: start, End: end}, nil
 	case model.KindWeekly:
 		// Previous ISO week: this week's Monday minus 7 days.

@@ -181,4 +181,3 @@ func (s *Store) LockTarget(ctx context.Context, target biz.Target) error {
 	res := dbx.WithContext(ctx, s.db).Table(table).Where("id = ?", target.ID).UpdateColumn("id", gorm.Expr("id"))
 	return res.Error
 }
-

@@ -25,7 +25,7 @@ var bearerCredential = regexp.MustCompile(`(?i)\bBearer\s+[^\s"',;]+`)
 
 // AgentContentEnabled is opt-in because traces use deployment-wide telemetry access.
 func AgentContentEnabled() bool {
-	enabled, _ := strconv.ParseBool(os.Getenv("ONGRID_AGENT_TRACE_CAPTURE_CONTENT"))
+	enabled, _ := strconv.ParseBool(os.Getenv("OPSPILOT_AGENT_TRACE_CAPTURE_CONTENT"))
 	return enabled
 }
 

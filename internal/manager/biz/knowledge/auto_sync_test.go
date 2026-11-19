@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/glebarez/sqlite"
 	store "github.com/Zara1024/OpsPilot/internal/manager/data/knowledge/store"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/knowledge"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
-	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 

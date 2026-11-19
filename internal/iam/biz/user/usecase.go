@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/golang-jwt/jwt/v5"
 
@@ -16,14 +17,13 @@ import (
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 )
 
+const minPasswordLength = 8
+
 var (
-	// 邮箱正则：符合标准邮箱格式
-	emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-	// 手机号正则：支持中国大陆11位手机号（含可选+86前缀）以及通用国际E.164格式（7至15位数字）
+	emailRegex = regexp.MustCompile("^[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,}$")
 	phoneRegex = regexp.MustCompile(`^(?:\+?86)?1[3-9]\d{9}$|^\+[1-9]\d{6,14}$`)
 )
 
-// 校验邮箱格式
 func validateEmail(email string) bool {
 	if len(email) < 3 || len(email) > 254 {
 		return false
@@ -31,7 +31,6 @@ func validateEmail(email string) bool {
 	return emailRegex.MatchString(email)
 }
 
-// 校验手机号格式（选填，为空则跳过）
 func validatePhone(phone string) bool {
 	if phone == "" {
 		return true
@@ -70,7 +69,10 @@ func (u *Usecase) Register(ctx context.Context, email, password, role string) (*
 		return nil, fmt.Errorf("%w: email and password required", errs.ErrInvalid)
 	}
 	if !validateEmail(email) {
-		return nil, fmt.Errorf("%w: 邮箱格式不正确", errs.ErrInvalid)
+		return nil, fmt.Errorf("%w: invalid email format", errs.ErrInvalid)
+	}
+	if utf8.RuneCountInString(password) < minPasswordLength {
+		return nil, fmt.Errorf("%w: password must be at least %d characters", errs.ErrInvalid, minPasswordLength)
 	}
 	if role == "" {
 		role = model.RoleUser
@@ -104,33 +106,20 @@ func (u *Usecase) Register(ctx context.Context, email, password, role string) (*
 	return user, nil
 }
 
-// Login 验证用户凭据并颁发全新的访问与刷新令牌对
+// Login verifies credentials and returns a fresh access/refresh pair.
 func (u *Usecase) Login(ctx context.Context, email, password string) (*TokenPair, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	if email == "" || password == "" {
 		return nil, fmt.Errorf("%w: email and password required", errs.ErrInvalid)
 	}
-
-	// 安全加固（LOW-01）：限制密码长度上限为 128 字符，防止超长密码引发 CPU 算力耗尽拒绝服务攻击，不合法直接返回 400 Bad Request
-	if len(password) > 128 {
-		return nil, fmt.Errorf("%w: password exceeds max length of 128 characters", errs.ErrInvalid)
-	}
-
-	// 预设结构与参数完全匹配的标准 Argon2id 虚拟哈希，用于用户不存在或停用时执行等时计算，彻底抹平时序侧信道（HIGH-01）
-	const dummyHash = "$argon2id$v=19$m=65536,t=1,p=4$vMDBeCJ3bhBGkkDL1b+egw$o/enaT0GzKXtNduUcTTE4+9MlYd2weKWm/lbFw2zkH4"
-
 	user, err := u.repo.GetByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, errs.ErrNotFound) {
-			// 即使用户不存在，也执行一次完整的哈希计算，消耗等额时间，防止攻击者通过响应时间枚举用户名
-			_ = verifyPassword(password, dummyHash)
 			return nil, errs.ErrUnauthorized
 		}
 		return nil, err
 	}
 	if user.Status != model.StatusActive {
-		// 账号停用时同样执行等时哈希比对
-		_ = verifyPassword(password, dummyHash)
 		return nil, errs.ErrUnauthorized
 	}
 	if !verifyPassword(password, user.PassHash) {
@@ -258,7 +247,7 @@ func (u *Usecase) UpdateProfile(ctx context.Context, id uint64, displayName, pho
 		return fmt.Errorf("%w: phone too long (max 32)", errs.ErrInvalid)
 	}
 	if phone != "" && !validatePhone(phone) {
-		return fmt.Errorf("%w: 手机号码格式不正确", errs.ErrInvalid)
+		return fmt.Errorf("%w: invalid phone format", errs.ErrInvalid)
 	}
 	return u.repo.UpdateProfile(ctx, id, displayName, phone)
 }
@@ -283,6 +272,9 @@ func (u *Usecase) SetStatus(ctx context.Context, id uint64, status string) error
 func (u *Usecase) ResetPassword(ctx context.Context, id uint64, newPassword string) error {
 	if newPassword == "" {
 		return fmt.Errorf("%w: password required", errs.ErrInvalid)
+	}
+	if utf8.RuneCountInString(newPassword) < minPasswordLength {
+		return fmt.Errorf("%w: password must be at least %d characters", errs.ErrInvalid, minPasswordLength)
 	}
 	ph, err := hashPassword(newPassword)
 	if err != nil {
@@ -310,14 +302,17 @@ func (u *Usecase) Create(ctx context.Context, in CreateInput) (*model.User, erro
 		return nil, fmt.Errorf("%w: email required", errs.ErrInvalid)
 	}
 	if !validateEmail(email) {
-		return nil, fmt.Errorf("%w: 邮箱格式不正确", errs.ErrInvalid)
+		return nil, fmt.Errorf("%w: invalid email format", errs.ErrInvalid)
 	}
 	phone := strings.TrimSpace(in.Phone)
 	if phone != "" && !validatePhone(phone) {
-		return nil, fmt.Errorf("%w: 手机号码格式不正确", errs.ErrInvalid)
+		return nil, fmt.Errorf("%w: invalid phone format", errs.ErrInvalid)
 	}
 	if in.Password == "" {
 		return nil, fmt.Errorf("%w: password required", errs.ErrInvalid)
+	}
+	if utf8.RuneCountInString(in.Password) < minPasswordLength {
+		return nil, fmt.Errorf("%w: password must be at least %d characters", errs.ErrInvalid, minPasswordLength)
 	}
 	role := in.Role
 	if role == "" {
@@ -434,4 +429,16 @@ func (u *Usecase) issuePair(user *model.User) (*TokenPair, error) {
 		Role:         user.Role,
 		UserID:       user.ID,
 	}, nil
+}
+
+// AuthorizeApproval 对审批重新读取当前账号权限，避免撤权后继续使用旧登录凭证。
+func (u *Usecase) AuthorizeApproval(ctx context.Context, userID uint64) error {
+	user, err := u.repo.GetByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if user.Status != "active" || user.Role != "admin" {
+		return errs.ErrForbidden
+	}
+	return nil
 }

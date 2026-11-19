@@ -10,7 +10,7 @@ func TestNewInClusterAPIClientUsesConfiguredServiceAccountDirectory(t *testing.T
 	dir := t.TempDir()
 	for name, contents := range map[string]string{
 		"token":     "node-token\n",
-		"namespace": "opspilot-system\n",
+		"namespace": "ongrid-system\n",
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(contents), 0600); err != nil {
 			t.Fatalf("write %s: %v", name, err)
@@ -27,8 +27,8 @@ func TestNewInClusterAPIClientUsesConfiguredServiceAccountDirectory(t *testing.T
 	if client.token != "node-token" {
 		t.Fatalf("token = %q, want node-token", client.token)
 	}
-	if client.namespace != "opspilot-system" {
-		t.Fatalf("namespace = %q, want opspilot-system", client.namespace)
+	if client.namespace != "ongrid-system" {
+		t.Fatalf("namespace = %q, want ongrid-system", client.namespace)
 	}
 	if client.baseURL != "https://10.0.0.1:6443" {
 		t.Fatalf("baseURL = %q, want https://10.0.0.1:6443", client.baseURL)

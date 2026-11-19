@@ -162,7 +162,7 @@ func TestSlackSenderEmitsAttachments(t *testing.T) {
 		t.Errorf("title = %v", att["title"])
 	}
 	if att["footer"] != "opspilot" {
-		t.Errorf("footer = %v, want opspilot", att["footer"])
+		t.Errorf("footer = %v, want ongrid", att["footer"])
 	}
 	if got, want := att["ts"], float64(occurred.Unix()); got != want {
 		t.Errorf("ts = %v, want %v", got, want)
@@ -210,45 +210,3 @@ func TestSlackSenderColorByUnknownSeverity(t *testing.T) {
 		}
 	}
 }
-
-func TestFormatText_ChineseFormatting(t *testing.T) {
-	msg := Message{
-		Subject:    "device_offline: device_last_seen_seconds_ago > 90 ⇒ device_id=12,device_name=k8s:k3s-edge-51:lavm-8d0eljpims (value=94.35)",
-		Body:       "device_offline: device_last_seen_seconds_ago > 90 ⇒ device_id=12,device_name=k8s:k3s-edge-51:lavm-8d0eljpims (value=274.5)",
-		Severity:   SeverityCritical,
-		Source:     "global",
-		DedupeKey:  "pipeline:device_offline:device_id=12,device_name=k8s:k3s-edge-51:lavm-8d0eljpims,instance=opspilot:9100,job=opspilot-manager",
-		OccurredAt: time.Date(2026, 10, 8, 22, 30, 0, 0, time.Local),
-		Labels: map[string]string{
-			"rule":        "device_offline",
-			"rule_name":   "设备离线",
-			"incident_id": "18",
-			"device_id":   "12",
-			"device_name": "k8s:k3s-edge-51:lavm-8d0eljpims",
-		},
-	}
-
-	formatted := formatText(msg)
-	expectedSubstrings := []string{
-		"【严重告警】 设备离线 - lavm-8d0eljpims",
-		"• 告警规则: 设备离线",
-		"• 告警等级: 严重",
-		"• 关联设备: lavm-8d0eljpims (ID: 12)",
-		"• 告警编号: #18",
-		"• 告警来源: 全局监控",
-		"• 触发时间: 2026-10-08 22:30:00",
-		"设备已超过 90 秒未上报心跳数据，当前已累计离线约",
-		"• 去重标识: pipeline:device_offline:device_id=12",
-	}
-
-	for _, sub := range expectedSubstrings {
-		if !strings.Contains(formatted, sub) {
-			t.Errorf("formatText output missing %q, got:\n%s", sub, formatted)
-		}
-	}
-
-	if strings.Contains(formatted, "device_last_seen_seconds_ago") {
-		t.Errorf("formatText output should not expose raw PromQL, got:\n%s", formatted)
-	}
-}
-

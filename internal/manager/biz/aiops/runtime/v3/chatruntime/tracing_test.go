@@ -37,7 +37,7 @@ func recordAgentSpans(t *testing.T) *tracetest.SpanRecorder {
 	recorder := tracetest.NewSpanRecorder()
 	previous := otel.GetTracerProvider()
 	options := []sdktrace.TracerProviderOption{sdktrace.WithSpanProcessor(recorder)}
-	if endpoint := os.Getenv("ONGRID_AGENT_TRACE_SMOKE_OTLP"); endpoint != "" {
+	if endpoint := os.Getenv("OPSPILOT_AGENT_TRACE_SMOKE_OTLP"); endpoint != "" {
 		exporter, err := otlptracehttp.New(context.Background(), otlptracehttp.WithEndpointURL(endpoint))
 		if err != nil {
 			t.Fatal(err)
@@ -88,12 +88,12 @@ func TestAgentTracingRealGraphModelAndTool(t *testing.T) {
 			name = "content"
 		}
 		t.Run(name, func(t *testing.T) {
-			t.Setenv("ONGRID_AGENT_TRACE_CAPTURE_CONTENT", strconv.FormatBool(capture))
+			t.Setenv("OPSPILOT_AGENT_TRACE_CAPTURE_CONTENT", strconv.FormatBool(capture))
 			testAgentTracingRealGraphModelAndTool(t, capture, false)
 		})
 	}
 	t.Run("large_content", func(t *testing.T) {
-		t.Setenv("ONGRID_AGENT_TRACE_CAPTURE_CONTENT", "true")
+		t.Setenv("OPSPILOT_AGENT_TRACE_CAPTURE_CONTENT", "true")
 		testAgentTracingRealGraphModelAndTool(t, true, true)
 	})
 }
@@ -301,7 +301,7 @@ func TestAgentTracingMarksSoftModelFailure(t *testing.T) {
 }
 
 func TestAgentTracingBackgroundWorkerKeepsAncestry(t *testing.T) {
-	t.Setenv("ONGRID_AGENT_TRACE_CAPTURE_CONTENT", "true")
+	t.Setenv("OPSPILOT_AGENT_TRACE_CAPTURE_CONTENT", "true")
 	recorder := recordAgentSpans(t)
 	store, parentID := newSeededRuntimeStore(t, 7)
 	runtime := newRuntimeWithStore(t, "specialist-sre", newScriptedChatModel(&schema.Message{Role: schema.Assistant, Content: "done"}), nil, store)

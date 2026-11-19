@@ -20,6 +20,7 @@ import (
 	"time"
 
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/k8s"
+	"github.com/Zara1024/OpsPilot/internal/pkg/autoapm"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 	"github.com/Zara1024/OpsPilot/internal/pkg/k8sredact"
 	"github.com/Zara1024/OpsPilot/internal/pkg/passwd"
@@ -34,7 +35,7 @@ const (
 	hpaMetricWarningWindow      = 5 * time.Minute
 	eventRetentionBatchLimit    = 1000
 	bootstrapTokenBytes         = 32
-	defaultK8sChartRef          = "oci://helm.cnb.cool/zara1024/opspilot-edge"
+	defaultK8sChartRef          = "oci://helm.cnb.cool/ongridio/opspilot-edge"
 	telemetryAuthModeTelemetry  = "telemetry"
 	telemetryAuthModeBackend    = "backend"
 )
@@ -1360,6 +1361,7 @@ type EnrollResult struct {
 // by that controller into a Kubernetes Secret. Secrets are never persisted in
 // plaintext by manager.
 type TelemetryConfig struct {
+	AppMetricsScope        autoapm.MetricsScope
 	ClusterNodeID          uint64
 	ClusterID              uint64
 	AccessKey              string
@@ -2326,8 +2328,13 @@ func newTelemetryCredential(clusterID uint64) (*model.TelemetryCredential, strin
 }
 
 func (u *Usecase) resolveTelemetryConfig(ctx context.Context, cluster *model.Cluster, accessKey, secretKey string) (*TelemetryConfig, error) {
+	scope, err := u.appMetricsScope(ctx, cluster)
+	if err != nil {
+		return nil, err
+	}
 	publicURL := strings.TrimRight(strings.TrimSpace(u.cfg.PublicURL), "/")
 	out := &TelemetryConfig{
+		AppMetricsScope:  scope,
 		ClusterID:        cluster.ID,
 		AccessKey:        accessKey,
 		SecretKey:        secretKey,
@@ -2558,7 +2565,7 @@ func (u *Usecase) installCommand(clusterID uint64, mode, controllerToken, nodeTo
 		args = append(args, "--version "+shellQuote(chartVersion))
 	}
 	args = append(args,
-		"--namespace opspilot-system --create-namespace",
+		"--namespace ongrid-system --create-namespace",
 		"--set-string manager.publicURL="+shellQuote(publicURL),
 		"--set-string manager.tunnelAddr="+shellQuote(tunnelAddr),
 		"--set-string manager.tlsInsecure=true",
@@ -2577,7 +2584,7 @@ func (u *Usecase) UpgradeCommand(cluster *model.Cluster) string {
 	publicURL, tunnelAddr := installEndpoints(u.cfg.PublicURL, u.cfg.TunnelAddr)
 	namespace := strings.TrimSpace(cluster.ControllerNamespace)
 	if namespace == "" {
-		namespace = "opspilot-system"
+		namespace = "ongrid-system"
 	}
 	args := []string{
 		"helm upgrade opspilot-edge",

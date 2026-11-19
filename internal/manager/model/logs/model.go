@@ -32,9 +32,9 @@ type Backend struct {
 	Generation         uint64                `gorm:"column:generation;not null;default:1;uniqueIndex:uk_log_backend_name,priority:2" json:"generation"`
 	WriteEndpointsJSON string                `gorm:"column:write_endpoints_json;type:text;not null" json:"-"`
 	QueryEndpoint      string                `gorm:"column:query_endpoint;type:varchar(2048);not null;default:''" json:"query_endpoint"`
-	Dataset            string                `gorm:"column:dataset;type:varchar(100);not null;default:'opspilot.generic'" json:"dataset"`
+	Dataset            string                `gorm:"column:dataset;type:varchar(100);not null;default:'ongrid.generic'" json:"dataset"`
 	Namespace          string                `gorm:"column:namespace;type:varchar(100);not null;default:'default'" json:"namespace"`
-	IndexPattern       string                `gorm:"column:index_pattern;type:varchar(255);not null;default:'logs-opspilot.*.otel-*'" json:"index_pattern"`
+	IndexPattern       string                `gorm:"column:index_pattern;type:varchar(255);not null;default:'logs-ongrid.*.otel-*'" json:"index_pattern"`
 	WriteCredentialRef string                `gorm:"column:write_credential_ref;type:varchar(128);not null;default:''" json:"write_credential_ref"`
 	QueryCredentialRef string                `gorm:"column:query_credential_ref;type:varchar(128);not null;default:''" json:"query_credential_ref"`
 	AuthType           string                `gorm:"column:auth_type;type:varchar(16);not null;default:'api_key'" json:"auth_type"`

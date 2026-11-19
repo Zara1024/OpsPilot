@@ -46,7 +46,7 @@ const Name = "hostmetrics"
 
 // DefaultListenAddress is what we hand to node_exporter when the spec
 // doesn't override. 9102 (not 9100) avoids collisions with hosts where
-// the opspilot manager container's metrics endpoint already binds 9100
+// the ongrid manager container's metrics endpoint already binds 9100
 // via docker-proxy.
 const DefaultListenAddress = ":9102"
 
@@ -104,9 +104,9 @@ type plugin struct {
 	wg     sync.WaitGroup
 }
 
-func (p *plugin) Name() string                             { return Name }
+func (p *plugin) Name() string                            { return Name }
 func (p *plugin) Configure(cfg plugins.PluginConfig) error { return p.sub.Configure(cfg) }
-func (p *plugin) HealthSnapshot() plugins.PluginHealth     { return p.sub.HealthSnapshot() }
+func (p *plugin) HealthSnapshot() plugins.PluginHealth    { return p.sub.HealthSnapshot() }
 
 // Start brings up the subprocess and the producer goroutine. The
 // producer uses its own context so it survives subprocess restarts

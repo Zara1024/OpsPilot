@@ -2,15 +2,15 @@ package dbx
 
 // Schema management
 //
-// OpsPilot uses GORM's AutoMigrate (dialect-agnostic) rather than hand-
-// written .up.sql / .down.sql files. Each data-layer package exposes a
+// Ongrid uses GORM's AutoMigrate (dialect-agnostic) to manage schema at startup.
+// Each data-layer package exposes a
 // Migrator function (type Migrator func(*gorm.DB) error) that registers
 // its own models:
 //
 //	// internal/iam/data/user/sqlite/user.go
 //	func Migrate(db *gorm.DB) error { return db.AutoMigrate(&User{}) }
 //
-// The cloud binary (cmd/opspilot) composes them in startup order and hands
+// The cloud binary (cmd/ongrid) composes them in startup order and hands
 // the list to RunMigrations:
 //
 //	if err := dbx.RunMigrations(db, log,

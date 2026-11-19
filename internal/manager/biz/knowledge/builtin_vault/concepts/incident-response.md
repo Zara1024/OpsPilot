@@ -5,7 +5,7 @@ tags: [incident, sop, postmortem]
 
 # Incident Response SOP
 
-The lifecycle OpsPilot expects from alert-fired to postmortem-published.
+The lifecycle Ongrid expects from alert-fired to postmortem-published.
 The agent follows this shape and the UI's Incident Workspace mirrors it.
 
 ## Phases

@@ -87,4 +87,3 @@ func TestSilenceRetryAfterExpiryReturnsOriginalOperation(t *testing.T) {
 	_, err = f.call(t, "update_incident", args)
 	require.NoError(t, err, "rejected requests must not reserve the idempotency key")
 }
-

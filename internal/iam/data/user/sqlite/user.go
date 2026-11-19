@@ -155,4 +155,3 @@ func (r *Repo) UpdatePassHash(ctx context.Context, id uint64, passHash string) e
 	}
 	return nil
 }
-

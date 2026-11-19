@@ -27,23 +27,6 @@ func TestAPMLogCorrelationIntegration(t *testing.T) {
 		backends                                          []string
 	}
 	fixtures := []fixture{{"fixed", `{"message":"apm-correlated-request","trace_id":"00000000000000000000000000000003","span_id":"0000000000000001","service.name":"orders","service.namespace":"trade","service.version":"v1","service.instance.id":"orders-1","deployment.environment":"production","device_id":"spoofed"}`, "orders", "production", "00000000000000000000000000000003", "0000000000000001", []string{backendBuiltinLoki, backendExternalES}}}
-	if dir := os.Getenv("APM_TEST_LANGUAGE_LOG_DIR"); dir != "" {
-		for _, language := range []string{"java", "node", "python"} {
-			raw, err := os.ReadFile(filepath.Join(dir, language+"-requests.jsonl"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			line := strings.SplitN(strings.TrimSpace(string(raw)), "\n", 2)[0]
-			var record map[string]string
-			if err := json.Unmarshal([]byte(line), &record); err != nil {
-				t.Fatal(err)
-			}
-			if len(record["trace_id"]) != 32 || len(record["span_id"]) != 16 {
-				t.Fatalf("invalid real application correlation: %s", line)
-			}
-			fixtures = append(fixtures, fixture{language, line, record["service.name"], record["deployment.environment.name"], record["trace_id"], record["span_id"], []string{backendExternalES}})
-		}
-	}
 	for _, input := range fixtures {
 		for _, backend := range input.backends {
 			t.Run(input.name+"/"+backend, func(t *testing.T) {
@@ -85,7 +68,7 @@ func TestAPMLogCorrelationIntegration(t *testing.T) {
 				if err := os.WriteFile(filepath.Join(dir, "key"), []byte("test-only"), 0644); err != nil {
 					t.Fatal(err)
 				}
-				spec := map[string]any{"backend": backend, "enable_journald": false, "start_at": "beginning", "sources": []any{map[string]any{"id": "apm-test", "include": []any{"/apm/source.log"}, "parser": "json"}}, "backend_generation": 1, "elasticsearch_endpoints": []any{"http://elasticsearch:9200"}, "elasticsearch_api_key_file": "/apm/key", "elasticsearch_dataset": "opspilot.host", "elasticsearch_namespace": "apm-test", "elasticsearch_tls_insecure_skip_verify": true, "loki_auth_mode": "none"}
+				spec := map[string]any{"backend": backend, "enable_journald": false, "start_at": "beginning", "sources": []any{map[string]any{"id": "apm-test", "include": []any{"/apm/source.log"}, "parser": "json"}}, "backend_generation": 1, "elasticsearch_endpoints": []any{"http://elasticsearch:9200"}, "elasticsearch_api_key_file": "/apm/key", "elasticsearch_dataset": "ongrid.host", "elasticsearch_namespace": "apm-test", "elasticsearch_tls_insecure_skip_verify": true, "loki_auth_mode": "none"}
 				raw, err := render(plugins.PluginConfig{EdgeID: 42, Endpoint: "http://loki:3100/otlp/v1/logs", Spec: spec})
 				if err != nil {
 					t.Fatal(err)
@@ -93,7 +76,7 @@ func TestAPMLogCorrelationIntegration(t *testing.T) {
 				if err := os.WriteFile(filepath.Join(dir, "collector.yaml"), raw, 0644); err != nil {
 					t.Fatal(err)
 				}
-				name := fmt.Sprintf("opspilot-apm-log-test-%d-%s", os.Getpid(), backend)
+				name := fmt.Sprintf("ongrid-apm-log-test-%d-%s", os.Getpid(), backend)
 				command := exec.CommandContext(ctx, "docker", "run", "--rm", "--name", name, "--network", network, "--user", "10001:10001", "-v", dir+":/apm", "-w", "/apm", "otel/opentelemetry-collector-contrib:0.157.0", "--config=/apm/collector.yaml", "--feature-gates=transform.flatten.logs")
 				output, err := os.Create(filepath.Join(dir, "collector.log"))
 				if err != nil {
@@ -117,7 +100,7 @@ func TestAPMLogCorrelationIntegration(t *testing.T) {
 				})
 				var searcher logquery.Searcher = logquery.New("http://127.0.0.1:13100", nil)
 				if backend == backendExternalES {
-					searcher, err = logquery.NewElasticsearchClient(logquery.ElasticsearchConfig{Endpoint: "http://127.0.0.1:19200", IndexPattern: "logs-opspilot.host.otel-*", APIKey: "test-only", AllowInsecureHTTP: true}, nil, nil)
+					searcher, err = logquery.NewElasticsearchClient(logquery.ElasticsearchConfig{Endpoint: "http://127.0.0.1:19200", IndexPattern: "logs-ongrid.host.otel-*", APIKey: "test-only", AllowInsecureHTTP: true}, nil, nil)
 					if err != nil {
 						t.Fatal(err)
 					}

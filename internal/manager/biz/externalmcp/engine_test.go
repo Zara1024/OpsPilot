@@ -76,7 +76,7 @@ func newFixture(t *testing.T, confirmation ...bool) *fixture {
 	t.Helper()
 	config := &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)}
 	var dialect gorm.Dialector = sqlite.Open(filepath.Join(t.TempDir(), "mcp.db"))
-	if dsn := os.Getenv("ONGRID_MCP_TEST_MYSQL_DSN"); dsn != "" {
+	if dsn := os.Getenv("OPSPILOT_MCP_TEST_MYSQL_DSN"); dsn != "" {
 		cfg, err := mysqldriver.ParseDSN(dsn)
 		require.NoError(t, err)
 		cfg.DBName = ""
@@ -120,6 +120,16 @@ func newFixture(t *testing.T, confirmation ...bool) *fixture {
 	require.NoError(t, err)
 	s := store.New(db)
 	a := approval.NewUsecase(approvaldata.NewRepo(db), log)
+	a.RequireAuthorization(approval.AuthorizerFunc(func(ctx context.Context, id uint64) error {
+		var current iammodel.User
+		if err := db.WithContext(ctx).First(&current, id).Error; err != nil {
+			return err
+		}
+		if current.Role != iammodel.RoleAdmin || current.Status != iammodel.StatusActive {
+			return errs.ErrForbidden
+		}
+		return nil
+	}))
 	e := &biz.Engine{Auth: auth, Audit: audit, Store: s, Approvals: a, WritesEnabled: true, Log: log, BaseURL: "https://example.test"}
 	resources := service.Resources{Monitor: monitorbiz.New(monitordata.NewRepo(db), nil, log)}
 	e.Catalog, err = biz.NewCatalog(append(service.ProjectTools(resources.Tools()), e.ControlTools()...))
@@ -165,7 +175,7 @@ func panelInput(key string) map[string]any {
 }
 
 func TestAPIMutationWaitsForLinkedConfirmationAndExecutesOnce(t *testing.T) {
-	t.Setenv("ONGRID_SECRET_KEY", "test-only-external-api-encryption-key")
+	t.Setenv("OPSPILOT_SECRET_KEY", "test-only-external-api-encryption-key")
 	f := newFixture(t)
 	var calls atomic.Int32
 	router := chi.NewRouter()
@@ -694,4 +704,3 @@ func TestConcurrentRoutineRetriesExecuteOnceWithoutApproval(t *testing.T) {
 	require.NoError(t, f.db.Model(&approvalmodel.Approval{}).Count(&count).Error)
 	require.Zero(t, count)
 }
-

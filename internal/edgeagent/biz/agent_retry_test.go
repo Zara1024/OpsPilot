@@ -22,7 +22,7 @@ func TestHeartbeatRetryDelayBounds(t *testing.T) {
 		{2 * time.Minute, 1, time.Minute},
 		{2 * time.Minute, 32, 2 * time.Minute},
 	} {
-		for i := 0; i < 20; i++ {
+		for range 20 {
 			got := heartbeatRetryDelay(tc.interval, tc.failures)
 			if got < tc.limit-tc.limit/10 || got > tc.limit {
 				t.Fatalf("delay(%s, %d) = %s, want 90-100%% of %s", tc.interval, tc.failures, got, tc.limit)

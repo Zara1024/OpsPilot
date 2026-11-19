@@ -242,7 +242,7 @@ func (c *Client) RegisterEdgeOffline(ctx context.Context, fn func(edgeID uint64,
 // cfg) to layer SSH over the tunnel, while the edge side just
 // io.Copy's bytes to its local sshd socket.
 //
-// The stream is opaque-typed wrt routing: opspilot sets the stream's
+// The stream is opaque-typed wrt routing: ongrid sets the stream's
 // Meta blob to a small JSON descriptor (e.g.
 // `{"target":"127.0.0.1:22"}`) that the edge decodes before dialing
 // the local socket. This keeps the tunnel layer generic — adding

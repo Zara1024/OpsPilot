@@ -38,10 +38,10 @@ type taskDTO struct {
 	ID         string     `json:"id"`   // "report-schedule:<n>" | "oneoff:<uuid>"
 	Kind       string     `json:"kind"` // "recurring_report" | "oneoff"
 	Title      string     `json:"title"`
-	ReportKind string     `json:"report_kind"` // daily/weekly/monthly
-	Trigger    string     `json:"trigger"`     // "cron · tz" | "一次性"
-	Enabled    bool       `json:"enabled"`     // recurring on/off; oneoff always true
-	Status     string     `json:"status"`      // oneoff status; recurring derived
+	ReportKind string     `json:"report_kind"`          // daily/weekly/monthly
+	Trigger    string     `json:"trigger"`              // "cron · tz" | "一次性"
+	Enabled    bool       `json:"enabled"`              // recurring on/off; oneoff always true
+	Status     string     `json:"status"`               // oneoff status; recurring derived
 	NextFireAt *time.Time `json:"next_fire_at,omitempty"`
 	ScheduleID *uint64    `json:"schedule_id,omitempty"` // recurring: numeric id for CRUD
 	CreatedAt  time.Time  `json:"created_at"`

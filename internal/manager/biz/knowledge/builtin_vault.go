@@ -11,7 +11,7 @@ import (
 
 // builtinVaultFS carries the platform-vendor knowledge vault straight in
 // the binary. "Built-in" used to be a misnomer: the seed flow registered
-// github.com/zara1024/vault.git and Sync() shelled `git clone` at first
+// github.com/ongridio/vault.git and Sync() shelled `git clone` at first
 // boot, so any operator without outbound github.com:443 (air-gapped, or
 // just a mainland-China host where github times out) booted to an empty
 // knowledge base — the exact thing "built-in" promises not to do.
@@ -23,7 +23,7 @@ import (
 // remove the network dependency for getting the raw docs onto disk.
 //
 // Re-vendor with scripts/sync-builtin-vault.sh after the upstream
-// zara1024/vault repo changes.
+// ongridio/vault repo changes.
 //
 //go:embed all:builtin_vault
 var builtinVaultFS embed.FS
@@ -42,7 +42,7 @@ const BuiltinVaultURL = "builtin://vault"
 // deliberately NOT operator-configurable — the vault always comes from this
 // one repo, and a clone here never becomes a Repos-list row.
 const (
-	BuiltinVaultGitURL = "https://github.com/zara1024/vault.git"
+	BuiltinVaultGitURL = "https://github.com/ongridio/vault.git"
 	BuiltinVaultBranch = "main"
 )
 

@@ -115,7 +115,7 @@ type RelatedAlertQuerier interface {
 type Config struct {
 	// Enabled gates the whole usecase. When false, Enqueue is a no-op.
 	// Operators can flip this via env at boot
-	// (ONGRID_INVESTIGATOR_ENABLED=true) — first-version default OFF
+	// (OPSPILOT_INVESTIGATOR_ENABLED=true) — first-version default OFF
 	// so existing deployments don't suddenly start burning LLM tokens.
 	Enabled bool
 
@@ -163,7 +163,7 @@ type Config struct {
 	// per-request via the HTTP handler's Accept-Language → ForceEnqueue.
 	// "en" → "Respond in English.", "zh" → "请用中文回答。", empty →
 	// no directive (persona's language wins, currently Chinese). Set via
-	// ONGRID_DEFAULT_LOCALE env at boot — see [[feedback_ai_output_locale]]:
+	// OPSPILOT_DEFAULT_LOCALE env at boot — see [[feedback_ai_output_locale]]:
 	// AI 输出语言跟随用户 UI locale.
 	DefaultLocale string
 }

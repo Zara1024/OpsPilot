@@ -19,7 +19,7 @@ import (
 // into the report. The LLM owns only Narrative / KeyIncidents ordering
 // commentary / Advice.
 type Content struct {
-	Version   string     `json:"version"`
+	Version   string    `json:"version"`
 	Hero      []HeroStat `json:"hero"`
 	Narrative Narrative  `json:"narrative"`
 	// Resource / Fleet / Changes are facts-injected (the generator
@@ -59,8 +59,8 @@ type Narrative struct {
 }
 
 type Paragraph struct {
-	Text     string      `json:"text"`
-	Entities []EntityRef `json:"entities,omitempty"`
+	Text     string         `json:"text"`
+	Entities []EntityRef     `json:"entities,omitempty"`
 }
 
 type EntityRef struct {
@@ -82,10 +82,10 @@ type KeyIncident struct {
 
 // ActionsSummary is the agent-transparency panel. All counts SQL-true.
 type ActionsSummary struct {
-	MutatingTotal    int         `json:"mutating_total"`
-	MutatingApproved int         `json:"mutating_approved"`
-	SafeTotal        int         `json:"safe_total"`
-	ByTool           []ToolCount `json:"by_tool,omitempty"`
+	MutatingTotal    int          `json:"mutating_total"`
+	MutatingApproved int          `json:"mutating_approved"`
+	SafeTotal        int          `json:"safe_total"`
+	ByTool           []ToolCount  `json:"by_tool,omitempty"`
 }
 
 type ToolCount struct {

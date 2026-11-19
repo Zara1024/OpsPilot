@@ -93,7 +93,7 @@ func (f *fakePusher) snapshot() []tunnel.PushPromSamplesRequest {
 
 // TestParseSpec_Defaults: an empty spec yields the multi-target
 // default (node_exporter :9102 + process_exporter :9256) and an empty
-// SourceLabel — push samples land without an opspilot_source label so
+// SourceLabel — push samples land without an ongrid_source label so
 // they unify with the legacy direct-scrape series.
 func TestParseSpec_Defaults(t *testing.T) {
 	got, err := parseSpec(nil)
@@ -116,7 +116,7 @@ func TestParseSpec_Defaults(t *testing.T) {
 		t.Errorf("default timeout = %v; want %v", got.Timeout, defaultTimeout)
 	}
 	if got.SourceLabel != "" {
-		t.Errorf("source label = %q; want empty (no opspilot_source label on push)", got.SourceLabel)
+		t.Errorf("source label = %q; want empty (no ongrid_source label on push)", got.SourceLabel)
 	}
 }
 
@@ -376,7 +376,7 @@ func TestPlugin_PushesSamplesWithEdgeID(t *testing.T) {
 		t.Errorf("call EdgeID = %d; want 42", c.EdgeID)
 	}
 	if c.Source != "" {
-		t.Errorf("call Source = %q; want empty (default — no opspilot_source label)", c.Source)
+		t.Errorf("call Source = %q; want empty (default — no ongrid_source label)", c.Source)
 	}
 	if len(c.Samples) == 0 {
 		t.Errorf("call samples is empty")

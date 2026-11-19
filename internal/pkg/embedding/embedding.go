@@ -67,7 +67,7 @@ type Config struct {
 //	"local" / "fastembed" / "onnx" — in-process ONNX inference via
 //	  fastembed-go. No network, no API key. Model file lives at
 //	  cfg.BaseURL (interpreted as CacheDir) or OPSPILOT_EMBEDDING_CACHE_DIR
-//	  (default /var/lib/opspilot/embeddings). cfg.Model picks the variant
+//	  (default /var/lib/ongrid/embeddings). cfg.Model picks the variant
 //	  (default bge-small-zh-v1.5 — 中英混合 best @ 30MB, dim=512).
 func New(cfg Config) (Embedder, error) {
 	provider := strings.ToLower(strings.TrimSpace(cfg.Provider))

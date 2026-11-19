@@ -174,49 +174,179 @@ func TestRegisterRejectsDuplicateEmail(t *testing.T) {
 	uc := newTestUsecase(t)
 	ctx := context.Background()
 
-	if _, err := uc.Register(ctx, "a@example.com", "pw-aaaa", model.RoleUser); err != nil {
+	if _, err := uc.Register(ctx, "a@example.com", "password-aaaa", model.RoleUser); err != nil {
 		t.Fatalf("first register: %v", err)
 	}
-	_, err := uc.Register(ctx, "a@example.com", "pw-bbbb", model.RoleUser)
+	_, err := uc.Register(ctx, "a@example.com", "password-bbbb", model.RoleUser)
 	if !errors.Is(err, errs.ErrConflict) {
 		t.Fatalf("want ErrConflict, got %v", err)
 	}
 }
 
-// 测试邮箱与手机号合法性校验
-func TestValidateEmailAndPhone(t *testing.T) {
+func TestRegister_EmailFormat(t *testing.T) {
 	uc := newTestUsecase(t)
 	ctx := context.Background()
 
-	// 非法邮箱测试
-	badEmails := []string{"invalid", "user@", "@domain.com", "user@domain", "user space@domain.com"}
-	for _, em := range badEmails {
-		_, err := uc.Create(ctx, CreateInput{Email: em, Password: "password123"})
-		if err == nil {
-			t.Errorf("期望拒绝非法邮箱 %q，但校验通过", em)
-		}
+	// Valid emails including apostrophe per RFC 5322 §3.2.3
+	validEmails := []string{
+		"o'connor@example.com",
+		"user.name@example.com",
+		"user+tag@example.com",
 	}
-
-	// 合法邮箱与非法手机号测试
-	badPhones := []string{"123", "abcdef", "12345678901", "1380013800a"}
-	for _, ph := range badPhones {
-		_, err := uc.Create(ctx, CreateInput{Email: "valid@example.com", Password: "password123", Phone: ph})
-		if err == nil {
-			t.Errorf("期望拒绝非法手机号 %q，但校验通过", ph)
-		}
-	}
-
-	// 合法邮箱与合法手机号测试
-	goodPhones := []string{"", "13800138000", "+8613800138000", "+12025550123"}
-	for i, ph := range goodPhones {
-		email := fmt.Sprintf("valid%d@example.com", i)
-		u, err := uc.Create(ctx, CreateInput{Email: email, Password: "password123", Phone: ph})
+	for _, email := range validEmails {
+		u, err := uc.Register(ctx, email, "validpass123", model.RoleUser)
 		if err != nil {
-			t.Errorf("期望允许合法手机号 %q 与邮箱 %q，但报错: %v", ph, email, err)
+			t.Errorf("Register(%q): unexpected error: %v", email, err)
 		}
-		if u == nil {
-			t.Errorf("期望返回创建的用户对象，但为 nil")
+		if u == nil || u.Email != email {
+			t.Errorf("Register(%q): expected user email %q", email, email)
+		}
+	}
+
+	// Invalid emails: consecutive dots, leading/trailing dots, malformed domain
+	invalidEmails := []string{
+		"not-an-email",
+		"@example.com",
+		"user@",
+		"user@.com",
+		"user@com",
+		"first..last@example.com",
+		"user@example..com",
+		"user@-example.com",
+		"user@example-.com",
+		".user@example.com",
+		"user.@example.com",
+	}
+	for _, email := range invalidEmails {
+		_, err := uc.Register(ctx, email, "validpass123", model.RoleUser)
+		if !errors.Is(err, errs.ErrInvalid) {
+			t.Errorf("Register(%q): want ErrInvalid, got %v", email, err)
 		}
 	}
 }
 
+func TestPasswordLengthPolicy(t *testing.T) {
+	uc := newTestUsecase(t)
+	ctx := context.Background()
+
+	shortPasswords := []string{
+		"1", "1234567", "a", "short",
+		"密码短",        // 3 Unicode characters, but 9 UTF-8 bytes
+		"密码六个字",      // 5 Unicode characters
+		"七个字符的密码",    // 7 Unicode characters
+		"🔑🔑🔑",         // 3 emojis, 12 UTF-8 bytes
+		"🔑🔑🔑🔑🔑🔑🔑",     // 7 emojis, 28 UTF-8 bytes
+	}
+	for _, pw := range shortPasswords {
+		// Register rejects short passwords
+		_, err := uc.Register(ctx, "reg@example.com", pw, model.RoleUser)
+		if !errors.Is(err, errs.ErrInvalid) {
+			t.Errorf("Register with password %q: want ErrInvalid, got %v", pw, err)
+		}
+
+		// Create rejects short passwords
+		_, err = uc.Create(ctx, CreateInput{
+			Email:    "create@example.com",
+			Password: pw,
+		})
+		if !errors.Is(err, errs.ErrInvalid) {
+			t.Errorf("Create with password %q: want ErrInvalid, got %v", pw, err)
+		}
+	}
+
+	// Create user with valid password for testing ResetPassword
+	u, err := uc.Create(ctx, CreateInput{
+		Email:    "reset@example.com",
+		Password: "validpassword123",
+	})
+	if err != nil {
+		t.Fatalf("Create user for reset: %v", err)
+	}
+
+	for _, pw := range shortPasswords {
+		err := uc.ResetPassword(ctx, u.ID, pw)
+		if !errors.Is(err, errs.ErrInvalid) {
+			t.Errorf("ResetPassword with password %q: want ErrInvalid, got %v", pw, err)
+		}
+	}
+
+	// Valid reset password succeeds
+	if err := uc.ResetPassword(ctx, u.ID, "newvalidpw123"); err != nil {
+		t.Errorf("ResetPassword with valid password: %v", err)
+	}
+
+	// Valid non-ASCII passwords with 8+ runes succeed
+	validNonAscii := []string{
+		"密码至少八个字符",     // 8 Chinese characters
+		"这是一段足够长的安全密码", // 11 Chinese characters
+		"🔑🔑🔑🔑🔑🔑🔑🔑",   // 8 emojis, 32 UTF-8 bytes
+	}
+	for i, pw := range validNonAscii {
+		email := fmt.Sprintf("nonascii-%d@example.com", i)
+		if _, err := uc.Register(ctx, email, pw, model.RoleUser); err != nil {
+			t.Errorf("Register with valid non-ASCII password %q: unexpected error %v", pw, err)
+		}
+		if err := uc.ResetPassword(ctx, u.ID, pw); err != nil {
+			t.Errorf("ResetPassword with valid non-ASCII password %q: unexpected error %v", pw, err)
+		}
+	}
+}
+
+func TestCreate_EmailAndPhoneValidation(t *testing.T) {
+	uc := newTestUsecase(t)
+	ctx := context.Background()
+
+	// Invalid email
+	_, err := uc.Create(ctx, CreateInput{
+		Email:    "bad-email",
+		Password: "password123",
+	})
+	if !errors.Is(err, errs.ErrInvalid) {
+		t.Fatalf("Create with invalid email: want ErrInvalid, got %v", err)
+	}
+
+	// Invalid phone
+	_, err = uc.Create(ctx, CreateInput{
+		Email:    "valid@example.com",
+		Password: "password123",
+		Phone:    "not-a-phone-number",
+	})
+	if !errors.Is(err, errs.ErrInvalid) {
+		t.Fatalf("Create with invalid phone: want ErrInvalid, got %v", err)
+	}
+
+	// Valid email and phone
+	u, err := uc.Create(ctx, CreateInput{
+		Email:    "valid@example.com",
+		Password: "password123",
+		Phone:    "+8613800138000",
+	})
+	if err != nil {
+		t.Fatalf("Create with valid email and phone: %v", err)
+	}
+	if u.Email != "valid@example.com" {
+		t.Errorf("email = %q, want valid@example.com", u.Email)
+	}
+
+	// Invalid phone in UpdateProfile
+	if err := uc.UpdateProfile(ctx, u.ID, "New Name", "invalid-phone"); !errors.Is(err, errs.ErrInvalid) {
+		t.Errorf("UpdateProfile with invalid phone: want ErrInvalid, got %v", err)
+	}
+
+	// Valid phone in UpdateProfile
+	if err := uc.UpdateProfile(ctx, u.ID, "New Name", "+12025550123"); err != nil {
+		t.Errorf("UpdateProfile with valid phone: %v", err)
+	}
+
+	// Clear phone in UpdateProfile
+	if err := uc.UpdateProfile(ctx, u.ID, "New Name", ""); err != nil {
+		t.Errorf("UpdateProfile with empty phone: %v", err)
+	}
+	updated, err := uc.GetByID(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("GetByID after clearing phone: %v", err)
+	}
+	if updated.Phone != "" {
+		t.Errorf("phone = %q, want empty string", updated.Phone)
+	}
+}

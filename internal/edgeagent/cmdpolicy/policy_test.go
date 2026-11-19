@@ -326,7 +326,7 @@ func TestDecide_PipelineMixedAllow(t *testing.T) {
 	installFakeBin(t, p, "ps")
 	installFakeBin(t, p, "grep")
 	installFakeBin(t, p, "head")
-	d := p.Decide("ps aux | grep opspilot | head -5")
+	d := p.Decide("ps aux | grep ongrid | head -5")
 	if !d.Allow {
 		t.Errorf("expected allow, got %s", d.Reason)
 	}

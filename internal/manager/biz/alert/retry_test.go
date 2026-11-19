@@ -15,7 +15,7 @@ func TestRetryWorkerSucceedsOnRecover(t *testing.T) {
 	// Seed an incident + a failed delivery that has aged past backoff.
 	edge := uint64(7)
 	incident := &model.Incident{
-		DeviceID:     &edge,
+		DeviceID:       &edge,
 		Title:        "edge 7 cpu_high",
 		ScopeType:    model.RuleScopeHost,
 		Rule:         "cpu_high",
@@ -73,7 +73,7 @@ func TestRetryWorkerHonorsBackoff(t *testing.T) {
 	now := time.Date(2026, 5, 2, 12, 0, 0, 0, time.UTC)
 	edge := uint64(7)
 	incident := &model.Incident{
-		DeviceID:  &edge,
+		DeviceID:    &edge,
 		Title:     "edge 7 cpu_high",
 		ScopeType: model.RuleScopeHost,
 		Rule:      "cpu_high",
@@ -118,7 +118,7 @@ func TestRetryWorkerStopsAtMaxAttempts(t *testing.T) {
 	now := time.Date(2026, 5, 2, 12, 0, 0, 0, time.UTC)
 	edge := uint64(7)
 	incident := &model.Incident{
-		DeviceID:  &edge,
+		DeviceID:    &edge,
 		ScopeType: model.RuleScopeHost,
 		Rule:      "cpu_high",
 		Status:    model.IncidentStatusOpen,
@@ -159,7 +159,7 @@ func TestRetryWorkerSkipsResolvedIncident(t *testing.T) {
 	resolved := now.Add(-2 * time.Minute)
 	edge := uint64(7)
 	incident := &model.Incident{
-		DeviceID:   &edge,
+		DeviceID:     &edge,
 		ScopeType:  model.RuleScopeHost,
 		Rule:       "cpu_high",
 		Status:     model.IncidentStatusResolved,

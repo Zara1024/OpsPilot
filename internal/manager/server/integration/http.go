@@ -86,7 +86,7 @@ type Handler struct {
 	llmProbe  LLMConfigProbe
 }
 
-// NewHandler builds the handler. prom may be nil when ONGRID_PROM_ENABLED=false;
+// NewHandler builds the handler. prom may be nil when OPSPILOT_PROM_ENABLED=false;
 // the test route then 503s instead of crashing. loki/tempo/webSearch probes
 // are optional — when nil the corresponding /test endpoint 503s.
 func NewHandler(grafana GrafanaService, prom PromConfigProbe, loki URLProbe, tempo URLProbe, webSearch WebSearchProbe) *Handler {
@@ -408,7 +408,7 @@ func (h *Handler) testProm(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.prom == nil {
 		writeJSON(w, http.StatusServiceUnavailable, errorBody{
-			Error: "prom not enabled (set ONGRID_PROM_ENABLED=true)",
+			Error: "prom not enabled (set OPSPILOT_PROM_ENABLED=true)",
 			Code:  "prom-disabled",
 		})
 		return

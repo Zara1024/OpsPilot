@@ -180,12 +180,51 @@ func TestRenderLiteralSelectionAndIndependentSampling(t *testing.T) {
 	if strings.Contains(string(body), "application_span") {
 		t.Fatal("duplicate spanmetrics enabled")
 	}
+	cfg.Spec["sample_ratio"] = 0.0
+	body, err = render(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v = nil
+	if err := yaml.Unmarshal(body, &v); err != nil {
+		t.Fatal(err)
+	}
+	sampler := v["otel_traces_export"].(map[string]interface{})["sampler"]
+	if !reflect.DeepEqual(sampler, map[string]interface{}{"name": "always_off"}) {
+		t.Fatalf("zero sampling must disable traces even with a sampled parent: %v", sampler)
+	}
 	t.Setenv("OTEL_EBPF_OPEN_PORT", "1-65535")
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "https://unrelated")
 	for _, entry := range obiEnvironment(cfg) {
 		if strings.HasPrefix(entry, "OTEL_") {
 			t.Fatal("inherited OTel config can override selection")
 		}
+	}
+}
+
+func TestAutomaticSDKTraceDetectionRetainsOBIFallbackAndMetrics(t *testing.T) {
+	body, err := render(plugins.PluginConfig{Spec: contract.Spec{Targets: []contract.Target{
+		{Executable: "/opt/sdk", Port: 8080, ServiceName: "sdk"},
+		{Executable: "/opt/automatic", Port: 8080, ServiceName: "automatic"},
+	}}.Map()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]interface{}
+	if err := yaml.Unmarshal(body, &config); err != nil {
+		t.Fatal(err)
+	}
+	discovery := config["discovery"].(map[string]interface{})
+	if discovery["exclude_otel_instrumented_services"] != true {
+		t.Fatal("automatic SDK detection disabled")
+	}
+	for _, rule := range discovery["services"].([]interface{}) {
+		if _, ok := rule.(map[string]interface{})["exports"]; ok {
+			t.Fatal("target cannot fall back to OBI traces")
+		}
+	}
+	if !reflect.DeepEqual(config["metrics"].(map[string]interface{})["features"], []interface{}{"application", "application_runtime"}) {
+		t.Fatal("OBI runtime metrics disabled")
 	}
 }
 
@@ -217,7 +256,7 @@ func TestKubernetesRulesUseMetadataAndSkipHostDiscovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	rules := config["discovery"].(map[string]interface{})["services"].([]interface{})
-	if config["ebpf"].(map[string]interface{})["bpf_fs_path"] != "/sys/fs/bpf/opspilot" {
+	if config["ebpf"].(map[string]interface{})["bpf_fs_path"] != "/sys/fs/bpf/ongrid" {
 		t.Fatal("Kubernetes OBI must use its owned bpffs directory")
 	}
 	first := rules[0].(map[string]interface{})

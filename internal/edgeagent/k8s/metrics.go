@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Zara1024/OpsPilot/internal/edgeagent/plugins/metricscommon"
+	"github.com/Zara1024/OpsPilot/internal/pkg/autoapm"
 	"github.com/Zara1024/OpsPilot/internal/pkg/tunnel"
 )
 
@@ -35,6 +37,7 @@ type MetricsConfig struct {
 	BatchSampleLimit int
 	BatchByteLimit   int
 	DiscoverApps     bool
+	AppMetricsScope  func(context.Context) (autoapm.MetricsScope, error)
 }
 
 type MetricsPusher struct {
@@ -288,7 +291,12 @@ func (p *MetricsPusher) logScrapeOutcome(target metricscommon.Target, stats metr
 }
 
 func (p *MetricsPusher) discoverAndPushAppMetrics(ctx context.Context, edgeID uint64) {
-	if p.api == nil {
+	if p.api == nil || p.cfg.AppMetricsScope == nil {
+		return
+	}
+	scope, err := p.cfg.AppMetricsScope(ctx)
+	if err != nil {
+		p.log.Warn("k8s app metrics scope unavailable", slog.Any("err", err))
 		return
 	}
 	pods, err := p.api.listMetricPods(ctx, "")
@@ -298,7 +306,7 @@ func (p *MetricsPusher) discoverAndPushAppMetrics(ctx context.Context, edgeID ui
 	}
 	discovered := 0
 	for _, pod := range pods {
-		target, ok := appMetricsTarget(pod, p.cfg)
+		target, ok := appMetricsTarget(pod, p.cfg, scope)
 		if !ok {
 			continue
 		}
@@ -388,17 +396,21 @@ func (c *apiClient) listMetricPods(ctx context.Context, namespace string) ([]pod
 	return list.Items, nil
 }
 
-func appMetricsTarget(pod podItem, cfg MetricsConfig) (metricscommon.Target, bool) {
+func appMetricsTarget(pod podItem, cfg MetricsConfig, scope autoapm.MetricsScope) (metricscommon.Target, bool) {
+	if !scope.Allows(pod.Metadata.Namespace, pod.Metadata.UID) {
+		return metricscommon.Target{}, false
+	}
 	ann := pod.Metadata.Annotations
 	if !annotationBool(ann["prometheus.io/scrape"]) {
 		return metricscommon.Target{}, false
 	}
 	podIP := strings.TrimSpace(pod.Status.PodIP)
-	if podIP == "" {
+	if podIP == "" || pod.Status.Phase == "Succeeded" || pod.Status.Phase == "Failed" {
 		return metricscommon.Target{}, false
 	}
 	port := firstMetricString(strings.TrimSpace(ann["prometheus.io/port"]), firstContainerPort(pod))
-	if port == "" {
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
 		return metricscommon.Target{}, false
 	}
 	scheme := strings.ToLower(firstMetricString(strings.TrimSpace(ann["prometheus.io/scheme"]), "http"))
@@ -434,17 +446,6 @@ func appMetricsTarget(pod podItem, cfg MetricsConfig) (metricscommon.Target, boo
 		ExtraLabels: labels,
 		SampleLimit: cfg.SampleLimit,
 		Kind:        "kubernetes-app",
-		LabelDrop: []string{
-			"uid",
-			"pod_uid",
-			"container_id",
-			"image_id",
-			"id",
-			"owner_uid",
-			"controller_revision_hash",
-			"instance",
-			"url",
-		},
 	}, true
 }
 

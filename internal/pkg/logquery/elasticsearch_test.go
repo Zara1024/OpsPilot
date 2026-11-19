@@ -339,7 +339,7 @@ func TestDecodeElasticsearchRecordDetectsHistoricalKlogLevel(t *testing.T) {
 }
 
 func TestElasticsearchClient_RequirePrivilegesUsesFixedIndexPattern(t *testing.T) {
-	const pattern = "logs-opspilot.*.otel-prod"
+	const pattern = "logs-ongrid.*.otel-prod"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/_security/user/_has_privileges" {
 			http.NotFound(w, r)
@@ -381,7 +381,7 @@ func TestElasticsearchClient_CountUsesFixedIndexAndStructuredQuery(t *testing.T)
 			http.NotFound(w, r)
 			return
 		}
-		if !strings.HasPrefix(r.URL.Path, "/logs-opspilot.") {
+		if !strings.HasPrefix(r.URL.Path, "/logs-ongrid.") {
 			t.Fatalf("count path = %q", r.URL.Path)
 		}
 		body, err := io.ReadAll(r.Body)
@@ -428,7 +428,7 @@ func TestElasticsearchClient_CountGroupedPagesCompositeAggregation(t *testing.T)
 		composite := groups["composite"].(map[string]any)
 		sources := composite["sources"].([]any)
 		encodedSources, _ := json.Marshal(sources)
-		for _, want := range []string{"resource.attributes.device_id", "resource.attributes.opspilot_source", "missing_bucket"} {
+		for _, want := range []string{"resource.attributes.device_id", "resource.attributes.ongrid_source", "missing_bucket"} {
 			if !strings.Contains(string(encodedSources), want) {
 				t.Fatalf("sources = %s, missing %q", encodedSources, want)
 			}
@@ -505,6 +505,10 @@ func TestNewElasticsearchClient_RejectsUnsafeEndpointAndIndexPattern(t *testing.
 		{Endpoint: "https://user:pass@es.example", APIKey: "key"},
 		{Endpoint: "https://es.example", APIKey: "key", IndexPattern: "*"},
 		{Endpoint: "https://es.example", APIKey: ""},
+		{Endpoint: "https://es.example", BasicUser: "reader"},
+		{Endpoint: "https://es.example", BasicPassword: "test-password"},
+		{Endpoint: "https://es.example", BasicUser: "reader:other", BasicPassword: "test-password"},
+		{Endpoint: "https://es.example", APIKey: "key", BasicUser: "reader", BasicPassword: "test-password"},
 	}
 	for _, cfg := range cases {
 		if _, err := NewElasticsearchClient(cfg, nil, nil); err == nil {

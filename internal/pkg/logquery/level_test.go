@@ -17,7 +17,7 @@ func TestDetectLevel(t *testing.T) {
 		{name: "timestamped info", message: `2026/08/21 13:51:48 INFO github.com/example writePkt`, want: "info"},
 		{name: "key value warning", message: `time="2026-08-21" level=warning msg="slow"`, want: "warn"},
 		{name: "panic", message: `panic: runtime failure`, want: "panic"},
-		{name: "unclassified", message: `opspilot-log-probe-abc123`, want: "unknown"},
+		{name: "unclassified", message: `ongrid-log-probe-abc123`, want: "unknown"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

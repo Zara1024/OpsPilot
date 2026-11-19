@@ -143,7 +143,7 @@ func TestNormalizeAlertRuleConfigInputMergesSelectorIntoRawExpr(t *testing.T) {
 		Kind: "metric_raw",
 		Spec: map[string]interface{}{
 			"expr":            `(mysql_global_status_threads_connected / mysql_global_variables_max_connections) * 100 > 80`,
-			"selector":        `opspilot_source="db:mysql-test"`,
+			"selector":        `ongrid_source="db:mysql-test"`,
 			"source_explicit": true,
 		},
 	}
@@ -151,8 +151,8 @@ func TestNormalizeAlertRuleConfigInputMergesSelectorIntoRawExpr(t *testing.T) {
 	got := alertdraft.NormalizeRuleConfigInput(in)
 	expr, _ := got.Spec["expr"].(string)
 	for _, want := range []string{
-		`mysql_global_status_threads_connected{opspilot_source="db:mysql-test"}`,
-		`mysql_global_variables_max_connections{opspilot_source="db:mysql-test"}`,
+		`mysql_global_status_threads_connected{ongrid_source="db:mysql-test"}`,
+		`mysql_global_variables_max_connections{ongrid_source="db:mysql-test"}`,
 		`* 100`,
 		`> 80`,
 	} {
@@ -167,7 +167,7 @@ func TestNormalizeAlertRuleConfigInputMovesTopLevelForIntoRawSpec(t *testing.T) 
 		Kind: "metric_raw",
 		For:  "10m",
 		Spec: map[string]interface{}{
-			"expr": `( max by (device_id, opspilot_source) (mysql_global_status_threads_connected) / max by (device_id, opspilot_source) (mysql_global_variables_max_connections) ) * 100 > 75`,
+			"expr": `( max by (device_id, ongrid_source) (mysql_global_status_threads_connected) / max by (device_id, ongrid_source) (mysql_global_variables_max_connections) ) * 100 > 75`,
 		},
 	}
 
@@ -238,7 +238,7 @@ func TestNormalizeAlertRuleConfigInputMergesExistingSelector(t *testing.T) {
 	in := aiopstools.AlertRuleConfigInput{
 		Kind: "metric_raw",
 		Spec: map[string]interface{}{
-			"expr":     `sum(rate(opspilot_http_requests_total{code=~"5.."}[5m])) / sum(rate(opspilot_http_requests_total[5m])) > 0.05`,
+			"expr":     `sum(rate(ongrid_http_requests_total{code=~"5.."}[5m])) / sum(rate(ongrid_http_requests_total[5m])) > 0.05`,
 			"selector": `job="opspilot-manager"`,
 		},
 	}
@@ -246,8 +246,8 @@ func TestNormalizeAlertRuleConfigInputMergesExistingSelector(t *testing.T) {
 	got := alertdraft.NormalizeRuleConfigInput(in)
 	expr, _ := got.Spec["expr"].(string)
 	for _, want := range []string{
-		`opspilot_http_requests_total{code=~"5..",job="opspilot-manager"}`,
-		`opspilot_http_requests_total{job="opspilot-manager"}`,
+		`ongrid_http_requests_total{code=~"5..",job="opspilot-manager"}`,
+		`ongrid_http_requests_total{job="opspilot-manager"}`,
 	} {
 		if !strings.Contains(expr, want) {
 			t.Fatalf("expr = %q, want to contain %q", expr, want)
@@ -259,14 +259,14 @@ func TestNormalizeAlertRuleConfigInputReplacesConflictingExistingSelector(t *tes
 	in := aiopstools.AlertRuleConfigInput{
 		Kind: "metric_raw",
 		Spec: map[string]interface{}{
-			"expr":     `sum(rate(opspilot_http_requests_total{job="old",code=~"5.."}[5m])) > 0`,
+			"expr":     `sum(rate(ongrid_http_requests_total{job="old",code=~"5.."}[5m])) > 0`,
 			"selector": `job="opspilot-manager"`,
 		},
 	}
 
 	got := alertdraft.NormalizeRuleConfigInput(in)
 	expr, _ := got.Spec["expr"].(string)
-	want := `opspilot_http_requests_total{code=~"5..",job="opspilot-manager"}`
+	want := `ongrid_http_requests_total{code=~"5..",job="opspilot-manager"}`
 	if !strings.Contains(expr, want) {
 		t.Fatalf("expr = %q, want to contain %q", expr, want)
 	}
@@ -366,7 +366,7 @@ func TestNormalizeAlertRuleConfigInputBuildsRawMetricWithMatcherArray(t *testing
 			"source_explicit": true,
 			"selector": []interface{}{
 				`device_id="5"`,
-				`opspilot_source="db:mysql-1"`,
+				`ongrid_source="db:mysql-1"`,
 			},
 		},
 	}
@@ -374,7 +374,7 @@ func TestNormalizeAlertRuleConfigInputBuildsRawMetricWithMatcherArray(t *testing
 	got := alertdraft.NormalizeRuleConfigInput(in)
 	expr, _ := got.Spec["expr"].(string)
 	for _, want := range []string{
-		`mysql_global_status_threads_connected{device_id="5",opspilot_source="db:mysql-1"}`,
+		`mysql_global_status_threads_connected{device_id="5",ongrid_source="db:mysql-1"}`,
 		"> 80",
 	} {
 		if !strings.Contains(expr, want) {
@@ -392,15 +392,15 @@ func TestNormalizeAlertRuleConfigInputBuildsRawMetricWithSelectorMap(t *testing.
 			"threshold":       20,
 			"source_explicit": true,
 			"matchers": map[string]interface{}{
-				"opspilot_source": "db:mysql-1",
-				"device_id":       "5",
+				"ongrid_source": "db:mysql-1",
+				"device_id":     "5",
 			},
 		},
 	}
 
 	got := alertdraft.NormalizeRuleConfigInput(in)
 	expr, _ := got.Spec["expr"].(string)
-	want := `mysql_global_status_threads_running{device_id="5",opspilot_source="db:mysql-1"}`
+	want := `mysql_global_status_threads_running{device_id="5",ongrid_source="db:mysql-1"}`
 	if !strings.Contains(expr, want) {
 		t.Fatalf("expr = %q, want to contain %q", expr, want)
 	}
@@ -673,7 +673,7 @@ func TestNormalizeAlertRuleConfigInputDropsImplicitSourceIdentityFromCollectedMe
 			"metric":    "custom_app_queue_depth",
 			"operator":  ">=",
 			"threshold": 100,
-			"selector":  `queue="payments",device_id="5",opspilot_source="custom:queue",job="queue-exporter",instance="127.0.0.1:9100"`,
+			"selector":  `queue="payments",device_id="5",ongrid_source="custom:queue",job="queue-exporter",instance="127.0.0.1:9100"`,
 		},
 	}
 
@@ -694,7 +694,7 @@ func TestNormalizeAlertRuleConfigInputPreservesExplicitCollectedMetricSourceSele
 			"metric":          "custom_app_queue_depth",
 			"operator":        ">=",
 			"threshold":       100,
-			"selector":        `queue="payments",device_id="5",opspilot_source="custom:queue",job="queue-exporter",instance="127.0.0.1:9100"`,
+			"selector":        `queue="payments",device_id="5",ongrid_source="custom:queue",job="queue-exporter",instance="127.0.0.1:9100"`,
 			"source_explicit": true,
 		},
 	}
@@ -704,7 +704,7 @@ func TestNormalizeAlertRuleConfigInputPreservesExplicitCollectedMetricSourceSele
 	for _, want := range []string{
 		`queue="payments"`,
 		`device_id="5"`,
-		`opspilot_source="custom:queue"`,
+		`ongrid_source="custom:queue"`,
 		`job="queue-exporter"`,
 		`instance="127.0.0.1:9100"`,
 	} {
@@ -718,7 +718,7 @@ func TestNormalizeAlertRuleConfigInputDropsImplicitSourceIdentityFromCollectedMe
 	in := aiopstools.AlertRuleConfigInput{
 		Kind: "metric_raw",
 		Spec: map[string]interface{}{
-			"expr": `custom_app_queue_depth{queue="payments",device_id="5",opspilot_source="custom:queue",job="queue-exporter",instance="127.0.0.1:9100"} >= 100`,
+			"expr": `custom_app_queue_depth{queue="payments",device_id="5",ongrid_source="custom:queue",job="queue-exporter",instance="127.0.0.1:9100"} >= 100`,
 		},
 	}
 
@@ -811,7 +811,7 @@ func TestNormalizeAlertRuleConfigInputDropsImplicitMongoIdentityMatchersWithoutR
 	in := aiopstools.AlertRuleConfigInput{
 		Kind: "metric_raw",
 		Spec: map[string]interface{}{
-			"expr": `(max by (device_id, opspilot_source) (mongodb_ss_connections{conn_type="active",device_id="2",opspilot_source="db:mongo-test"}) / (max by (device_id, opspilot_source) (mongodb_ss_connections{conn_type="active",device_id="2",opspilot_source="db:mongo-test"}) + max by (device_id, opspilot_source) (mongodb_ss_connections{conn_type="available",device_id="2",opspilot_source="db:mongo-test"}))) * 100 > 80`,
+			"expr": `(max by (device_id, ongrid_source) (mongodb_ss_connections{conn_type="active",device_id="2",ongrid_source="db:mongo-test"}) / (max by (device_id, ongrid_source) (mongodb_ss_connections{conn_type="active",device_id="2",ongrid_source="db:mongo-test"}) + max by (device_id, ongrid_source) (mongodb_ss_connections{conn_type="available",device_id="2",ongrid_source="db:mongo-test"}))) * 100 > 80`,
 		},
 	}
 
@@ -823,10 +823,10 @@ func TestNormalizeAlertRuleConfigInputDropsImplicitMongoIdentityMatchersWithoutR
 	if !strings.Contains(expr, `conn_type="available"`) {
 		t.Fatalf("expr = %q, want available matcher preserved", expr)
 	}
-	if !strings.Contains(expr, `max by (device_id, opspilot_source)`) {
+	if !strings.Contains(expr, `max by (device_id, ongrid_source)`) {
 		t.Fatalf("expr = %q, want original aggregation preserved", expr)
 	}
-	if strings.Contains(expr, `opspilot_source="db:mongo-test"`) || strings.Contains(expr, `device_id="2"`) {
+	if strings.Contains(expr, `ongrid_source="db:mongo-test"`) || strings.Contains(expr, `device_id="2"`) {
 		t.Fatalf("expr = %q, should drop leaked sample database identity selectors", expr)
 	}
 }
@@ -836,20 +836,20 @@ func TestNormalizeAlertRuleConfigInputPreservesExplicitDatabaseSourceSelector(t 
 		Kind: "metric_raw",
 		Spec: map[string]interface{}{
 			"source_explicit": true,
-			"selector":        `opspilot_source="db:mongo-test"`,
+			"selector":        `ongrid_source="db:mongo-test"`,
 			"expr":            `(mongodb_ss_connections{conn_type="active"} / (mongodb_ss_connections{conn_type="active"} + mongodb_ss_connections{conn_type="available"})) * 100 > 80`,
 		},
 	}
 
 	got := alertdraft.NormalizeRuleConfigInput(in)
 	expr, _ := got.Spec["expr"].(string)
-	if !strings.Contains(expr, `opspilot_source="db:mongo-test"`) {
+	if !strings.Contains(expr, `ongrid_source="db:mongo-test"`) {
 		t.Fatalf("expr = %q, want explicit database source selector preserved", expr)
 	}
 	if !strings.Contains(expr, `conn_type="active"`) {
 		t.Fatalf("expr = %q, want original PromQL matcher preserved", expr)
 	}
-	if strings.Count(expr, `opspilot_source="db:mongo-test"`) != 3 {
+	if strings.Count(expr, `ongrid_source="db:mongo-test"`) != 3 {
 		t.Fatalf("expr = %q, want explicit source on numerator and denominator selectors", expr)
 	}
 }
@@ -859,14 +859,14 @@ func TestNormalizeAlertRuleConfigInputForRequestDropsModelClaimedExplicitDatabas
 		Kind: "metric_raw",
 		Spec: map[string]interface{}{
 			"source_explicit": true,
-			"selector":        `opspilot_source="db:mongo-test"`,
+			"selector":        `ongrid_source="db:mongo-test"`,
 			"expr":            `(mongodb_ss_connections{conn_type="current"} / (mongodb_ss_connections{conn_type="current"} + mongodb_ss_connections{conn_type="available"})) * 100 > 80`,
 		},
 	}
 
 	got := alertdraft.NormalizeRuleConfigInputForRequest(in, "创建 MongoDB 连接使用率超过 80% 且持续 10 分钟的告警")
 	expr, _ := got.Spec["expr"].(string)
-	if strings.Contains(expr, `opspilot_source="db:mongo-test"`) {
+	if strings.Contains(expr, `ongrid_source="db:mongo-test"`) {
 		t.Fatalf("expr = %q, should drop model-claimed source when user did not specify it", expr)
 	}
 	if _, exists := got.Spec["source_explicit"]; exists {
@@ -887,14 +887,14 @@ func TestNormalizeAlertRuleConfigInputForRequestPreservesUserSpecifiedDatabaseSo
 		Kind: "metric_raw",
 		Spec: map[string]interface{}{
 			"source_explicit": true,
-			"selector":        `opspilot_source="db:mongo-test"`,
+			"selector":        `ongrid_source="db:mongo-test"`,
 			"expr":            `(mongodb_ss_connections{conn_type="current"} / (mongodb_ss_connections{conn_type="current"} + mongodb_ss_connections{conn_type="available"})) * 100 > 80`,
 		},
 	}
 
 	got := alertdraft.NormalizeRuleConfigInputForRequest(in, "针对 source db:mongo-test 创建 MongoDB 连接使用率超过 80% 且持续 10 分钟的告警")
 	expr, _ := got.Spec["expr"].(string)
-	if !strings.Contains(expr, `opspilot_source="db:mongo-test"`) {
+	if !strings.Contains(expr, `ongrid_source="db:mongo-test"`) {
 		t.Fatalf("expr = %q, want user-specified database source preserved", expr)
 	}
 	if got.Spec["source_explicit"] != true {
@@ -906,14 +906,14 @@ func TestNormalizeAlertRuleConfigInputDropsImplicitDatabaseSourceSelector(t *tes
 	in := aiopstools.AlertRuleConfigInput{
 		Kind: "metric_raw",
 		Spec: map[string]interface{}{
-			"selector": `opspilot_source="db:mongo-test"`,
+			"selector": `ongrid_source="db:mongo-test"`,
 			"expr":     `(mongodb_ss_connections{conn_type="active"} / (mongodb_ss_connections{conn_type="active"} + mongodb_ss_connections{conn_type="available"})) * 100 > 80`,
 		},
 	}
 
 	got := alertdraft.NormalizeRuleConfigInput(in)
 	expr, _ := got.Spec["expr"].(string)
-	if strings.Contains(expr, `opspilot_source="db:mongo-test"`) {
+	if strings.Contains(expr, `ongrid_source="db:mongo-test"`) {
 		t.Fatalf("expr = %q, should drop implicit sample database source selector", expr)
 	}
 	if _, exists := got.Spec["selector"]; exists {
@@ -928,13 +928,13 @@ func TestNormalizeAlertRuleConfigInputDropsImplicitMongoSourceFromConnectionUsag
 	in := aiopstools.AlertRuleConfigInput{
 		Kind: "metric_raw",
 		Spec: map[string]interface{}{
-			"expr": `(max by (device_id, opspilot_source) (mongodb_ss_connections{conn_type="active", opspilot_source="db:mongo-test", service="mongo-test"}) / (max by (device_id, opspilot_source) (mongodb_ss_connections{conn_type="active", opspilot_source="db:mongo-test", service="mongo-test"}) + max by (device_id, opspilot_source) (mongodb_ss_connections{conn_type="available", opspilot_source="db:mongo-test", service="mongo-test"}))) * 100 > 80`,
+			"expr": `(max by (device_id, ongrid_source) (mongodb_ss_connections{conn_type="active", ongrid_source="db:mongo-test", service="mongo-test"}) / (max by (device_id, ongrid_source) (mongodb_ss_connections{conn_type="active", ongrid_source="db:mongo-test", service="mongo-test"}) + max by (device_id, ongrid_source) (mongodb_ss_connections{conn_type="available", ongrid_source="db:mongo-test", service="mongo-test"}))) * 100 > 80`,
 		},
 	}
 
 	got := alertdraft.NormalizeRuleConfigInput(in)
 	expr, _ := got.Spec["expr"].(string)
-	for _, leaked := range []string{`opspilot_source="db:mongo-test"`, `service="mongo-test"`} {
+	for _, leaked := range []string{`ongrid_source="db:mongo-test"`, `service="mongo-test"`} {
 		if strings.Contains(expr, leaked) {
 			t.Fatalf("expr = %q, should drop implicit sample MongoDB matcher %s", expr, leaked)
 		}
@@ -942,7 +942,7 @@ func TestNormalizeAlertRuleConfigInputDropsImplicitMongoSourceFromConnectionUsag
 	if !strings.Contains(expr, `conn_type="active"`) {
 		t.Fatalf("expr = %q, want original PromQL matcher preserved", expr)
 	}
-	if count := strings.Count(expr, `max by (device_id, opspilot_source)`); count != 3 {
+	if count := strings.Count(expr, `max by (device_id, ongrid_source)`); count != 3 {
 		t.Fatalf("expr = %q, max-by-source count = %d, want original aggregation preserved", expr, count)
 	}
 }
@@ -952,7 +952,7 @@ func TestNormalizeAlertRuleConfigInputDropsImplicitDatabaseServiceSelector(t *te
 		Kind: "metric_raw",
 		Spec: map[string]interface{}{
 			"metric":    "mongodb_ss_connections",
-			"selector":  `service="mongo-test",opspilot_source="db:mongo-test"`,
+			"selector":  `service="mongo-test",ongrid_source="db:mongo-test"`,
 			"operator":  ">",
 			"threshold": 80,
 			"for":       "10m",
@@ -961,7 +961,7 @@ func TestNormalizeAlertRuleConfigInputDropsImplicitDatabaseServiceSelector(t *te
 
 	got := alertdraft.NormalizeRuleConfigInput(in)
 	expr, _ := got.Spec["expr"].(string)
-	for _, leaked := range []string{`service="mongo-test"`, `opspilot_source="db:mongo-test"`} {
+	for _, leaked := range []string{`service="mongo-test"`, `ongrid_source="db:mongo-test"`} {
 		if strings.Contains(expr, leaked) {
 			t.Fatalf("expr = %q, should drop implicit database identity matcher %s", expr, leaked)
 		}
@@ -996,7 +996,7 @@ func TestNormalizeAlertRuleConfigInputDropsImplicitDatabaseSourceFromCatalogSele
 		Kind: "metric_raw",
 		Spec: map[string]interface{}{
 			"metric":      "mongodb_ss_connections",
-			"selector":    `opspilot_source="db:mongo-test"`,
+			"selector":    `ongrid_source="db:mongo-test"`,
 			"operator":    ">",
 			"threshold":   80,
 			"window":      "5m",
@@ -1007,7 +1007,7 @@ func TestNormalizeAlertRuleConfigInputDropsImplicitDatabaseSourceFromCatalogSele
 
 	got := alertdraft.NormalizeRuleConfigInput(in)
 	expr, _ := got.Spec["expr"].(string)
-	if strings.Contains(expr, `opspilot_source="db:mongo-test"`) {
+	if strings.Contains(expr, `ongrid_source="db:mongo-test"`) {
 		t.Fatalf("expr = %q, should drop implicit sample database source selector", expr)
 	}
 	if _, exists := got.Spec["selector"]; exists {
@@ -1020,7 +1020,7 @@ func TestNormalizeAlertRuleConfigInputKeepsNonIdentitySelectorWhenSourceLeaks(t 
 		Kind: "metric_raw",
 		Spec: map[string]interface{}{
 			"metric":      "pg_stat_database_numbackends",
-			"selector":    `datname="postgres",opspilot_source="db:pg-test",instance="127.0.0.1:9187"`,
+			"selector":    `datname="postgres",ongrid_source="db:pg-test",instance="127.0.0.1:9187"`,
 			"operator":    ">",
 			"threshold":   100,
 			"window":      "5m",
@@ -1030,7 +1030,7 @@ func TestNormalizeAlertRuleConfigInputKeepsNonIdentitySelectorWhenSourceLeaks(t 
 
 	got := alertdraft.NormalizeRuleConfigInput(in)
 	expr, _ := got.Spec["expr"].(string)
-	if strings.Contains(expr, `opspilot_source="db:pg-test"`) || strings.Contains(expr, `instance="127.0.0.1:9187"`) {
+	if strings.Contains(expr, `ongrid_source="db:pg-test"`) || strings.Contains(expr, `instance="127.0.0.1:9187"`) {
 		t.Fatalf("expr = %q, should drop leaked identity selectors", expr)
 	}
 	if !strings.Contains(expr, `datname="postgres"`) {
@@ -1045,13 +1045,13 @@ func TestNormalizeAlertRuleConfigInputDropsLeakedDatabaseSourceFromRawExpr(t *te
 	in := aiopstools.AlertRuleConfigInput{
 		Kind: "metric_raw",
 		Spec: map[string]interface{}{
-			"expr": `redis_connected_clients{device_id="7",opspilot_source="db:redis-test",job="redis",instance="127.0.0.1:9121"} > 50`,
+			"expr": `redis_connected_clients{device_id="7",ongrid_source="db:redis-test",job="redis",instance="127.0.0.1:9121"} > 50`,
 		},
 	}
 
 	got := alertdraft.NormalizeRuleConfigInput(in)
 	expr, _ := got.Spec["expr"].(string)
-	for _, leaked := range []string{`device_id="7"`, `opspilot_source="db:redis-test"`, `job="redis"`, `instance="127.0.0.1:9121"`} {
+	for _, leaked := range []string{`device_id="7"`, `ongrid_source="db:redis-test"`, `job="redis"`, `instance="127.0.0.1:9121"`} {
 		if strings.Contains(expr, leaked) {
 			t.Fatalf("expr = %q, should drop leaked sample matcher %s", expr, leaked)
 		}
@@ -1282,7 +1282,7 @@ func TestNormalizeAlertRuleConfigInputCoercesLogMonitoringPipelineScopeToGlobal(
 		Kind:      "log_match",
 		ScopeType: "monitoring_pipeline",
 		Spec: map[string]interface{}{
-			"stream_selector": `{opspilot_source=~"journald(:.*)?"}`,
+			"stream_selector": `{ongrid_source=~"journald(:.*)?"}`,
 			"line_filter":     "ERROR|panic",
 		},
 	})
@@ -1295,11 +1295,11 @@ func TestNormalizeAlertRuleConfigInputRewritesGuessedJournaldJobSelectorAndKeeps
 	got := alertdraft.NormalizeRuleConfigInput(aiopstools.AlertRuleConfigInput{
 		Kind: "log_match",
 		Spec: map[string]interface{}{
-			"stream_selector": `{job=~".*journal.*",level="6",unit="opspilot.service",app="guessed"}`,
+			"stream_selector": `{job=~".*journal.*",level="6",unit="ongrid.service",app="guessed"}`,
 			"line_filter":     "error",
 		},
 	})
-	want := `{opspilot_source=~"journald(:.*)?",level="6",unit="opspilot.service"}`
+	want := `{ongrid_source=~"journald(:.*)?",level="6",unit="ongrid.service"}`
 	if got.Spec["stream_selector"] != want {
 		t.Fatalf("stream_selector = %#v, want %s", got.Spec["stream_selector"], want)
 	}
@@ -1309,7 +1309,7 @@ func TestNormalizeAlertRuleConfigInputNormalizesLogOperatorAndLineFilter(t *test
 	got := alertdraft.NormalizeRuleConfigInput(aiopstools.AlertRuleConfigInput{
 		Kind: "log_match",
 		Spec: map[string]interface{}{
-			"stream_selector": `{opspilot_source=~"journald(:.*)?"}`,
+			"stream_selector": `{ongrid_source=~"journald(:.*)?"}`,
 			"line_filter":     `|~ "(?i)(ERROR|panic)"`,
 			"operator":        "gte",
 			"threshold":       3,
@@ -1327,13 +1327,13 @@ func TestNormalizeAlertRuleConfigInputMovesLogLabelFilterChainIntoSelector(t *te
 	got := alertdraft.NormalizeRuleConfigInput(aiopstools.AlertRuleConfigInput{
 		Kind: "log_match",
 		Spec: map[string]interface{}{
-			"stream_selector": `{opspilot_source="journald"}`,
+			"stream_selector": `{ongrid_source="journald"}`,
 			"line_filter":     `|~ "(?i)level=6" |~ "(?i)(error|panic)"`,
 			"operator":        ">=",
 			"threshold":       3,
 		},
 	})
-	if got.Spec["stream_selector"] != `{opspilot_source="journald",level="6"}` {
+	if got.Spec["stream_selector"] != `{ongrid_source="journald",level="6"}` {
 		t.Fatalf("stream_selector = %#v, want level matcher moved into selector", got.Spec["stream_selector"])
 	}
 	if got.Spec["line_filter"] != `(?i)(error|panic)` {
@@ -1345,13 +1345,13 @@ func TestNormalizeAlertRuleConfigInputForRequestMovesExplicitLogLabelIntoSelecto
 	got := alertdraft.NormalizeRuleConfigInputForRequest(aiopstools.AlertRuleConfigInput{
 		Kind: "log_match",
 		Spec: map[string]interface{}{
-			"stream_selector": `{opspilot_source="journald"}`,
+			"stream_selector": `{ongrid_source="journald"}`,
 			"line_filter":     `|~ "(?i)(ERROR|panic)"`,
 			"operator":        "gte",
 			"threshold":       3,
 		},
 	}, "系统 journald 日志里 level=6 的 ERROR 或 panic 在 5 分钟内出现 >= 3 次就告警")
-	if got.Spec["stream_selector"] != `{opspilot_source="journald",level="6"}` {
+	if got.Spec["stream_selector"] != `{ongrid_source="journald",level="6"}` {
 		t.Fatalf("stream_selector = %#v, want level matcher from user request", got.Spec["stream_selector"])
 	}
 	if got.Spec["line_filter"] != `(?i)(ERROR|panic)` {
@@ -1366,13 +1366,13 @@ func TestNormalizeAlertRuleConfigInputMapsJournaldPriorityAndDropsUnknownLogLabe
 	got := alertdraft.NormalizeRuleConfigInputForRequest(aiopstools.AlertRuleConfigInput{
 		Kind: "log_match",
 		Spec: map[string]interface{}{
-			"stream_selector": `{opspilot_source="journald",PRIORITY="6",app="guessed"}`,
+			"stream_selector": `{ongrid_source="journald",PRIORITY="6",app="guessed"}`,
 			"line_filter":     `ERROR|panic`,
 			"operator":        ">=",
 			"threshold":       3,
 		},
 	}, "系统 journald 日志里 level=6 的 ERROR 或 panic")
-	if got.Spec["stream_selector"] != `{opspilot_source="journald",level="6"}` {
+	if got.Spec["stream_selector"] != `{ongrid_source="journald",level="6"}` {
 		t.Fatalf("stream_selector = %#v, want priority mapped and unknown label dropped", got.Spec["stream_selector"])
 	}
 }
@@ -1381,13 +1381,13 @@ func TestNormalizeAlertRuleConfigInputMovesLogLabelPrefixRegexIntoSelector(t *te
 	got := alertdraft.NormalizeRuleConfigInputForRequest(aiopstools.AlertRuleConfigInput{
 		Kind: "log_match",
 		Spec: map[string]interface{}{
-			"stream_selector": `{opspilot_source="journald"}`,
+			"stream_selector": `{ongrid_source="journald"}`,
 			"line_filter":     `level=6.*(ERROR|panic)`,
 			"operator":        ">=",
 			"threshold":       3,
 		},
 	}, "")
-	if got.Spec["stream_selector"] != `{opspilot_source="journald",level="6"}` {
+	if got.Spec["stream_selector"] != `{ongrid_source="journald",level="6"}` {
 		t.Fatalf("stream_selector = %#v, want level matcher moved into selector", got.Spec["stream_selector"])
 	}
 	if got.Spec["line_filter"] != `(ERROR|panic)` {
@@ -1399,13 +1399,13 @@ func TestNormalizeAlertRuleConfigInputMovesLogLabelAlternationRegexIntoSelector(
 	got := alertdraft.NormalizeRuleConfigInputForRequest(aiopstools.AlertRuleConfigInput{
 		Kind: "log_match",
 		Spec: map[string]interface{}{
-			"stream_selector": `{opspilot_source=~"journald(:.*)?"}`,
+			"stream_selector": `{ongrid_source=~"journald(:.*)?"}`,
 			"line_filter":     `(?i)(level|priority)[=:]6.*(error|panic)`,
 			"operator":        "gte",
 			"threshold":       3,
 		},
 	}, "")
-	if got.Spec["stream_selector"] != `{opspilot_source=~"journald(:.*)?",level="6"}` {
+	if got.Spec["stream_selector"] != `{ongrid_source=~"journald(:.*)?",level="6"}` {
 		t.Fatalf("stream_selector = %#v, want level matcher moved into selector", got.Spec["stream_selector"])
 	}
 	if got.Spec["line_filter"] != `(error|panic)` {
@@ -1421,7 +1421,7 @@ func TestNormalizeAlertRuleConfigInputRewritesGuessedJournaldJobSelectorForLogVo
 			"ratio_threshold": 3,
 		},
 	})
-	want := `{opspilot_source=~"journald(:.*)?",level!="7"}`
+	want := `{ongrid_source=~"journald(:.*)?",level!="7"}`
 	if got.Spec["stream_selector"] != want {
 		t.Fatalf("stream_selector = %#v, want %s", got.Spec["stream_selector"], want)
 	}
@@ -1438,7 +1438,7 @@ func TestNormalizeAlertRuleConfigInputNormalizesLogVolumeLineFilter(t *testing.T
 			"window":          "5m",
 		},
 	})
-	if got.Spec["stream_selector"] != `{opspilot_source=~"journald(:.*)?",level="6"}` {
+	if got.Spec["stream_selector"] != `{ongrid_source=~"journald(:.*)?",level="6"}` {
 		t.Fatalf("stream_selector = %#v, want level moved into selector", got.Spec["stream_selector"])
 	}
 	if got.Spec["line_filter"] != `(?i)(error|failed)` {

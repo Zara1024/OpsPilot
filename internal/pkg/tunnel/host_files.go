@@ -13,9 +13,8 @@ const (
 
 // host_files RPC method names. These are the wire constants the manager
 // (Caller) and edge (RegisterHandler) use to address the three filesystem
-// inspection tools introduced by PR-8 of The skill manifest at
-// skills/host-files/SKILL.md routes the LLM to these via the BaseTool
-// implementations in internal/manager/biz/aiops/tools/host_files_basetool.go.
+// inspection tools. The LLM calls these via the BaseTool
+// implementations in internal/manager/biz/aiops/tools/host_files.go.
 //
 // Body wire format is JSON (). Field names match the public
 // JSON Schema declared in the BaseTool Info() method —

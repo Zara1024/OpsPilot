@@ -1,5 +1,5 @@
 // Package store is the GORM-backed persistence layer for HLD-010
-// audit_logs. Migration is composed from cmd/opspilot via dbx.RunMigrations.
+// audit_logs. Migration is composed from cmd/ongrid via dbx.RunMigrations.
 package store
 
 import (

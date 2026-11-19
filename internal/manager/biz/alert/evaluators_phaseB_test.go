@@ -183,7 +183,7 @@ func TestCompileLogMatch_Errors(t *testing.T) {
 
 func TestCompileLogVolume_PreservesLineFilter(t *testing.T) {
 	spec, _ := json.Marshal(map[string]any{
-		"stream_selector": `{opspilot_source=~"journald(:.*)?",level!="7"}`,
+		"stream_selector": `{ongrid_source=~"journald(:.*)?",level!="7"}`,
 		"line_filter":     "(?i)(error|failed)",
 		"window":          "10m",
 		"ratio_op":        ">",
@@ -210,16 +210,16 @@ func TestLogMatchHostScopeUsesDeviceIDLabel(t *testing.T) {
 		Name:           "System log error keywords",
 		Severity:       "warning",
 		ScopeType:      "host",
-		StreamSelector: `{opspilot_source=~"journald(:.*)?"}`,
+		StreamSelector: `{ongrid_source=~"journald(:.*)?"}`,
 		LineFilter:     "(?i)(error|fatal|panic)",
 		Window:         "5m",
 		Operator:       ">=",
 		Threshold:      1,
 	}}))
 	logq := &scriptedLogRange{result: lokiMatrixEntry(map[string]string{
-		"device_id":       "2",
-		"opspilot_source": "journald",
-		"unit":            "sshd.service",
+		"device_id":     "2",
+		"ongrid_source": "journald",
+		"unit":          "sshd.service",
 	}, "3")}
 	now := time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC)
 	eval := newPipelineEvaluator(t, repo, &fakeNotifier{}, rules, PipelineEvaluatorOpts{

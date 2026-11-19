@@ -21,7 +21,7 @@ type retentionWriter struct {
 	rowsPerCall []int64
 }
 
-func (w *retentionWriter) WriteRaw(context.Context, []model.Point) error { return nil }
+func (w *retentionWriter) WriteRaw(context.Context, []model.Point) error         { return nil }
 func (w *retentionWriter) WriteDeadLetter(context.Context, []model.Point, string) error {
 	return nil
 }

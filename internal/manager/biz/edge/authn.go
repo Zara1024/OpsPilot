@@ -12,7 +12,7 @@ import (
 )
 
 // AccessKeyAuthenticator implements tunnel.AuthFunc for edge handshakes.
-// Injected into internal/pkg/tunnel at wiring time by cmd/opspilot.
+// Injected into internal/pkg/tunnel at wiring time by cmd/ongrid.
 type AccessKeyAuthenticator struct {
 	repo  Repo
 	log   *slog.Logger

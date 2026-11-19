@@ -46,4 +46,3 @@ func TestProjectionRemovesCredentialsAndPreservesRevision(t *testing.T) {
 		require.NotContains(t, sanitize(text), "fixture-secret")
 	}
 }
-

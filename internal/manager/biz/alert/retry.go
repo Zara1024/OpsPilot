@@ -209,19 +209,12 @@ func buildIncidentMessage(incident *model.Incident, now time.Time) notify.Messag
 		"rule":        incident.Rule,
 		"incident_id": fmt.Sprintf("%d", incident.ID),
 	}
-	if incident.RuleName != "" {
-		labels["rule_name"] = incident.RuleName
-	}
 	if incident.DeviceID != nil {
 		labels["device_id"] = fmt.Sprintf("%d", *incident.DeviceID)
 	}
-	subject := incident.Title
+	subject := incident.Summary
 	if subject == "" {
-		subject = incident.Summary
-	}
-	body := incident.Summary
-	if body == subject {
-		body = incident.Description
+		subject = incident.Title
 	}
 	occurredAt := incident.LastFiredAt
 	if occurredAt.IsZero() {
@@ -229,7 +222,6 @@ func buildIncidentMessage(incident *model.Incident, now time.Time) notify.Messag
 	}
 	return notify.Message{
 		Subject:    subject,
-		Body:       body,
 		Severity:   severity,
 		Source:     incident.ScopeType,
 		DedupeKey:  incident.DedupeKey,

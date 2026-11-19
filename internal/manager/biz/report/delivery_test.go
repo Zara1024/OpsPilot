@@ -18,7 +18,7 @@ func TestMarkdownSummary(t *testing.T) {
 			{Key: "incidents", Label: "Incidents", Value: 23, DeltaPct: &d},
 			{Key: "mttr", Label: "MTTR", Value: 47, Unit: "min"},
 		},
-		DeepLink: "https://opspilot.example/reports/abc",
+		DeepLink: "https://ongrid.example/reports/abc",
 	}
 	md := s.MarkdownSummary()
 	if !strings.Contains(md, "**周报 · 2026 W23**") {
@@ -37,7 +37,7 @@ func TestMarkdownSummary(t *testing.T) {
 	if !strings.Contains(md, "db-prod-3") {
 		t.Errorf("entity name lost:\n%s", md)
 	}
-	if !strings.Contains(md, "https://opspilot.example/reports/abc") {
+	if !strings.Contains(md, "https://ongrid.example/reports/abc") {
 		t.Errorf("deep link missing:\n%s", md)
 	}
 }

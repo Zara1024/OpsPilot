@@ -70,4 +70,3 @@ func TestReviewArgumentsRedactsCredentialsRecursively(t *testing.T) {
 	require.Contains(t, string(raw), `"enabled":true`)
 	require.Equal(t, "private-fixture", body["password"], "redaction must not alter execution arguments")
 }
-

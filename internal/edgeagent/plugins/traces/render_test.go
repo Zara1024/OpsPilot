@@ -87,15 +87,15 @@ func TestRenderHappyPath(t *testing.T) {
 		"otlp:",
 		"grpc:",
 		"http:",
-		"endpoint: 0.0.0.0:4317",
-		"endpoint: 0.0.0.0:4318",
+		"endpoint: \"0.0.0.0:4317\"",
+		"endpoint: \"0.0.0.0:4318\"",
 		// Exporter URL points at the full manager public trace endpoint.
 		// Use traces_endpoint so otelcol does not append /v1/traces again.
 		"traces_endpoint: https://manager.example.com/v1/traces",
 		// Resource attribute injection: device_id is the load-bearing label.
 		"key: device_id",
 		`value: "42"`,
-		"key: opspilot_source",
+		"key: ongrid_source",
 		// Extra attribute echoes through.
 		"key: deployment_env",
 		// Pipeline shape: traces only, otlp -> resource/device -> batch ->
@@ -144,10 +144,10 @@ func TestRenderDefaultEndpoints(t *testing.T) {
 	body := string(out)
 	// Defaults bind to localhost so the receiver isn't accidentally
 	// reachable from the public network on multi-homed hosts.
-	if !strings.Contains(body, "endpoint: 127.0.0.1:4317") {
+	if !strings.Contains(body, "endpoint: \"127.0.0.1:4317\"") {
 		t.Errorf("default gRPC endpoint missing: %s", body)
 	}
-	if !strings.Contains(body, "endpoint: 127.0.0.1:4318") {
+	if !strings.Contains(body, "endpoint: \"127.0.0.1:4318\"") {
 		t.Errorf("default HTTP endpoint missing: %s", body)
 	}
 }
@@ -296,8 +296,8 @@ func TestRenderOmitDeviceIDForGateway(t *testing.T) {
 		t.Fatalf("gateway config must not inject device_id:\n%s", body)
 	}
 	for _, want := range []string{
-		"endpoint: 0.0.0.0:4317",
-		"endpoint: 0.0.0.0:4318",
+		"endpoint: \"0.0.0.0:4317\"",
+		"endpoint: \"0.0.0.0:4318\"",
 		"k8sattributes:",
 		"auth_type: serviceAccount",
 		"k8s.namespace.name",

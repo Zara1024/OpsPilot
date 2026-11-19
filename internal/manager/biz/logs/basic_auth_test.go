@@ -76,7 +76,7 @@ func testBasicAuthBackendLifecycle(t *testing.T, queryUser string, useSharedRef 
 		WriteUsername: "writer", WritePassword: password, QueryUsername: queryUser, QueryPassword: password,
 	}
 	if useSharedRef {
-		const ref = "opspilot-managed-logs-es-shared"
+		const ref = "ongrid-managed-logs-es-shared"
 		if err := secrets.CreateManaged(t.Context(), ref, "elasticsearch", "", map[string]string{"username": "writer", "password": password}); err != nil {
 			t.Fatal(err)
 		}

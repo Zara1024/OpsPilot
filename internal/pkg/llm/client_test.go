@@ -231,7 +231,7 @@ func TestChatServer429(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
-	if got := counterValue(t, reg, "opspilot_llm_requests_total", "gpt-4o", "error"); got < 1 {
+	if got := counterValue(t, reg, "ongrid_llm_requests_total", "gpt-4o", "error"); got < 1 {
 		t.Errorf("error counter = %v, want >= 1", got)
 	}
 	if budget.recordCalls != 0 {
@@ -268,7 +268,7 @@ func TestChatBudgetShortCircuits(t *testing.T) {
 	if budget.recordCalls != 0 {
 		t.Errorf("budget.Record called %d times; want 0 on budget reject", budget.recordCalls)
 	}
-	if got := counterValue(t, reg, "opspilot_llm_requests_total", "gpt-4o", "budget_exceeded"); got != 1 {
+	if got := counterValue(t, reg, "ongrid_llm_requests_total", "gpt-4o", "budget_exceeded"); got != 1 {
 		t.Errorf("budget_exceeded counter = %v, want 1", got)
 	}
 }

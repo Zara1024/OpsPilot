@@ -4,7 +4,7 @@
 // region}), encrypted at rest. The consuming skill / external MCP server
 // declares in its manifest WHERE each field is injected (env var / file via
 // {{field}} placeholders); a per-skill binding picks WHICH instance fills
-// the slot. opspilot never hard-codes a credential's semantics — the manifest
+// the slot. ongrid never hard-codes a credential's semantics — the manifest
 // owns the injection mapping, the binding owns the choice.
 //
 // At-rest: the field map is JSON-encoded then sealed by pkg/secretbox

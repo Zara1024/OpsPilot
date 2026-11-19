@@ -7,7 +7,7 @@ applies_to: [edge, manager]
 
 # Host Metric Alerts Runbook
 
-Per-alert handler for the host-metric rules seeded by OpsPilot. Each section
+Per-alert handler for the host-metric rules seeded by Ongrid. Each section
 matches a `rule_key` so the rule's `runbook_url` can deep-link with a
 fragment, e.g. `#cpu_high`.
 

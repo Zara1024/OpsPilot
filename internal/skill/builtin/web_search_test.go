@@ -23,10 +23,10 @@ func (s stubKeyResolver) TavilyAPIKey(_ context.Context) string { return s.key }
 // WebSearchConfigResolver. Each field maps to one resolver method;
 // providerOverride lets tests pin a specific backend.
 type stubConfigResolver struct {
-	provider   string
-	searxngURL string
-	tavilyKey  string
-	braveKey   string
+	provider    string
+	searxngURL  string
+	tavilyKey   string
+	braveKey    string
 }
 
 func (s stubConfigResolver) Provider(_ context.Context) string {

@@ -26,7 +26,7 @@ type ScrapeTarget struct {
 	Name string `yaml:"name"`
 	// URL is the absolute /metrics URL (http or https).
 	URL string `yaml:"url"`
-	// Role controls how the target participates in opspilot:
+	// Role controls how the target participates in ongrid:
 	//   - host: eligible as the host source for fast-path dashboard and
 	//     built-in host alerts; replaces embedded baseline in auto mode.
 	//   - component: rich-path Prom samples only.

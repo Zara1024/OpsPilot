@@ -237,7 +237,7 @@ func envIntDefault(name string, def int) int {
 // deferral kicks in. 30 was chosen because the May 2026
 // roster (14 core + 4 alert/host-files + 1 mutating ≈ 19) sits well
 // below it; the threshold only trips once one or two marketplace packs
-// land. Operators can override via ONGRID_TOOLBAG_DEFERRAL_THRESHOLD.
+// land. Operators can override via OPSPILOT_TOOLBAG_DEFERRAL_THRESHOLD.
 const defaultDeferralThreshold = 30
 
 // BuildBaseTools constructs every BaseTool implementation paired with
@@ -440,7 +440,7 @@ func (r *Registry) BuildBaseTools() *ToolBag {
 	}
 	out = r.appendSafeSkillTools(out)
 
-	threshold := envIntDefault("ONGRID_TOOLBAG_DEFERRAL_THRESHOLD", defaultDeferralThreshold)
+	threshold := envIntDefault("OPSPILOT_TOOLBAG_DEFERRAL_THRESHOLD", defaultDeferralThreshold)
 	bag := NewToolBag(out, threshold)
 
 	// ToolSearch is always registered. When deferral is off it's a

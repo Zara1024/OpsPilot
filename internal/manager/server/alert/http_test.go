@@ -56,24 +56,24 @@ type fakeService struct {
 	testChannelResp *svc.ChannelTestResult
 	testChannelErr  error
 
-	listRulesResp       []*svc.Rule
-	listRulesErr        error
-	getRuleResp         *svc.Rule
-	getRuleErr          error
-	createRuleResp      *svc.Rule
-	createRuleErr       error
-	updateRuleResp      *svc.Rule
-	updateRuleErr       error
-	enabledRuleResp     *svc.Rule
-	enabledRuleErr      error
-	deleteRuleErr       error
-	lastRuleScope       string
-	lastRuleID          uint64
-	lastRuleInput       svc.RuleInput
-	lastRuleEnabledV    bool
-	previewRuleResp     *svc.PreviewResult
-	previewRuleErr      error
-	lastPreviewLookback int
+	listRulesResp        []*svc.Rule
+	listRulesErr         error
+	getRuleResp          *svc.Rule
+	getRuleErr           error
+	createRuleResp       *svc.Rule
+	createRuleErr        error
+	updateRuleResp       *svc.Rule
+	updateRuleErr        error
+	enabledRuleResp      *svc.Rule
+	enabledRuleErr       error
+	deleteRuleErr        error
+	lastRuleScope        string
+	lastRuleID           uint64
+	lastRuleInput        svc.RuleInput
+	lastRuleEnabledV     bool
+	previewRuleResp      *svc.PreviewResult
+	previewRuleErr       error
+	lastPreviewLookback  int
 
 	lastCaller       svc.Caller
 	lastFilter       svc.IncidentFilter

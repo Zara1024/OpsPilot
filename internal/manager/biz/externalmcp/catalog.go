@@ -157,4 +157,3 @@ func (t Tool) InputSchema(identity integrationauth.Identity) json.RawMessage {
 	raw, _ := json.Marshal(schema) // The schema was decoded from valid JSON above.
 	return raw
 }
-

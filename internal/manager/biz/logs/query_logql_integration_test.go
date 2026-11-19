@@ -47,7 +47,7 @@ func TestQueryLogQLTool_WhenLokiSelected_PreservesNativeLogQLAndResponse(t *test
 			return
 		}
 		if got := r.Header.Get("X-Scope-OrgID"); got != "opspilot" {
-			t.Errorf("X-Scope-OrgID = %q, want opspilot", got)
+			t.Errorf("X-Scope-OrgID = %q, want ongrid", got)
 		}
 		values := r.URL.Query()
 		if got := values.Get("query"); got != query {
@@ -136,7 +136,7 @@ func TestQueryLogQLTool_WhenElasticsearchSelected_CompilesPortableQueryAndReturn
 						"body":          map[string]any{"text": "panic: upstream timeout"},
 						"severity_text": "ERROR",
 						"resource": map[string]any{"attributes": map[string]any{
-							"device_id": "42", "namespace": "prod", "opspilot_source": "kubernetes:pod",
+							"device_id": "42", "namespace": "prod", "ongrid_source": "kubernetes:pod",
 						}},
 					},
 					"sort": []any{"2026-08-24T01:30:00Z", 1},
@@ -153,7 +153,7 @@ func TestQueryLogQLTool_WhenElasticsearchSelected_CompilesPortableQueryAndReturn
 	backend := &logsmodel.Backend{
 		ID: 7, Generation: 2, Type: logsmodel.BackendTypeElasticsearch,
 		QueryEndpoint: server.URL, QueryCredentialRef: "query-ref",
-		IndexPattern: "logs-opspilot.*.otel-*", TLSInsecure: true,
+		IndexPattern: "logs-ongrid.*.otel-*", TLSInsecure: true,
 	}
 	service := managerlogs.NewService(
 		queryLogQLSelectionRepo{selected: backend},

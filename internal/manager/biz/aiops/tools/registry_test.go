@@ -77,7 +77,7 @@ func baseToolByName(t *testing.T, bag *ToolBag, name string) basetool.BaseTool {
 }
 
 // TestBuildBaseTools_GraphKernelToolBagCount mirrors the production
-// wiring path that ONGRID_AGENT_KERNEL=graph follows in main.go:
+// wiring path that OPSPILOT_AGENT_KERNEL=graph follows in main.go:
 //
 //  1. NewRegistry with all four signal sources wired (mirrors a
 //     fully-configured Prom + Loki + Tempo + alert deployment).

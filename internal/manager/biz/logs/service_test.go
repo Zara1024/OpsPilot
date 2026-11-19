@@ -292,7 +292,7 @@ func TestServiceSelectionSecretsAndIndependentConnectionChecks(t *testing.T) {
 
 	var authMu sync.Mutex
 	seenAuth := map[string]int{}
-	probePattern := regexp.MustCompile(`opspilot-log-probe-[A-Za-z0-9_-]+`)
+	probePattern := regexp.MustCompile(`ongrid-log-probe-[A-Za-z0-9_-]+`)
 	es := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authMu.Lock()
 		seenAuth[r.Header.Get("Authorization")]++
@@ -348,7 +348,7 @@ func TestServiceSelectionSecretsAndIndependentConnectionChecks(t *testing.T) {
 	first, err := svc.Save(context.Background(), bizlogs.SaveInput{
 		WriteEndpoints:     []string{es.URL},
 		QueryEndpoint:      es.URL,
-		Dataset:            "opspilot.system",
+		Dataset:            "ongrid.system",
 		Namespace:          "prod",
 		WriteCredentialRef: "es-write",
 		QueryCredentialRef: "es-query",
@@ -396,7 +396,7 @@ func TestServiceSelectionSecretsAndIndependentConnectionChecks(t *testing.T) {
 	authMu.Unlock()
 	select {
 	case config := <-grafanaSyncer.elasticsearch:
-		if config.URL != es.URL || config.IndexPattern != "logs-opspilot.*.otel-prod" || config.APIKey != "query-key" {
+		if config.URL != es.URL || config.IndexPattern != "logs-ongrid.*.otel-prod" || config.APIKey != "query-key" {
 			t.Fatalf("Grafana Elasticsearch config = %+v", config)
 		}
 	case <-time.After(2 * time.Second):
@@ -469,7 +469,7 @@ func TestServiceSelectionSecretsAndIndependentConnectionChecks(t *testing.T) {
 	second, err := svc.Save(context.Background(), bizlogs.SaveInput{
 		WriteEndpoints:     []string{es.URL},
 		QueryEndpoint:      es.URL,
-		Dataset:            "opspilot.application",
+		Dataset:            "ongrid.application",
 		Namespace:          "prod",
 		WriteCredentialRef: "es-write",
 		QueryCredentialRef: "es-query",
@@ -485,7 +485,7 @@ func TestServiceSelectionSecretsAndIndependentConnectionChecks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SelectedRuntime while editing next revision: %v", err)
 	}
-	if runtime == nil || runtime.BackendID != first.ID || runtime.Generation != 1 || runtime.Dataset != "opspilot.system" {
+	if runtime == nil || runtime.BackendID != first.ID || runtime.Generation != 1 || runtime.Dataset != "ongrid.system" {
 		t.Fatalf("selected runtime was overwritten by unselected configuration: %+v", runtime)
 	}
 
@@ -631,7 +631,7 @@ func TestServiceReplacementSelectionUsesOnlyNewElasticsearch(t *testing.T) {
 	svc.SetConnectionEdgeInventory(fixedEdgeInventory{{EdgeID: 42, Online: true}})
 	first, err := svc.Save(context.Background(), bizlogs.SaveInput{
 		WriteEndpoints: []string{es.URL}, QueryEndpoint: es.URL,
-		Dataset: "opspilot.host", Namespace: "old",
+		Dataset: "ongrid.host", Namespace: "old",
 		WriteCredentialRef: "write-v1", QueryCredentialRef: "query-v1", TLSInsecure: true,
 	})
 	if err != nil {
@@ -642,7 +642,7 @@ func TestServiceReplacementSelectionUsesOnlyNewElasticsearch(t *testing.T) {
 	}
 	second, err := svc.Save(context.Background(), bizlogs.SaveInput{
 		WriteEndpoints: []string{es.URL}, QueryEndpoint: es.URL,
-		Dataset: "opspilot.host", Namespace: "new",
+		Dataset: "ongrid.host", Namespace: "new",
 		WriteCredentialRef: "write-v2", QueryCredentialRef: "query-v2", TLSInsecure: true,
 	})
 	if err != nil {
@@ -731,7 +731,7 @@ func TestServiceCloseCursorUsesOriginElasticsearchAfterBackendSwitch(t *testing.
 		Name: "external-elasticsearch", Type: logsmodel.BackendTypeElasticsearch,
 		Status: logsmodel.BackendStatusSelected, Generation: 1,
 		WriteEndpointsJSON: `["` + oldServer.URL + `"]`, QueryEndpoint: oldServer.URL,
-		Dataset: "opspilot.system", Namespace: "default", IndexPattern: "logs-opspilot.default.otel-*",
+		Dataset: "ongrid.system", Namespace: "default", IndexPattern: "logs-ongrid.default.otel-*",
 		WriteCredentialRef: "old-write", QueryCredentialRef: "old-query", TLSInsecure: true,
 	}
 	if err := repo.SaveBackend(t.Context(), oldBackend); err != nil {
@@ -741,7 +741,7 @@ func TestServiceCloseCursorUsesOriginElasticsearchAfterBackendSwitch(t *testing.
 		Name: "external-elasticsearch", Type: logsmodel.BackendTypeElasticsearch,
 		Status: logsmodel.BackendStatusUnselected, Generation: 2,
 		WriteEndpointsJSON: `["` + newServer.URL + `"]`, QueryEndpoint: newServer.URL,
-		Dataset: "opspilot.system", Namespace: "default", IndexPattern: "logs-opspilot.default.otel-*",
+		Dataset: "ongrid.system", Namespace: "default", IndexPattern: "logs-ongrid.default.otel-*",
 		WriteCredentialRef: "new-write", QueryCredentialRef: "new-query", TLSInsecure: true,
 	}
 	if err := repo.SaveBackend(t.Context(), newBackend); err != nil {
@@ -810,7 +810,7 @@ func TestServiceSelectChecksEveryWriteEndpointWithoutBroadeningWriteKey(t *testi
 	svc.SetConnectionEdgeInventory(fixedEdgeInventory{{EdgeID: 42, Online: true}})
 	backend, err := svc.Save(context.Background(), bizlogs.SaveInput{
 		WriteEndpoints: []string{firstEndpoint.URL, secondEndpoint.URL}, QueryEndpoint: firstEndpoint.URL,
-		Dataset: "opspilot.host", Namespace: "prod",
+		Dataset: "ongrid.host", Namespace: "prod",
 		WriteCredentialRef: "write", QueryCredentialRef: "query", TLSInsecure: true,
 	})
 	if err != nil {
@@ -875,7 +875,7 @@ func TestServiceSelectRejectsWriteEndpointFromDifferentCluster(t *testing.T) {
 	}, nil)
 	backend, err := svc.Save(t.Context(), bizlogs.SaveInput{
 		WriteEndpoints: []string{writeEndpoint.URL}, QueryEndpoint: queryEndpoint.URL,
-		Dataset: "opspilot.system", Namespace: "prod",
+		Dataset: "ongrid.system", Namespace: "prod",
 		WriteCredentialRef: "write", QueryCredentialRef: "query", TLSInsecure: true,
 	})
 	if err != nil {
@@ -895,15 +895,15 @@ func TestServiceStoresDirectAPIKeysAsManagedWriteOnlyCredentials(t *testing.T) {
 
 	first, err := svc.Save(context.Background(), bizlogs.SaveInput{
 		WriteEndpoints: []string{"https://es.example.com"}, QueryEndpoint: "https://es.example.com",
-		Dataset: "opspilot.system", Namespace: "prod",
+		Dataset: "ongrid.system", Namespace: "prod",
 		WriteAPIKey: "ApiKey encoded-write-v1", QueryAPIKey: "encoded-query-v1",
 	})
 	if err != nil {
 		t.Fatalf("Save(direct keys): %v", err)
 	}
 	if first.WriteCredentialRef == first.QueryCredentialRef ||
-		!strings.HasPrefix(first.WriteCredentialRef, "opspilot-managed-logs-es-write-") ||
-		!strings.HasPrefix(first.QueryCredentialRef, "opspilot-managed-logs-es-query-") {
+		!strings.HasPrefix(first.WriteCredentialRef, "ongrid-managed-logs-es-write-") ||
+		!strings.HasPrefix(first.QueryCredentialRef, "ongrid-managed-logs-es-query-") {
 		t.Fatalf("managed refs = write %q query %q", first.WriteCredentialRef, first.QueryCredentialRef)
 	}
 	if got := secrets.apiKey(first.WriteCredentialRef); got != "encoded-write-v1" {
@@ -922,7 +922,7 @@ func TestServiceStoresDirectAPIKeysAsManagedWriteOnlyCredentials(t *testing.T) {
 
 	unchanged, err := svc.Save(context.Background(), bizlogs.SaveInput{
 		WriteEndpoints: []string{"https://es.example.com"}, QueryEndpoint: "https://es.example.com",
-		Dataset: "opspilot.application", Namespace: "prod",
+		Dataset: "ongrid.application", Namespace: "prod",
 	})
 	if err != nil {
 		t.Fatalf("Save(blank write-only fields): %v", err)
@@ -936,7 +936,7 @@ func TestServiceStoresDirectAPIKeysAsManagedWriteOnlyCredentials(t *testing.T) {
 
 	rotated, err := svc.Save(context.Background(), bizlogs.SaveInput{
 		WriteEndpoints: []string{"https://es.example.com"}, QueryEndpoint: "https://es.example.com",
-		Dataset: "opspilot.application", Namespace: "prod", WriteAPIKey: "encoded-write-v2",
+		Dataset: "ongrid.application", Namespace: "prod", WriteAPIKey: "encoded-write-v2",
 	})
 	if err != nil {
 		t.Fatalf("Save(rotate write key): %v", err)
@@ -963,14 +963,14 @@ func TestServiceSavedConfigurationReplacementDoesNotDeleteExternalCredentialRefs
 
 	first, err := svc.Save(t.Context(), bizlogs.SaveInput{
 		WriteEndpoints: []string{"https://es.example.com"}, QueryEndpoint: "https://es.example.com",
-		Dataset: "opspilot.system", WriteCredentialRef: "external-write", QueryCredentialRef: "external-query",
+		Dataset: "ongrid.system", WriteCredentialRef: "external-write", QueryCredentialRef: "external-query",
 	})
 	if err != nil {
 		t.Fatalf("Save(external refs): %v", err)
 	}
 	rotated, err := svc.Save(t.Context(), bizlogs.SaveInput{
 		WriteEndpoints: []string{"https://es.example.com"}, QueryEndpoint: "https://es.example.com",
-		Dataset: "opspilot.system", WriteAPIKey: "write-v2", QueryAPIKey: "query-v2",
+		Dataset: "ongrid.system", WriteAPIKey: "write-v2", QueryAPIKey: "query-v2",
 	})
 	if err != nil {
 		t.Fatalf("Save(managed rotation): %v", err)
@@ -993,7 +993,7 @@ func TestServiceNewGenerationRetainsManagedCredentialsNeededBySelectedBackend(t 
 
 	first, err := svc.Save(t.Context(), bizlogs.SaveInput{
 		WriteEndpoints: []string{"https://es.example.com"}, QueryEndpoint: "https://es.example.com",
-		Dataset: "opspilot.system", WriteAPIKey: "write-v1", QueryAPIKey: "query-v1",
+		Dataset: "ongrid.system", WriteAPIKey: "write-v1", QueryAPIKey: "query-v1",
 	})
 	if err != nil {
 		t.Fatalf("Save(first): %v", err)
@@ -1003,7 +1003,7 @@ func TestServiceNewGenerationRetainsManagedCredentialsNeededBySelectedBackend(t 
 	}
 	second, err := svc.Save(t.Context(), bizlogs.SaveInput{
 		WriteEndpoints: []string{"https://next-es.example.com"}, QueryEndpoint: "https://next-es.example.com",
-		Dataset: "opspilot.system", WriteAPIKey: "write-v2", QueryAPIKey: "query-v2",
+		Dataset: "ongrid.system", WriteAPIKey: "write-v2", QueryAPIKey: "query-v2",
 	})
 	if err != nil {
 		t.Fatalf("Save(second generation): %v", err)
@@ -1025,7 +1025,7 @@ func TestServiceRejectsSharedDirectKeyBeforeWritingManagedCredentials(t *testing
 
 	_, err := svc.Save(context.Background(), bizlogs.SaveInput{
 		WriteEndpoints: []string{"https://es.example.com"}, QueryEndpoint: "https://es.example.com",
-		Dataset: "opspilot.system", WriteAPIKey: "encoded-shared", QueryAPIKey: "encoded-shared",
+		Dataset: "ongrid.system", WriteAPIKey: "encoded-shared", QueryAPIKey: "encoded-shared",
 	})
 	if err == nil || !strings.Contains(err.Error(), "must differ") {
 		t.Fatalf("Save error = %v, want distinct-key validation", err)
@@ -1039,7 +1039,7 @@ func TestServiceDirectAPIKeyRequiresEncryptedManagedStore(t *testing.T) {
 	svc := bizlogs.NewService(logsstore.NewRepo(openTestDB(t)), mapSecrets{}, nil)
 	_, err := svc.Save(context.Background(), bizlogs.SaveInput{
 		WriteEndpoints: []string{"https://es.example.com"}, QueryEndpoint: "https://es.example.com",
-		Dataset: "opspilot.system", WriteAPIKey: "encoded-write", QueryAPIKey: "encoded-query",
+		Dataset: "ongrid.system", WriteAPIKey: "encoded-write", QueryAPIKey: "encoded-query",
 	})
 	if err == nil || !strings.Contains(err.Error(), "credential storage is unavailable") {
 		t.Fatalf("Save error = %v, want managed storage failure", err)
@@ -1053,7 +1053,7 @@ func TestServiceSaveCleansManagedCredentialsWhenCreateFails(t *testing.T) {
 
 	_, err := svc.Save(t.Context(), bizlogs.SaveInput{
 		WriteEndpoints: []string{"https://es.example.com"}, QueryEndpoint: "https://es.example.com",
-		Dataset: "opspilot.system", WriteAPIKey: "encoded-write", QueryAPIKey: "encoded-query",
+		Dataset: "ongrid.system", WriteAPIKey: "encoded-write", QueryAPIKey: "encoded-query",
 	})
 	if err == nil || !strings.Contains(err.Error(), "injected managed credential create failure") {
 		t.Fatalf("Save error = %v, want injected create failure", err)
@@ -1070,7 +1070,7 @@ func TestServiceSaveCleansManagedCredentialsWhenBackendSaveFails(t *testing.T) {
 
 	_, err := svc.Save(t.Context(), bizlogs.SaveInput{
 		WriteEndpoints: []string{"https://es.example.com"}, QueryEndpoint: "https://es.example.com",
-		Dataset: "opspilot.system", WriteAPIKey: "encoded-write", QueryAPIKey: "encoded-query",
+		Dataset: "ongrid.system", WriteAPIKey: "encoded-write", QueryAPIKey: "encoded-query",
 	})
 	if err == nil || !strings.Contains(err.Error(), "injected backend save failure") {
 		t.Fatalf("Save error = %v, want injected save failure", err)
@@ -1094,12 +1094,12 @@ func TestServiceRejectsUnsafeBackendInput(t *testing.T) {
 		{
 			name: "plain HTTP without explicit test-environment switch",
 			in: bizlogs.SaveInput{WriteEndpoints: []string{"http://es.example"}, QueryEndpoint: "http://es.example",
-				Dataset: "opspilot.system", WriteCredentialRef: "shared", QueryCredentialRef: "query"},
+				Dataset: "ongrid.system", WriteCredentialRef: "shared", QueryCredentialRef: "query"},
 		},
 		{
 			name: "same write and query credential",
 			in: bizlogs.SaveInput{WriteEndpoints: []string{"https://es.example"}, QueryEndpoint: "https://es.example",
-				Dataset: "opspilot.system", WriteCredentialRef: "shared", QueryCredentialRef: "shared"},
+				Dataset: "ongrid.system", WriteCredentialRef: "shared", QueryCredentialRef: "shared"},
 		},
 		{
 			name: "dataset outside product namespace",
@@ -1109,7 +1109,7 @@ func TestServiceRejectsUnsafeBackendInput(t *testing.T) {
 		{
 			name: "direct API key containing whitespace",
 			in: bizlogs.SaveInput{WriteEndpoints: []string{"https://es.example"}, QueryEndpoint: "https://es.example",
-				Dataset: "opspilot.system", WriteAPIKey: "encoded write", QueryAPIKey: "encoded-query"},
+				Dataset: "ongrid.system", WriteAPIKey: "encoded write", QueryAPIKey: "encoded-query"},
 		},
 	}
 	for _, tt := range tests {
@@ -1129,7 +1129,7 @@ func TestServiceSelectingLokiClearsSelectedElasticsearch(t *testing.T) {
 	}, &echoProbeSearcher{})
 	input := bizlogs.SaveInput{
 		WriteEndpoints: []string{"https://es.example.com"}, QueryEndpoint: "https://es.example.com",
-		Dataset: "opspilot.system", Namespace: "old", WriteCredentialRef: "write", QueryCredentialRef: "query",
+		Dataset: "ongrid.system", Namespace: "old", WriteCredentialRef: "write", QueryCredentialRef: "query",
 	}
 	selected, err := svc.Save(t.Context(), input)
 	if err != nil {
@@ -1163,7 +1163,7 @@ func TestServiceLokiSelectionDoesNotRunElasticsearchAlertMigration(t *testing.T)
 	}, &echoProbeSearcher{})
 	backend, err := svc.Save(t.Context(), bizlogs.SaveInput{
 		WriteEndpoints: []string{"https://es.example.com"}, QueryEndpoint: "https://es.example.com",
-		Dataset: "opspilot.system", Namespace: "old", WriteCredentialRef: "write", QueryCredentialRef: "query",
+		Dataset: "ongrid.system", Namespace: "old", WriteCredentialRef: "write", QueryCredentialRef: "query",
 	})
 	if err != nil {
 		t.Fatalf("Save: %v", err)
@@ -1203,7 +1203,7 @@ func TestServiceElasticsearchSelectionMigratesAlertsBeforeChangingBackend(t *tes
 	}, &echoProbeSearcher{})
 	backend, err := svc.Save(t.Context(), bizlogs.SaveInput{
 		WriteEndpoints: []string{es.URL}, QueryEndpoint: es.URL,
-		Dataset: "opspilot.system", Namespace: "old", WriteCredentialRef: "write", QueryCredentialRef: "query",
+		Dataset: "ongrid.system", Namespace: "old", WriteCredentialRef: "write", QueryCredentialRef: "query",
 		TLSInsecure: true,
 	})
 	if err != nil {
@@ -1254,7 +1254,7 @@ func TestServiceConnectionCheckIncludesOfflineLogEnabledEdgeWithoutBlockingCutov
 	})
 	backend, err := svc.Save(context.Background(), bizlogs.SaveInput{
 		WriteEndpoints: []string{es.URL}, QueryEndpoint: es.URL,
-		Dataset: "opspilot.system", WriteCredentialRef: "write", QueryCredentialRef: "query", TLSInsecure: true,
+		Dataset: "ongrid.system", WriteCredentialRef: "write", QueryCredentialRef: "query", TLSInsecure: true,
 	})
 	if err != nil {
 		t.Fatalf("Save: %v", err)
@@ -1476,7 +1476,7 @@ func TestServiceSelectionWithNoOnlineEdgesUsesManagerProbe(t *testing.T) {
 	svc.SetConnectionEdgeInventory(fixedEdgeInventory{{EdgeID: 43, Online: false}})
 	backend, err := svc.Save(t.Context(), bizlogs.SaveInput{
 		WriteEndpoints: []string{es.URL}, QueryEndpoint: es.URL,
-		Dataset: "opspilot.system", WriteCredentialRef: "write", QueryCredentialRef: "query", TLSInsecure: true,
+		Dataset: "ongrid.system", WriteCredentialRef: "write", QueryCredentialRef: "query", TLSInsecure: true,
 	})
 	if err != nil {
 		t.Fatalf("Save: %v", err)
@@ -1499,7 +1499,7 @@ func TestServiceLokiSelectionWithNoOnlineEdgesDoesNotBlock(t *testing.T) {
 	svc.SetConnectionEdgeInventory(fixedEdgeInventory{{EdgeID: 43, Online: false}})
 	backend, err := svc.Save(t.Context(), bizlogs.SaveInput{
 		WriteEndpoints: []string{"https://es.example.com"}, QueryEndpoint: "https://es.example.com",
-		Dataset: "opspilot.system", WriteCredentialRef: "write", QueryCredentialRef: "query",
+		Dataset: "ongrid.system", WriteCredentialRef: "write", QueryCredentialRef: "query",
 	})
 	if err != nil {
 		t.Fatalf("Save: %v", err)
@@ -1525,7 +1525,7 @@ func TestServiceUnselectedConfigurationKeepsSelectedBackendMetadata(t *testing.T
 	}, nil)
 	first, err := svc.Save(context.Background(), bizlogs.SaveInput{
 		WriteEndpoints: []string{"https://es.example.com"}, QueryEndpoint: "https://es.example.com",
-		Dataset: "opspilot.system", Namespace: "old", WriteCredentialRef: "write", QueryCredentialRef: "query",
+		Dataset: "ongrid.system", Namespace: "old", WriteCredentialRef: "write", QueryCredentialRef: "query",
 	})
 	if err != nil {
 		t.Fatalf("Save(first): %v", err)
@@ -1535,7 +1535,7 @@ func TestServiceUnselectedConfigurationKeepsSelectedBackendMetadata(t *testing.T
 	}
 	second, err := svc.Save(context.Background(), bizlogs.SaveInput{
 		WriteEndpoints: []string{"https://es.example.com"}, QueryEndpoint: "https://es.example.com",
-		Dataset: "opspilot.system", Namespace: "new", WriteCredentialRef: "write", QueryCredentialRef: "query",
+		Dataset: "ongrid.system", Namespace: "new", WriteCredentialRef: "write", QueryCredentialRef: "query",
 	})
 	if err != nil {
 		t.Fatalf("Save(second): %v", err)

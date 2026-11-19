@@ -128,7 +128,7 @@ func TestAutoAPMScrapeBeyondOldLimit(t *testing.T) {
 						seen[i] = true
 					case "up":
 						up = sample.Value
-					case "opspilot_apm_resource_collection_success":
+					case "ongrid_apm_resource_collection_success":
 						resources++
 					}
 				}

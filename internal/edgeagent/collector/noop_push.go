@@ -5,7 +5,7 @@
 // node_exporter) is running on an edge, the manager-side Prometheus
 // scrapes host metrics directly through the docker bridge. The legacy
 // embedded path (gopsutil-derived samples pushed via push_prom_samples)
-// produces duplicate `node_*` series labelled `opspilot_source=embedded`
+// produces duplicate `node_*` series labelled `ongrid_source=embedded`
 // — pure noise that shows up as extra legend rows in Monitor panels.
 //
 // We still want the on-demand snapshot RPCs (`get_host_load`,

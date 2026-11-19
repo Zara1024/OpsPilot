@@ -68,7 +68,7 @@ type EdgeAuthenticator interface {
 }
 
 // Wiring is the set of biz dependencies the manager-side handlers need.
-// It is supplied by cmd/opspilot/main.go and consumed by Install.
+// It is supplied by cmd/ongrid/main.go and consumed by Install.
 type Wiring struct {
 	EdgeAuthn      EdgeAuthenticator
 	EdgeUC         *edgebiz.Usecase
@@ -92,9 +92,8 @@ type Wiring struct {
 	WebshellRouter WebshellRouter
 	// DeviceResolver, when non-nil, is consulted on every push to map
 	// the tunnel session's edge_id to the host device_id used as the
-	// metric/log/trace label. nil falls back to edge_id == device_id
-	// (correct for pre-launch data; explicitly resolving here is the
-	// future-proof path for multi-agent hosts).
+	// metric/log/trace label. Missing or unresolved bindings return zero;
+	// callers drop the data instead of substituting an Edge ID.
 	DeviceResolver   DeviceResolver
 	K8sRegistry      KubernetesRegistry
 	K8sInventory     KubernetesInventoryIngester
@@ -603,7 +602,7 @@ func Install(ctx context.Context, c *Client, w Wiring) error {
 
 	// get_plugin_configs: serve the edge its own plugin config snapshot
 	//Optional — only registered when PluginConfigUC is wired
-	// (lets opspilot run without the plugin runtime when no plugins are
+	// (lets ongrid run without the plugin runtime when no plugins are
 	// in use).
 	if w.PluginConfigUC != nil {
 		if err := c.Register(ctx, tunnel.MethodGetPluginConfigs, func(rpcCtx context.Context, edgeID uint64, body []byte) ([]byte, error) {
@@ -625,8 +624,9 @@ func Install(ctx context.Context, c *Client, w Wiring) error {
 			// types so internal/pkg/tunnel stays biz-free).
 			labelDeviceID := resolveDeviceID(rpcCtx, w.DeviceResolver, canonicalEdgeID)
 			out := tunnel.GetPluginConfigsResponse{
-				EdgeID:  labelDeviceID,
-				Configs: make(map[string]tunnel.GetPluginConfigsEntry, len(snap.Configs)),
+				EdgeID:   labelDeviceID,
+				DeviceID: labelDeviceID,
+				Configs:  make(map[string]tunnel.GetPluginConfigsEntry, len(snap.Configs)),
 			}
 			for name, cfg := range snap.Configs {
 				out.Configs[name] = tunnel.GetPluginConfigsEntry{

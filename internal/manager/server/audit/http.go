@@ -34,22 +34,22 @@ func (h *Handler) Register(r chi.Router) {
 }
 
 type wireLog struct {
-	ID           uint64    `json:"id"`
-	OccurredAt   time.Time `json:"occurred_at"`
-	UserID       *uint64   `json:"user_id,omitempty"`
-	UserEmail    string    `json:"user_email"`
-	Role         string    `json:"role"`
-	IP           string    `json:"ip"`
-	UserAgent    string    `json:"user_agent"`
-	Action       string    `json:"action"`
-	ResourceType string    `json:"resource_type"`
-	ResourceID   string    `json:"resource_id"`
-	ResourceName string    `json:"resource_name"`
-	Status       string    `json:"status"`
-	ErrorCode    string    `json:"error_code,omitempty"`
-	ErrorMessage string    `json:"error_message,omitempty"`
-	PayloadJSON  string    `json:"payload_json,omitempty"`
-	RequestID    string    `json:"request_id,omitempty"`
+	ID            uint64     `json:"id"`
+	OccurredAt    time.Time  `json:"occurred_at"`
+	UserID        *uint64    `json:"user_id,omitempty"`
+	UserEmail     string     `json:"user_email"`
+	Role          string     `json:"role"`
+	IP            string     `json:"ip"`
+	UserAgent     string     `json:"user_agent"`
+	Action        string     `json:"action"`
+	ResourceType  string     `json:"resource_type"`
+	ResourceID    string     `json:"resource_id"`
+	ResourceName  string     `json:"resource_name"`
+	Status        string     `json:"status"`
+	ErrorCode     string     `json:"error_code,omitempty"`
+	ErrorMessage  string     `json:"error_message,omitempty"`
+	PayloadJSON   string     `json:"payload_json,omitempty"`
+	RequestID     string     `json:"request_id,omitempty"`
 }
 
 type listResp struct {

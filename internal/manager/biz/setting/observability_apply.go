@@ -37,16 +37,16 @@ type ObservabilityApplier struct {
 
 func NewObservabilityApplierFromEnv(settings *Service, log *slog.Logger) *ObservabilityApplier {
 	var files []string
-	for _, file := range strings.Split(os.Getenv("ONGRID_OBSERVABILITY_COMPOSE_FILES"), ",") {
+	for _, file := range strings.Split(os.Getenv("OPSPILOT_OBSERVABILITY_COMPOSE_FILES"), ",") {
 		if file = strings.TrimSpace(file); file != "" {
 			files = append(files, file)
 		}
 	}
 	return newObservabilityApplier(settings, observabilityApplyConfig{
-		Workdir:      strings.TrimSpace(os.Getenv("ONGRID_OBSERVABILITY_COMPOSE_DIR")),
-		EnvFile:      strings.TrimSpace(os.Getenv("ONGRID_OBSERVABILITY_ENV_FILE")),
+		Workdir:      strings.TrimSpace(os.Getenv("OPSPILOT_OBSERVABILITY_COMPOSE_DIR")),
+		EnvFile:      strings.TrimSpace(os.Getenv("OPSPILOT_OBSERVABILITY_ENV_FILE")),
 		ComposeFiles: files,
-		Project:      strings.TrimSpace(os.Getenv("ONGRID_OBSERVABILITY_COMPOSE_PROJECT")),
+		Project:      strings.TrimSpace(os.Getenv("OPSPILOT_OBSERVABILITY_COMPOSE_PROJECT")),
 	}, runner.NewShellRunner(), log)
 }
 
@@ -165,14 +165,14 @@ func (a *ObservabilityApplier) runCompose(ctx context.Context, service string) e
 func observabilityEnvValues(service string, values map[string]string) (map[string]string, error) {
 	keys := map[string]map[string]string{
 		"prometheus": {
-			settingmodel.KeyPrometheusRetentionTime: "ONGRID_PROM_RETENTION_TIME",
-			settingmodel.KeyPrometheusRetentionSize: "ONGRID_PROM_RETENTION_SIZE",
+			settingmodel.KeyPrometheusRetentionTime: "OPSPILOT_PROM_RETENTION_TIME",
+			settingmodel.KeyPrometheusRetentionSize: "OPSPILOT_PROM_RETENTION_SIZE",
 		},
 		"loki": {
-			settingmodel.KeyLokiRetentionPeriod: "ONGRID_LOKI_RETENTION_PERIOD",
+			settingmodel.KeyLokiRetentionPeriod: "OPSPILOT_LOKI_RETENTION_PERIOD",
 		},
 		"tempo": {
-			settingmodel.KeyTempoBlockRetention: "ONGRID_TEMPO_BLOCK_RETENTION",
+			settingmodel.KeyTempoBlockRetention: "OPSPILOT_TEMPO_BLOCK_RETENTION",
 		},
 	}
 	allowed, ok := keys[service]

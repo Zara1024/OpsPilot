@@ -193,11 +193,7 @@ func (e *PipelineEvaluator) evaluateMetricAnomaly(ctx context.Context, now time.
 			labels:    rule.Labels,
 			expr:      expr,
 			fmtSummary: func(labels map[string]string, value float64) string {
-				name := strings.TrimSpace(rule.Name)
-				if name == "" {
-					name = rule.RuleKey
-				}
-				return fmt.Sprintf("%s: %s 偏离基线 ≥ %gσ (labels=%s)", name, rule.Metric, rule.Deviation, labelSetKey(labels))
+				return fmt.Sprintf("%s: %s 偏离基线 ≥ %gσ (labels=%s)", rule.RuleKey, rule.Metric, rule.Deviation, labelSetKey(labels))
 			},
 			resolveReason: "anomaly cleared",
 		}, now)
@@ -238,12 +234,8 @@ func (e *PipelineEvaluator) evaluateMetricForecast(ctx context.Context, now time
 			labels:    rule.Labels,
 			expr:      expr,
 			fmtSummary: func(labels map[string]string, value float64) string {
-				name := strings.TrimSpace(rule.Name)
-				if name == "" {
-					name = rule.RuleKey
-				}
 				return fmt.Sprintf("%s: %s 预计 %ds 后 %s %g (labels=%s)",
-					name, rule.Metric, rule.PredictSeconds, rule.Operator, rule.Threshold, labelSetKey(labels))
+					rule.RuleKey, rule.Metric, rule.PredictSeconds, rule.Operator, rule.Threshold, labelSetKey(labels))
 			},
 			resolveReason: "forecast cleared",
 		}, now)
@@ -307,12 +299,7 @@ func (e *PipelineEvaluator) evaluateMetricBurnRate(ctx context.Context, now time
 		scope := effectiveScope(rule.ScopeType, model.RuleKindMetricBurnRate)
 		dedupeKey := fmt.Sprintf("pipeline:%s", rule.RuleKey)
 		if fired {
-			name := strings.TrimSpace(rule.Name)
-			if name == "" {
-				name = rule.RuleKey
-			}
-			title := fmt.Sprintf("%s (SLO %.2f%% 预算消耗率超标)", name, rule.SLO)
-			summary := fmt.Sprintf("%s: SLO %.2f%% 错误预算消耗率过高 (触发窗口数: %d)", name, rule.SLO, len(rule.Burns))
+			summary := fmt.Sprintf("%s: SLO %.2f%% burn rate triggered across %d windows", rule.RuleKey, rule.SLO, len(rule.Burns))
 			thr := budget(rule.SLO)
 			val := maxBurn
 			res2, err := e.uc.RecordFiring(ctx, FiringInput{
@@ -323,7 +310,7 @@ func (e *PipelineEvaluator) evaluateMetricBurnRate(ctx context.Context, now time
 				Severity:   ruleSev(rule.Severity, notify.SeverityCritical),
 				DedupeKey:  dedupeKey,
 				OccurredAt: now,
-				Title:      title,
+				Title:      summary,
 				Summary:    summary,
 				Value:      &val,
 				Threshold:  &thr,

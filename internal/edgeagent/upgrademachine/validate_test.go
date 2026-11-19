@@ -263,9 +263,9 @@ func TestKillManifestExes_WhitelistFilter(t *testing.T) {
 		{Dest: `C:\bin\` + WorkerBinaryName},
 		{Dest: `C:\bin\windows_exporter.exe`}, // 插件在白名单内 → 合法 kill 目标（文件锁场景）
 		{Dest: `C:\bin\` + SupervisorBinaryName},
-		{Dest: `C:\bin\OPSPILOT-EDGE-SUPERVISOR.EXE`}, // 大小写变体 → 同样跳过（EqualFold）
-		{Dest: `C:\bin\svchost.exe`},                  // 白名单外 → 不杀（C1 旁路封死）
-		{Dest: `C:\temp\evil.exe`},                    // 白名单外 → 不杀
+		{Dest: `C:\bin\ONGRID-EDGE-SUPERVISOR.EXE`}, // 大小写变体 → 同样跳过（EqualFold）
+		{Dest: `C:\bin\svchost.exe`},                // 白名单外 → 不杀（C1 旁路封死）
+		{Dest: `C:\temp\evil.exe`},                  // 白名单外 → 不杀
 	}
 	var pc mockProcessController
 	m := NewMachine(t.TempDir(), t.TempDir(), testLogger(), &pc)

@@ -16,6 +16,7 @@ import (
 // PluginConfigRepo is the narrow persistence contract this biz layer
 // needs. *sqlite.PluginConfigRepo satisfies it.
 type PluginConfigRepo interface {
+	UpdateNodeLogSpec(ctx context.Context, edgeID, expectedHostID uint64, patch func(string) (string, error)) (*model.PluginConfig, error)
 	ListByEdge(ctx context.Context, edgeID uint64) ([]*model.PluginConfig, error)
 	ListAutoAPMSpecs(ctx context.Context) ([]string, error)
 	Get(ctx context.Context, edgeID uint64, plugin string) (*model.PluginConfig, error)
@@ -38,7 +39,7 @@ type DatabaseMetricsSecretWriter interface {
 }
 
 // EndpointResolver returns the data plane endpoint a given plugin
-// should push to. Implementation lives at the wiring site (cmd/opspilot)
+// should push to. Implementation lives at the wiring site (cmd/ongrid)
 // because it composes OPSPILOT_PUBLIC_URL + the per-plugin path AND
 // consults system_settings (loki.url / tempo.url) so an admin edit in
 // the Integrations UI re-targets edges automatically. Stubbed out as
@@ -69,6 +70,8 @@ type PluginRuntimeOverlayProvider interface {
 // the affected edge so changes propagate within seconds, not within the
 // edge's 60s safety-net poll window.
 type PluginConfigUC struct {
+	hostID                     uint64
+	hostTarget                 HostConfigTarget
 	kubernetesTelemetryCluster func(context.Context, uint64) (uint64, uint64, error)
 	kubernetesLogPaths         func(context.Context, uint64) ([]string, bool, error)
 	kubernetesAutoAPM          func(context.Context, uint64) (*autoapm.Spec, bool, error)
@@ -109,7 +112,7 @@ func (uc *PluginConfigUC) UpsertSpec(ctx context.Context, edgeID uint64, plugin 
 	return err
 }
 
-// SetNotifier injects the notifier post-construction. cmd/opspilot wires
+// SetNotifier injects the notifier post-construction. cmd/ongrid wires
 // the use-case before frontierbound is ready, then back-fills the
 // notifier once the tunnel is alive.
 func (uc *PluginConfigUC) SetNotifier(n EdgeReloadNotifier) { uc.notifier = n }
@@ -197,10 +200,11 @@ func (uc *PluginConfigUC) IsEnabled(ctx context.Context, edgeID uint64, plugin s
 
 // PluginRow is the UI/HTTP-friendly view of one plugin row.
 type PluginRow struct {
-	PluginName string                 `json:"plugin_name"`
-	Enabled    bool                   `json:"enabled"`
-	Spec       map[string]interface{} `json:"spec,omitempty"`
-	Defaults   *AutoAPMDefaults       `json:"defaults,omitempty"`
+	ClusterManaged bool                   `json:"cluster_managed,omitempty"`
+	PluginName     string                 `json:"plugin_name"`
+	Enabled        bool                   `json:"enabled"`
+	Spec           map[string]interface{} `json:"spec,omitempty"`
+	Defaults       *AutoAPMDefaults       `json:"defaults,omitempty"`
 }
 
 // pluginDefaultEnabled declares the on-by-default policy for fresh
@@ -279,6 +283,7 @@ func (uc *PluginConfigUC) ListForUI(ctx context.Context, edgeID uint64) ([]Plugi
 				return nil, err
 			}
 			if managed {
+				row.ClusterManaged = true
 				row.Enabled = cfg.Enabled
 				row.Spec = mergeRuntimeOverlay(row.Spec, cfg.Spec)
 			} else {
@@ -317,14 +322,15 @@ func (uc *PluginConfigUC) ListForUI(ctx context.Context, edgeID uint64) ([]Plugi
 
 // SetInput is the mutation payload from the UI / API.
 type SetInput struct {
-	Enabled bool                   `json:"enabled"`
-	Spec    map[string]interface{} `json:"spec,omitempty"`
+	ClusterManaged bool                   `json:"cluster_managed,omitempty"`
+	Enabled        bool                   `json:"enabled"`
+	Spec           map[string]interface{} `json:"spec,omitempty"`
 }
 
 // Set upserts one plugin config and (best-effort) notifies the edge to
 // reload. Validates plugin name + spec marshallability.
 func (uc *PluginConfigUC) Set(ctx context.Context, edgeID uint64, plugin string, in SetInput) (*PluginRow, error) {
-	if edgeID == 0 {
+	if edgeID == 0 && uc.hostID == 0 {
 		return nil, fmt.Errorf("%w: edge_id required", errs.ErrInvalid)
 	}
 	if !model.IsKnownPluginName(plugin) {
@@ -334,10 +340,23 @@ func (uc *PluginConfigUC) Set(ctx context.Context, edgeID uint64, plugin string,
 	var previous *model.PluginConfig
 	switch plugin {
 	case model.PluginNameLogs:
-		if _, managed, err := uc.kubernetesLogsConfig(ctx, edgeID); err != nil {
+		cfg, managed, err := uc.kubernetesLogsConfig(ctx, edgeID)
+		if err != nil {
 			return nil, err
-		} else if managed {
-			return nil, fmt.Errorf("%w: configure Kubernetes log capture in service discovery", errs.ErrInvalid)
+		}
+		if in.ClusterManaged && !managed {
+			return nil, fmt.Errorf("%w: node log configuration changed, reload the device", errs.ErrConflict)
+		}
+		if managed {
+			if cfg.Spec["enable_journald"] != true || !in.Enabled {
+				return nil, fmt.Errorf("%w: Kubernetes log capture is managed by the cluster", errs.ErrInvalid)
+			}
+			row, err := uc.nodeJournalUpdate(ctx, edgeID, in)
+			if err != nil {
+				return nil, err
+			}
+			uc.notify(ctx, edgeID, plugin)
+			return &PluginRow{PluginName: plugin, Enabled: cfg.Enabled, ClusterManaged: true, Spec: mergeRuntimeOverlay(decodeSpec(row.SpecJSON), cfg.Spec)}, nil
 		}
 	case model.PluginNameAutoAPM:
 		if uc.kubernetesAutoAPM != nil {
@@ -366,6 +385,8 @@ func (uc *PluginConfigUC) Set(ctx context.Context, edgeID uint64, plugin string,
 			return nil, fmt.Errorf("%w: cluster identities are manager-owned", errs.ErrInvalid)
 		} else if spec.Kubernetes != nil {
 			return nil, fmt.Errorf("%w: Kubernetes rules require a cluster", errs.ErrInvalid)
+		} else if len(spec.Targets) > 0 {
+			in.Spec["targets"] = spec.Targets
 		}
 	case model.PluginNameCustomMetrics:
 		if err := validateCustomMetricsSpec(in.Spec); err != nil {
@@ -606,7 +627,7 @@ func (uc *PluginConfigUC) CountByPlugin(ctx context.Context) (map[string]int64, 
 // caller. Errors are logged only — the edge's 60s safety net catches
 // missed pushes anyway.
 func (uc *PluginConfigUC) notify(ctx context.Context, edgeID uint64, plugin string) {
-	if uc.notifier == nil {
+	if uc.notifier == nil || edgeID == 0 {
 		uc.log.Debug("notifier not wired; skipping push", slog.Uint64("edge_id", edgeID))
 		return
 	}

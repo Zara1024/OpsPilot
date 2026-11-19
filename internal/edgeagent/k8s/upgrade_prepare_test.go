@@ -20,7 +20,7 @@ func TestPrepareUpgradeStopsLegacyControllerMetricsBeforeSplit(t *testing.T) {
 	patches := make([]map[string]any, 0, 1)
 	patched := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/apis/apps/v1/namespaces/opspilot-system/deployments/opspilot-edge-controller" {
+		if r.URL.Path != "/apis/apps/v1/namespaces/ongrid-system/deployments/opspilot-edge-controller" {
 			http.NotFound(w, r)
 			return
 		}
@@ -60,7 +60,7 @@ func TestPrepareUpgradeStopsLegacyControllerMetricsBeforeSplit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	err := prepareUpgradeWithClient(ctx, &apiClient{baseURL: server.URL, http: server.Client()}, UpgradePreparationConfig{
-		Namespace:                "opspilot-system",
+		Namespace:                "ongrid-system",
 		ControllerDeployment:     "opspilot-edge-controller",
 		MetricsScraperDeployment: "opspilot-edge-metrics-scraper",
 		TargetGatewayMode:        "deployment",
@@ -81,7 +81,7 @@ func TestPrepareUpgradeStopsLegacyControllerMetricsBeforeSplit(t *testing.T) {
 		t.Fatalf("marshal captured patch: %v", err)
 	}
 	for _, want := range []string{
-		`"opspilot.io/telemetry-backend":"true"`,
+		`"ongrid.io/telemetry-backend":"true"`,
 		`"name":"OPSPILOT_K8S_METRICS_ENDPOINT"`,
 		`"$patch":"delete"`,
 		`"name":"OPSPILOT_K8S_APP_METRICS_DISCOVERY"`,
@@ -104,7 +104,7 @@ func TestPrepareUpgradeAlreadySplitDoesNotPatch(t *testing.T) {
 			http.Error(w, "image-only upgrade must not patch", http.StatusInternalServerError)
 			return
 		}
-		if r.URL.Path != "/apis/apps/v1/namespaces/opspilot-system/deployments/opspilot-edge-controller" {
+		if r.URL.Path != "/apis/apps/v1/namespaces/ongrid-system/deployments/opspilot-edge-controller" {
 			http.NotFound(w, r)
 			return
 		}
@@ -115,7 +115,7 @@ func TestPrepareUpgradeAlreadySplitDoesNotPatch(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	err := prepareUpgradeWithClient(ctx, &apiClient{baseURL: server.URL, http: server.Client()}, UpgradePreparationConfig{
-		Namespace:                "opspilot-system",
+		Namespace:                "ongrid-system",
 		ControllerDeployment:     "opspilot-edge-controller",
 		MetricsScraperDeployment: "opspilot-edge-metrics-scraper",
 		TargetGatewayMode:        "deployment",
@@ -138,7 +138,7 @@ func TestPrepareUpgradeStopsScraperBeforeControllerRollback(t *testing.T) {
 	patchCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/apis/apps/v1/namespaces/opspilot-system/deployments/opspilot-edge-metrics-scraper":
+		case "/apis/apps/v1/namespaces/ongrid-system/deployments/opspilot-edge-metrics-scraper":
 			mu.Lock()
 			stopped := scraperStopped
 			mu.Unlock()
@@ -163,7 +163,7 @@ func TestPrepareUpgradeStopsScraperBeforeControllerRollback(t *testing.T) {
 				generation = 2
 			}
 			writeUpgradeDeployment(t, w, upgradeDeploymentObject(generation, nil, []map[string]any{{"name": "metrics-scraper"}}, replicas))
-		case "/apis/apps/v1/namespaces/opspilot-system/deployments/opspilot-edge-controller":
+		case "/apis/apps/v1/namespaces/ongrid-system/deployments/opspilot-edge-controller":
 			if r.Method != http.MethodGet {
 				t.Errorf("controller method = %s, want GET", r.Method)
 			}
@@ -177,7 +177,7 @@ func TestPrepareUpgradeStopsScraperBeforeControllerRollback(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	err := prepareUpgradeWithClient(ctx, &apiClient{baseURL: server.URL, http: server.Client()}, UpgradePreparationConfig{
-		Namespace:                "opspilot-system",
+		Namespace:                "ongrid-system",
 		ControllerDeployment:     "opspilot-edge-controller",
 		MetricsScraperDeployment: "opspilot-edge-metrics-scraper",
 		TargetGatewayMode:        "embedded",
