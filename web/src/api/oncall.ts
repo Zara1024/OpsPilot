@@ -360,7 +360,7 @@ export async function setMyNotificationRules(
 export async function testNotification(
   channel: string,
   urgency: string
-): Promise<{ ok: boolean; channel: string; target: string; message: string; result: any }> {
+): Promise<{ ok: boolean; channel: string; target: string; message: string; result: unknown }> {
   return request('POST', '/oncall/users/me/notification-rules/test', { channel, urgency });
 }
 

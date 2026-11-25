@@ -20,6 +20,7 @@ type State = {
   openCount: number;
   // The poll handle is kept so test code (and HMR) can reset it.
   _timer: number | null;
+  _onVisibilityChange: (() => void) | null;
   start(): void;
   stop(): void;
   refresh(): Promise<void>;
@@ -30,6 +31,7 @@ const POLL_INTERVAL_MS = 30_000;
 export const useIncidentBadge = create<State>((set, get) => ({
   openCount: 0,
   _timer: null,
+  _onVisibilityChange: null,
   refresh: async () => {
     if (!useAuth.getState().token) return;
     try {
@@ -42,17 +44,34 @@ export const useIncidentBadge = create<State>((set, get) => ({
   },
   start: () => {
     if (get()._timer != null) return;
-    void get().refresh();
+    if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+      void get().refresh();
+    }
     const id = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
       void get().refresh();
     }, POLL_INTERVAL_MS);
-    set({ _timer: id });
+    let onVisibilityChange: (() => void) | null = null;
+    if (typeof document !== 'undefined') {
+      onVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+          void get().refresh();
+        }
+      };
+      document.addEventListener('visibilitychange', onVisibilityChange);
+    }
+    set({ _timer: id, _onVisibilityChange: onVisibilityChange });
   },
   stop: () => {
-    const id = get()._timer;
+    const { _timer: id, _onVisibilityChange: onVisibilityChange } = get();
     if (id != null) {
       window.clearInterval(id);
-      set({ _timer: null });
+    }
+    if (onVisibilityChange && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    }
+    if (id != null || onVisibilityChange != null) {
+      set({ _timer: null, _onVisibilityChange: null });
     }
   },
 }));

@@ -1,12 +1,17 @@
-import { Suspense, useEffect } from 'react';
-import { Outlet } from 'react-router-dom';
+import { lazy, Suspense, useEffect } from 'react';
+import { Outlet, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
-import { CommandPalette } from './CommandPalette';
+import { ErrorBoundary } from './ErrorBoundary';
 import { useUi } from '@/store/ui';
 import { useIncidentBadge } from '@/store/incidentBadge';
 import { tr as trInline } from '@/i18n/locale';
 
+const CommandPalette = lazy(() =>
+  import('./CommandPalette').then((m) => ({ default: m.CommandPalette })),
+);
+
 export function Layout() {
+  const location = useLocation();
   // Start polling the unack'd incident counter on first authenticated mount;
   // useAuth gates RequireAuth before Layout, so we can assume there is a
   // token here. Stops on unmount (logout flips back to /login).
@@ -37,11 +42,17 @@ export function Layout() {
     <div className="flex h-screen min-h-0 w-screen min-w-0 overflow-hidden bg-zinc-950 text-zinc-100">
       <Sidebar />
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        <Suspense fallback={<MainLoading />}>
-          <Outlet />
-        </Suspense>
+        <ErrorBoundary resetKey={location.pathname}>
+          <Suspense fallback={<MainLoading />}>
+            <Outlet />
+          </Suspense>
+        </ErrorBoundary>
       </div>
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      {paletteOpen && (
+        <Suspense fallback={null}>
+          <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+        </Suspense>
+      )}
     </div>
   );
 }

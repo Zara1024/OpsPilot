@@ -19,6 +19,7 @@ import {
   Switch,
   Textarea,
 } from '@/components/ui';
+import { useDialogs } from '@/components/ui/useDialogs';
 import { Modal } from '@/components/Modal';
 import { useI18n } from '@/i18n/locale';
 import {
@@ -41,6 +42,7 @@ interface RouteTreeTabProps {
 
 export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProps) {
   const { tr } = useI18n();
+  const { confirmAction, dialog } = useDialogs();
 
   const [routes, setRoutes] = useState<OnCallRoute[]>([]);
   const [loading, setLoading] = useState(true);
@@ -161,7 +163,7 @@ export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProp
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm(tr('确定要删除该告警路由规则吗？', 'Are you sure you want to delete this route?'))) {
+    if (!(await confirmAction(tr('确定要删除该告警路由规则吗？', 'Are you sure you want to delete this route?')))) {
       return;
     }
     try {
@@ -180,8 +182,8 @@ export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProp
       const parsed = JSON.parse(testPayload);
       const res = await testMatchRoute(parsed);
       setMatchResult(res);
-    } catch (e: any) {
-      setMatchError(e.message || tr('JSON 解析失败或匹配出错', 'Invalid JSON or matching error'));
+    } catch (e: unknown) {
+      setMatchError(e instanceof Error ? e.message : tr('JSON 解析失败或匹配出错', 'Invalid JSON or matching error'));
     } finally {
       setTestingMatch(false);
     }
@@ -232,7 +234,7 @@ export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProp
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="min-w-0 flex-1">
           <h2 className="text-base font-semibold text-text">
-            {tr('告警多维标签路由树 (Route Tree)', 'Alert Label-Based Route Tree')}
+            {tr('告警多维标签路由树', 'Alert Label-Based Route Tree')}
           </h2>
           <p className="text-xs text-text-muted mt-0.5">
             {tr(
@@ -275,7 +277,7 @@ export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProp
             <div className="flex items-center gap-2">
               <Play size={16} className="text-indigo-600 dark:text-indigo-400" />
               <span className="text-sm font-semibold text-text">
-                {tr('在线匹配模拟器 (Test Matcher)', 'Online Label Match Simulator')}
+                {tr('在线匹配模拟器', 'Online Label Match Simulator')}
               </span>
             </div>
             <span className="text-xs text-text-muted">
@@ -334,7 +336,7 @@ export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProp
                     <div className="flex items-center justify-between">
                       <span className="text-text-muted">{tr('路由类型', 'Route Type')}:</span>
                       <Chip tone={matchResult.is_default ? 'warning' : 'success'} dense>
-                        {matchResult.is_default ? tr('默认兜底 (Fallback)', 'Default Fallback') : tr('精准命中 (Matched)', 'Direct Hit')}
+                        {matchResult.is_default ? tr('默认兜底', 'Default Fallback') : tr('精准命中', 'Direct Hit')}
                       </Chip>
                     </div>
                   </div>
@@ -378,7 +380,7 @@ export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProp
                 <tr className="border-b border-border bg-bg/50 text-text-muted font-semibold">
                   <th className="py-3 px-4 w-16">{tr('优先级', 'Priority')}</th>
                   <th className="py-3 px-4 w-48">{tr('规则名称', 'Rule Name')}</th>
-                  <th className="py-3 px-4">{tr('标签匹配器 (Matchers)', 'Label Matchers')}</th>
+                  <th className="py-3 px-4">{tr('标签匹配器', 'Label Matchers')}</th>
                   <th className="py-3 px-4 w-44">{tr('目标排班计划', 'Target Schedule')}</th>
                   <th className="py-3 px-4 w-40">{tr('升级策略', 'Escalation Policy')}</th>
                   <th className="py-3 px-4 w-28 text-center">{tr('状态', 'Status')}</th>
@@ -475,7 +477,7 @@ export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProp
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. 生产核心支付服务分流规则"
+              placeholder={tr('例如：生产核心支付服务分流规则', 'e.g. Production payment service route')}
               className="mt-1 text-xs"
             />
           </div>
@@ -503,7 +505,7 @@ export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProp
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs">{tr('升级策略 (Escalation Policy)', 'Escalation Policy')}</Label>
+              <Label className="text-xs">{tr('升级策略', 'Escalation Policy')}</Label>
               <Select
                 value={String(escalationPolicyId)}
                 onValueChange={(val) => setEscalationPolicyId(Number(val))}
@@ -539,7 +541,7 @@ export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProp
           {/* Matchers builder */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <Label className="text-xs">{tr('标签匹配规则 (Label Matchers)', 'Label Matchers')}</Label>
+              <Label className="text-xs">{tr('标签匹配规则', 'Label Matchers')}</Label>
               <Button
                 size="sm"
                 variant="outline"
@@ -556,7 +558,7 @@ export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProp
               {matchers.map((m, idx) => (
                 <div key={idx} className="flex items-center gap-2">
                   <Input
-                    placeholder="tag_name (e.g. service)"
+                    placeholder={tr('标签名，如 service', 'Label name, e.g. service')}
                     value={m.name}
                     onChange={(e) => {
                       const next = [...matchers];
@@ -581,7 +583,7 @@ export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProp
                     className="w-28 text-xs"
                   />
                   <Input
-                    placeholder="value (e.g. payment)"
+                    placeholder={tr('匹配值，如 payment', 'Value, e.g. payment')}
                     value={m.value}
                     onChange={(e) => {
                       const next = [...matchers];
@@ -593,6 +595,7 @@ export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProp
                   <Button
                     size="icon"
                     variant="ghost"
+                    aria-label={tr('删除匹配条件', 'Remove matcher')}
                     onClick={() => {
                       setMatchers(matchers.filter((_, i) => i !== idx));
                     }}
@@ -606,6 +609,7 @@ export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProp
           </div>
         </div>
       </Modal>
+      {dialog}
     </div>
   );
 }

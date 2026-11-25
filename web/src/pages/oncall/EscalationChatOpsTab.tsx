@@ -1,9 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  BellRing,
-  PhoneCall,
-  MessageSquare,
-  ShieldAlert,
   Plus,
   Trash2,
   Edit2,
@@ -20,12 +16,12 @@ import {
   Button,
   Card,
   Chip,
-  EmptyState,
   Input,
   Label,
   Select,
   Switch,
 } from '@/components/ui';
+import { useDialogs } from '@/components/ui/useDialogs';
 import { Modal } from '@/components/Modal';
 import { useI18n } from '@/i18n/locale';
 import {
@@ -50,6 +46,7 @@ interface EscalationChatOpsTabProps {
 
 export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
   const { tr } = useI18n();
+  const { confirmAction, alertAction, dialog } = useDialogs();
 
   // Active Incidents state
   const [incidents, setIncidents] = useState<ActiveIncident[]>([]);
@@ -150,9 +147,9 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
       setActionMessage(res.message || tr('操作执行成功', 'Action performed successfully'));
       await fetchIncidents();
       setTimeout(() => setActionMessage(null), 4000);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('ChatOps error:', e);
-      alert(e.message || tr('ChatOps 执行失败', 'ChatOps failed'));
+      await alertAction(e instanceof Error ? e.message : tr('ChatOps 执行失败', 'ChatOps failed'));
     }
   };
 
@@ -204,7 +201,7 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
 
   const handleDeletePolicy = async (id?: number) => {
     if (!id) return;
-    if (!window.confirm(tr('确定要删除该升级策略步骤吗？', 'Are you sure you want to delete this step?'))) {
+    if (!(await confirmAction(tr('确定要删除该升级策略步骤吗？', 'Are you sure you want to delete this step?')))) {
       return;
     }
     try {
@@ -239,8 +236,8 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
       setTestResult(
         `${tr('测试发送成功', 'Test notification sent')}: ${res.target || ''} [${res.message || 'OK'}]`
       );
-    } catch (e: any) {
-      setTestResult(`${tr('测试失败', 'Failed')}: ${e.message}`);
+    } catch (e: unknown) {
+      setTestResult(`${tr('测试失败', 'Failed')}: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setTestingNotification(false);
     }
@@ -249,11 +246,11 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
   const getTargetTypeLabel = (type: string) => {
     switch (type) {
       case 'primary_oncall':
-        return tr('当前一线主值班人 (Primary)', 'Primary On-Call');
+        return tr('当前一线主值班人', 'Primary On-Call');
       case 'secondary_oncall':
-        return tr('二线技术专家 (Secondary Support)', 'Secondary Support');
+        return tr('二线技术专家', 'Secondary Support');
       case 'fallback_lead':
-        return tr('SRE 应急负责人 (Fallback Lead)', 'SRE Lead Fallback');
+        return tr('SRE 应急负责人', 'SRE Lead Fallback');
       case 'webhook':
         return tr('IM 群机器人 Webhook 广播', 'IM Group Webhook Broadcast');
       default:
@@ -269,7 +266,7 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
           <div className="flex items-center gap-2">
             <Flame className="text-red-500" size={18} />
             <h2 className="text-base font-semibold text-text">
-              {tr('活跃故障协同台 (Incident ChatOps Hub)', 'Incident ChatOps Hub')}
+              {tr('活跃故障协同台', 'Incident ChatOps Hub')}
             </h2>
             <Chip tone="danger" dense>
               {incidents.filter((i) => i.status !== 'resolved').length} {tr('起未解决', 'active')}
@@ -306,7 +303,14 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
                 {tr('仅活跃告警', 'Active Only')}
               </button>
             </div>
-            <Button size="sm" variant="ghost" onClick={() => fetchIncidents(incidentFilter)} disabled={incidentsLoading}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => fetchIncidents(incidentFilter)}
+              disabled={incidentsLoading}
+              aria-label={tr('刷新告警列表', 'Refresh incidents')}
+              title={tr('刷新告警列表', 'Refresh incidents')}
+            >
               <RefreshCw size={14} className={incidentsLoading ? 'animate-spin' : ''} />
             </Button>
           </div>
@@ -366,11 +370,11 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
                           dense
                         >
                           {inc.status === 'firing'
-                            ? tr('触发中 (Firing)', 'Firing')
+                            ? tr('触发中', 'Firing')
                             : inc.status === 'acknowledged'
-                            ? tr('已认领 (Acked)', 'Acknowledged')
+                            ? tr('已认领', 'Acknowledged')
                             : inc.status === 'resolved'
-                            ? tr('已恢复 (Resolved)', 'Resolved')
+                            ? tr('已恢复', 'Resolved')
                             : inc.status}
                         </Chip>
                       </span>
@@ -391,7 +395,7 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
                         onClick={() => handleChatOps('ack', inc.id)}
                       >
                         <CheckCircle2 size={14} className="mr-1.5" />
-                        {tr('认领 (Ack)', 'Acknowledge')}
+                        {tr('认领', 'Acknowledge')}
                       </Button>
                     )}
                     <Button
@@ -432,7 +436,7 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-base font-semibold text-text">
-              {tr('团队多级超时升级流水线 (Escalation Policies)', 'Team Escalation Policies')}
+              {tr('团队多级超时升级流水线', 'Team Escalation Policies')}
             </h2>
             <p className="text-xs text-text-muted mt-0.5">
               {tr(
@@ -468,13 +472,19 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
                         </span>
                         <div className="flex items-center gap-1">
                           <button
+                            type="button"
                             onClick={() => handleOpenEditPolicy(p)}
+                            aria-label={tr('编辑升级步骤', 'Edit escalation step')}
+                            title={tr('编辑升级步骤', 'Edit escalation step')}
                             className="text-text-muted hover:text-text p-1"
                           >
                             <Edit2 size={12} />
                           </button>
                           <button
+                            type="button"
                             onClick={() => handleDeletePolicy(p.id)}
+                            aria-label={tr('删除升级步骤', 'Delete escalation step')}
+                            title={tr('删除升级步骤', 'Delete escalation step')}
                             className="text-red-500 hover:text-red-600 p-1"
                           >
                             <Trash2 size={12} />
@@ -508,7 +518,7 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
       <section className="space-y-4">
         <div>
           <h2 className="text-base font-semibold text-text">
-            {tr('个人多通道通知阶梯与偏好 (Personal Notification Profile)', 'Personal Notification Ladder')}
+            {tr('个人多通道通知阶梯与偏好', 'Personal Notification Ladder')}
           </h2>
           <p className="text-xs text-text-muted mt-0.5">
             {tr(
@@ -528,14 +538,14 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
                   variant={urgencyMode === 'high' ? 'primary' : 'ghost'}
                   onClick={() => setUrgencyMode('high')}
                 >
-                  {tr('高优先级 (P0 / P1 强触达)', 'High Urgency (P0/P1)')}
+                  {tr('高优先级（P0 / P1 强触达）', 'High Urgency (P0/P1)')}
                 </Button>
                 <Button
                   size="sm"
                   variant={urgencyMode === 'low' ? 'primary' : 'ghost'}
                   onClick={() => setUrgencyMode('low')}
                 >
-                  {tr('低优先级 (P2 / P3 静默)', 'Low Urgency (P2/P3)')}
+                  {tr('低优先级（P2 / P3 静默）', 'Low Urgency (P2/P3)')}
                 </Button>
               </div>
               <Button
@@ -585,7 +595,7 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
                       value={rule.channel}
                       onValueChange={(val) => {
                         const next = [...myRules];
-                        next[idx].channel = val as any;
+                        next[idx] = { ...next[idx], channel: val as UserNotificationRule['channel'] };
                         setMyRules(next);
                       }}
                       options={[
@@ -602,7 +612,7 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
                       checked={rule.enabled}
                       onCheckedChange={(checked) => {
                         const next = [...myRules];
-                        next[idx].enabled = checked;
+                        next[idx] = { ...next[idx], enabled: checked };
                         setMyRules(next);
                       }}
                     />
@@ -633,11 +643,11 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
                 <Label className="text-xs">{tr('选择测试通道', 'Select Channel')}</Label>
                 <Select
                   value={testChannel}
-                  onValueChange={(val) => setTestChannel(val as any)}
+                  onValueChange={(val) => setTestChannel(val as 'im_dm' | 'sms' | 'voice_call')}
                   options={[
                     { value: 'im_dm', label: tr('企业微信/飞书/钉钉私聊', 'IM Bot DM') },
-                    { value: 'sms', label: tr('短信服务网关 (SMS)', 'SMS Gateway') },
-                    { value: 'voice_call', label: tr('语音电话外呼 (Voice Call)', 'Voice Call') },
+                    { value: 'sms', label: tr('短信服务网关', 'SMS Gateway') },
+                    { value: 'voice_call', label: tr('语音电话外呼', 'Voice Call') },
                   ]}
                   className="mt-1 w-full text-xs"
                 />
@@ -692,7 +702,7 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
             <Input
               value={policyName}
               onChange={(e) => setPolicyName(e.target.value)}
-              placeholder="e.g. 5分钟未认领自动升级至二线专家 (短信+电话)"
+              placeholder={tr('例如：5 分钟未认领自动升级至二线专家（短信+电话）', 'e.g. Escalate to secondary after 5m unacknowledged (SMS + Call)')}
               className="mt-1 text-xs"
             />
           </div>
@@ -722,12 +732,12 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
             <Label className="text-xs">{tr('目标对象类型', 'Target Type')}</Label>
             <Select
               value={policyTargetType}
-              onValueChange={(val) => setPolicyTargetType(val as any)}
+              onValueChange={(val) => setPolicyTargetType(val as EscalationPolicy['target_type'])}
               options={[
-                { value: 'primary_oncall', label: tr('一线在岗主值班人 (Primary)', 'Primary On-Call') },
-                { value: 'secondary_oncall', label: tr('二线技术专家 (Secondary)', 'Secondary Support') },
-                { value: 'fallback_lead', label: tr('SRE 应急负责人 (Fallback Lead)', 'SRE Lead') },
-                { value: 'webhook', label: tr('IM 群机器人广播 (Webhook)', 'Webhook') },
+                { value: 'primary_oncall', label: tr('一线在岗主值班人', 'Primary On-Call') },
+                { value: 'secondary_oncall', label: tr('二线技术专家', 'Secondary Support') },
+                { value: 'fallback_lead', label: tr('SRE 应急负责人', 'SRE Lead') },
+                { value: 'webhook', label: tr('IM 群机器人广播', 'Webhook') },
               ]}
               className="mt-1 w-full text-xs"
             />
@@ -744,6 +754,7 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
           </div>
         </div>
       </Modal>
+      {dialog}
     </div>
   );
 }

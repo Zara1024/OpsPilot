@@ -1,12 +1,16 @@
-import { AgentSidePanel } from '@/components/AgentSidePanel';
 import { AssistantRoute } from '@/lib/assistantPage';
-import { lazy, type ReactNode } from 'react';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { tr } from '@/i18n/locale';
+import { lazy, Suspense, type ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Layout } from '@/components/Layout';
 import { ChatLayout } from '@/components/ChatLayout';
 import { useAuth } from '@/store/auth';
+import LoginPage from '@/pages/Login';
 
-const LoginPage = lazy(() => import('@/pages/Login'));
+const AgentSidePanel = lazy(() =>
+  import('@/components/AgentSidePanel').then((m) => ({ default: m.AgentSidePanel })),
+);
 const HomePage = lazy(() => import('@/pages/Home'));
 const ChatThreadPage = lazy(() => import('@/pages/ChatThread'));
 const EdgesPage = lazy(() => import('@/pages/Edges'));
@@ -81,7 +85,14 @@ function RequireAuth({ children }: { children: ReactNode }) {
   if (!token) {
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search + location.hash }} />;
   }
-  return <AssistantRoute.Provider value={location.key}>{children}<AgentSidePanel /></AssistantRoute.Provider>;
+  return (
+    <AssistantRoute.Provider value={location.key}>
+      {children}
+      <Suspense fallback={null}>
+        <AgentSidePanel />
+      </Suspense>
+    </AssistantRoute.Provider>
+  );
 }
 
 function PublicOnly({ children }: { children: ReactNode }) {
@@ -92,10 +103,20 @@ function PublicOnly({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function RouteFallback() {
+  return (
+    <main className="flex min-h-screen flex-1 items-center justify-center bg-bg text-sm text-text-muted">
+      {tr('加载中…', 'Loading…')}
+    </main>
+  );
+}
+
 export default function App() {
   const location = useLocation();
   return (
-    <Routes>
+    <ErrorBoundary resetKey={location.pathname} fullScreen>
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
       <Route
         path="/login"
         element={
@@ -234,6 +255,8 @@ export default function App() {
         }
       />
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+        </Routes>
+      </Suspense>
+    </ErrorBoundary>
   );
 }

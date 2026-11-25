@@ -29,7 +29,7 @@ vi.mock('@/components/ChatInput', () => ({
 let saved: ModelSelection;
 beforeEach(() => {
   vi.clearAllMocks(); permissions.isAdmin = true;
-  localStorage.setItem('ongrid-locale', 'en-US');
+  localStorage.setItem('opspilot-locale', 'en-US');
   useModelSelection.getState().setSelected(null);
   saved = { provider: 'openai', model: 'gpt-6.1-terra', reasoning_effort: 'low' };
   vi.mocked(listModels).mockImplementation(async () => ({ providers: [{ id: 'openai', label: 'OpenAI', models: ['gpt-6.1-terra', 'gpt-4o'] }], default: { ...saved } }));

@@ -2,10 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   PhoneCall,
   Settings,
-  ShieldAlert,
-  CheckCircle2,
-  AlertCircle,
-  Play,
   Save,
   RefreshCw,
 } from 'lucide-react';
@@ -17,6 +13,7 @@ import {
   Label,
   Select,
 } from '@/components/ui';
+import { useDialogs } from '@/components/ui/useDialogs';
 import { useI18n } from '@/i18n/locale';
 import {
   getVoiceConfig,
@@ -28,6 +25,7 @@ import {
 
 export function VoiceGatewayTab() {
   const { tr } = useI18n();
+  const { alertAction, dialog } = useDialogs();
 
   const [config, setConfig] = useState<VoiceGatewayConfig>({
     provider: 'mock',
@@ -49,8 +47,10 @@ export function VoiceGatewayTab() {
 
   // Test call state
   const [testPhone, setTestPhone] = useState('13800000001');
-  const [testTitle, setTestTitle] = useState('生产核心订单支付接口超时率突增 (>5%)');
-  const [testUrgency, setTestUrgency] = useState<'high' | 'low'>('high');
+  const [testTitle, setTestTitle] = useState(() =>
+    tr('生产核心订单支付接口超时率突增（>5%）', 'Order payment API timeout rate spike (>5%)'),
+  );
+  const testUrgency: 'high' | 'low' = 'high';
   const [calling, setCalling] = useState(false);
   const [callResult, setCallResult] = useState<VoiceCallResult | null>(null);
 
@@ -79,9 +79,9 @@ export function VoiceGatewayTab() {
       await updateVoiceConfig(config);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to update voice config:', e);
-      alert(e.message || tr('保存失败', 'Failed to save'));
+      await alertAction(e instanceof Error ? e.message : tr('保存失败', 'Failed to save'));
     } finally {
       setSaving(false);
     }
@@ -89,7 +89,7 @@ export function VoiceGatewayTab() {
 
   const handleTestCall = async () => {
     if (!testPhone.trim()) {
-      alert(tr('请输入测试手机号码', 'Please enter a phone number'));
+      await alertAction(tr('请输入测试手机号码', 'Please enter a phone number'));
       return;
     }
     setCalling(true);
@@ -102,9 +102,9 @@ export function VoiceGatewayTab() {
         severity: 'P1',
       });
       setCallResult(res);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to trigger test voice call:', e);
-      alert(e.message || tr('外呼测试失败', 'Call failed'));
+      await alertAction(e instanceof Error ? e.message : tr('外呼测试失败', 'Call failed'));
     } finally {
       setCalling(false);
     }
@@ -116,7 +116,7 @@ export function VoiceGatewayTab() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-base font-semibold text-text">
-            {tr('多云语音网关基础设施 (Multi-Cloud Voice Gateway)', 'Multi-Cloud Voice Gateway')}
+            {tr('多云语音网关基础设施', 'Multi-Cloud Voice Gateway')}
           </h2>
           <p className="text-xs text-text-muted mt-0.5">
             {tr(
@@ -126,7 +126,14 @@ export function VoiceGatewayTab() {
           </p>
         </div>
 
-        <Button size="sm" variant="ghost" onClick={fetchConfig} disabled={loading}>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={fetchConfig}
+          disabled={loading}
+          aria-label={tr('刷新语音网关配置', 'Refresh voice gateway configuration')}
+          title={tr('刷新语音网关配置', 'Refresh voice gateway configuration')}
+        >
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
         </Button>
       </div>
@@ -138,7 +145,7 @@ export function VoiceGatewayTab() {
             <div className="flex items-center gap-2">
               <Settings size={16} className="text-indigo-500" />
               <h3 className="text-xs font-semibold text-text uppercase tracking-wider">
-                {tr('语音服务商配置 (Provider Config)', 'Provider Config')}
+                {tr('语音服务商配置', 'Provider Config')}
               </h3>
             </div>
             <Button
@@ -163,11 +170,11 @@ export function VoiceGatewayTab() {
               <Label className="text-xs">{tr('选择默认语音服务商', 'Active Provider')}</Label>
               <Select
                 value={config.provider}
-                onValueChange={(val) => setConfig({ ...config, provider: val as any })}
+                onValueChange={(val) => setConfig({ ...config, provider: val as VoiceGatewayConfig['provider'] })}
                 options={[
-                  { value: 'mock', label: tr('本地仿真网关 (Mock Gateway - 推荐测试)', 'Mock Gateway (Recommended for dev)') },
-                  { value: 'aliyun', label: tr('阿里云智能语音服务 (Aliyun Dyvmsapi)', 'Aliyun Voice') },
-                  { value: 'tencent', label: tr('腾讯云语音消息外呼 (Tencent Cloud)', 'Tencent Voice') },
+                  { value: 'mock', label: tr('本地仿真网关（推荐测试）', 'Mock Gateway (Recommended for dev)') },
+                  { value: 'aliyun', label: tr('阿里云智能语音服务', 'Aliyun Voice') },
+                  { value: 'tencent', label: tr('腾讯云语音消息外呼', 'Tencent Voice') },
                 ]}
                 className="mt-1 w-full text-xs"
               />
@@ -185,7 +192,7 @@ export function VoiceGatewayTab() {
             {config.provider === 'aliyun' && (
               <div className="space-y-3 pt-2 border-t border-border">
                 <span className="font-semibold text-text block">
-                  {tr('阿里云语音参数 (Aliyun Dyvmsapi)', 'Aliyun Settings')}
+                  {tr('阿里云语音参数', 'Aliyun Settings')}
                 </span>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -210,7 +217,7 @@ export function VoiceGatewayTab() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label className="text-xs">{tr('主叫显号 (Called Show Number)', 'Called Show Number')}</Label>
+                    <Label className="text-xs">{tr('主叫显号', 'Called Show Number')}</Label>
                     <Input
                       value={config.aliyun_called_show_number || ''}
                       onChange={(e) => setConfig({ ...config, aliyun_called_show_number: e.target.value })}
@@ -234,7 +241,7 @@ export function VoiceGatewayTab() {
             {config.provider === 'tencent' && (
               <div className="space-y-3 pt-2 border-t border-border">
                 <span className="font-semibold text-text block">
-                  {tr('腾讯云语音参数 (Tencent Cloud)', 'Tencent Settings')}
+                  {tr('腾讯云语音参数', 'Tencent Settings')}
                 </span>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -268,7 +275,7 @@ export function VoiceGatewayTab() {
                     />
                   </div>
                   <div>
-                    <Label className="text-xs">{tr('模版 ID (TemplateId)', 'Template ID')}</Label>
+                    <Label className="text-xs">{tr('模板 ID', 'Template ID')}</Label>
                     <Input
                       value={config.tencent_template_id || ''}
                       onChange={(e) => setConfig({ ...config, tencent_template_id: e.target.value })}
@@ -287,7 +294,7 @@ export function VoiceGatewayTab() {
           <div className="flex items-center gap-2 border-b border-border pb-3">
             <PhoneCall size={16} className="text-indigo-500" />
             <h3 className="text-xs font-semibold text-text uppercase tracking-wider">
-              {tr('在线语音外呼实测 (Voice Simulator)', 'Voice Call Simulator')}
+              {tr('在线语音外呼实测', 'Voice Call Simulator')}
             </h3>
           </div>
 
@@ -310,11 +317,11 @@ export function VoiceGatewayTab() {
             </div>
 
             <div>
-              <Label className="text-xs">{tr('模拟告警标题 (TTS 播报内容)', 'Alert Title for TTS')}</Label>
+              <Label className="text-xs">{tr('模拟告警标题（TTS 播报内容）', 'Alert Title for TTS')}</Label>
               <Input
                 value={testTitle}
                 onChange={(e) => setTestTitle(e.target.value)}
-                placeholder="订单支付服务超时告警"
+                placeholder={tr('订单支付服务超时告警', 'Order payment service timeout alert')}
                 className="mt-1 text-xs"
               />
             </div>
@@ -351,7 +358,7 @@ export function VoiceGatewayTab() {
                 <div className="flex items-center justify-between">
                   <span className="text-text-muted">{tr('DTMF 确认按键', 'DTMF Code')}:</span>
                   <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-                    Key '{callResult.dtmf_code || '1'}' (已确认认领接单)
+                    {tr(`按键 '${callResult.dtmf_code || '1'}'（已确认认领接单）`, `Key '${callResult.dtmf_code || '1'}' (Acknowledged)`)}
                   </span>
                 </div>
                 <div className="border-t border-border pt-2 text-[11px] text-text-muted">
@@ -363,6 +370,7 @@ export function VoiceGatewayTab() {
           </div>
         </Card>
       </div>
+      {dialog}
     </div>
   );
 }

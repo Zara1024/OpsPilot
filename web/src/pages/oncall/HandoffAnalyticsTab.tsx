@@ -1,11 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   FileText,
-  Activity,
   AlertTriangle,
   HeartPulse,
-  Clock,
-  UserCheck,
   CheckCircle2,
   TrendingDown,
   RefreshCw,
@@ -15,10 +12,10 @@ import {
   Button,
   Card,
   Chip,
-  EmptyState,
   Label,
   Textarea,
 } from '@/components/ui';
+import { useDialogs } from '@/components/ui/useDialogs';
 import { useI18n } from '@/i18n/locale';
 import {
   getCurrentHandoff,
@@ -35,8 +32,9 @@ interface HandoffAnalyticsTabProps {
   schedules: OnCallSchedule[];
 }
 
-export function HandoffAnalyticsTab({ schedules }: HandoffAnalyticsTabProps) {
+export function HandoffAnalyticsTab({ schedules: _schedules }: HandoffAnalyticsTabProps) {
   const { tr } = useI18n();
+  const { alertAction, dialog } = useDialogs();
 
   const [handoff, setHandoff] = useState<CurrentHandoffStatus | null>(null);
   const [analytics, setAnalytics] = useState<BurnoutAnalytics | null>(null);
@@ -83,9 +81,9 @@ export function HandoffAnalyticsTab({ schedules }: HandoffAnalyticsTabProps) {
       setHandoff(res);
       setSignSuccess(true);
       setTimeout(() => setSignSuccess(false), 4000);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to ack handoff:', e);
-      alert(e.message || tr('交接确认失败', 'Failed to sign handoff'));
+      await alertAction(e instanceof Error ? e.message : tr('交接确认失败', 'Failed to sign handoff'));
     } finally {
       setSigningHandoff(false);
     }
@@ -99,10 +97,17 @@ export function HandoffAnalyticsTab({ schedules }: HandoffAnalyticsTabProps) {
           <div className="flex items-center gap-2">
             <FileText className="text-indigo-500" size={18} />
             <h2 className="text-base font-semibold text-text">
-              {tr('值班交接仪式与备忘录 (Shift Handoff Summary)', 'Shift Handoff Summary')}
+              {tr('值班交接仪式与备忘录', 'Shift Handoff Summary')}
             </h2>
           </div>
-          <Button size="sm" variant="ghost" onClick={fetchData} disabled={loading}>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={fetchData}
+            disabled={loading}
+            aria-label={tr('刷新交接与分析数据', 'Refresh handoff and analytics')}
+            title={tr('刷新交接与分析数据', 'Refresh handoff and analytics')}
+          >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </Button>
         </div>
@@ -127,12 +132,12 @@ export function HandoffAnalyticsTab({ schedules }: HandoffAnalyticsTabProps) {
 
                 <div className="flex items-center justify-between rounded-lg border border-border bg-bg/50 p-3 text-xs">
                   <div>
-                    <span className="text-text-muted">{tr('交班工程师 (Outgoing)', 'Outgoing')}</span>
+                    <span className="text-text-muted">{tr('交班工程师', 'Outgoing')}</span>
                     <div className="font-semibold text-text mt-0.5">{handoff.outgoing_user_name}</div>
                   </div>
                   <span className="text-text-muted">➔</span>
                   <div>
-                    <span className="text-text-muted">{tr('接班工程师 (Incoming)', 'Incoming')}</span>
+                    <span className="text-text-muted">{tr('接班工程师', 'Incoming')}</span>
                     <div className="font-semibold text-indigo-600 dark:text-indigo-400 mt-0.5">
                       {handoff.incoming_user_name}
                     </div>
@@ -155,7 +160,7 @@ export function HandoffAnalyticsTab({ schedules }: HandoffAnalyticsTabProps) {
                   <div className="flex justify-between items-center">
                     <span>{tr('交接状态：', 'Handoff Status: ')}</span>
                     <Chip tone={handoff.status === 'signed_off' ? 'success' : 'warning'} dense>
-                      {handoff.status === 'signed_off' ? tr('已签署 (Signed)', 'Signed') : tr('待交接签署 (Pending)', 'Pending Sign')}
+                      {handoff.status === 'signed_off' ? tr('已签署', 'Signed') : tr('待交接签署', 'Pending Sign')}
                     </Chip>
                   </div>
                 </div>
@@ -184,7 +189,7 @@ export function HandoffAnalyticsTab({ schedules }: HandoffAnalyticsTabProps) {
                 {handoff.pending_checklist && handoff.pending_checklist.length > 0 && (
                   <div>
                     <span className="text-xs font-semibold text-text uppercase tracking-wider block mb-2">
-                      {tr('交接班检查清单 (Checklist)', 'Handoff Checklist')}
+                      {tr('交接班检查清单', 'Handoff Checklist')}
                     </span>
                     <div className="space-y-1.5 text-xs">
                       {handoff.pending_checklist.map((chk) => (
@@ -202,7 +207,7 @@ export function HandoffAnalyticsTab({ schedules }: HandoffAnalyticsTabProps) {
               <div className="space-y-3 flex flex-col justify-between">
                 <div>
                   <Label className="text-xs block mb-1">
-                    {tr('交接备忘录与注意事项 (Handoff Notes)', 'Handoff Notes')}
+                    {tr('交接备忘录与注意事项', 'Handoff Notes')}
                   </Label>
                   <Textarea
                     rows={4}
@@ -238,7 +243,7 @@ export function HandoffAnalyticsTab({ schedules }: HandoffAnalyticsTabProps) {
         <div className="flex items-center gap-2">
           <HeartPulse className="text-emerald-500" size={18} />
           <h2 className="text-base font-semibold text-text">
-            {tr('SRE 疲劳度健康大盘 (Burnout Analytics)', 'SRE Burnout Health Analytics')}
+            {tr('SRE 疲劳度健康大盘', 'SRE Burnout Health Analytics')}
           </h2>
         </div>
 
@@ -252,7 +257,7 @@ export function HandoffAnalyticsTab({ schedules }: HandoffAnalyticsTabProps) {
               {analytics?.mtta_seconds || 0}s
             </div>
             <div className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">
-              {tr('评级：优秀 (Good)', 'Rating: Good')}
+              {tr('评级：优秀', 'Rating: Good')}
             </div>
           </Card>
 
@@ -298,7 +303,7 @@ export function HandoffAnalyticsTab({ schedules }: HandoffAnalyticsTabProps) {
           <Card className="!p-0 overflow-hidden">
             <div className="p-4 border-b border-border">
               <span className="text-xs font-semibold text-text uppercase tracking-wider">
-                {tr('工程师值班负荷分布 (Engineer Load)', 'Engineer Load Distribution')}
+                {tr('工程师值班负荷分布', 'Engineer Load Distribution')}
               </span>
             </div>
             <div className="overflow-x-auto">
@@ -337,10 +342,10 @@ export function HandoffAnalyticsTab({ schedules }: HandoffAnalyticsTabProps) {
                           dense
                         >
                           {eng.health_status === 'healthy'
-                            ? tr('健康 (Healthy)', 'Healthy')
+                            ? tr('健康', 'Healthy')
                             : eng.health_status === 'moderate'
-                            ? tr('适中 (Moderate)', 'Moderate')
-                            : tr('超载 (Overloaded)', 'Overloaded')}
+                            ? tr('适中', 'Moderate')
+                            : tr('超载', 'Overloaded')}
                         </Chip>
                       </td>
                     </tr>
@@ -357,7 +362,7 @@ export function HandoffAnalyticsTab({ schedules }: HandoffAnalyticsTabProps) {
         <div className="flex items-center gap-2">
           <TrendingDown className="text-amber-500" size={18} />
           <h2 className="text-base font-semibold text-text">
-            {tr('高频噪音与抖动告警治理 (Top Noisy Alerts)', 'Top Noisy Alerts Governance')}
+            {tr('高频噪音与抖动告警治理', 'Top Noisy Alerts Governance')}
           </h2>
         </div>
 
@@ -393,7 +398,7 @@ export function HandoffAnalyticsTab({ schedules }: HandoffAnalyticsTabProps) {
                         </Chip>
                       </td>
                       <td className="py-2.5 px-4 font-mono font-bold text-amber-600 dark:text-amber-400">
-                        {na.trigger_count} 次
+                        {na.trigger_count} {tr('次', 'times')}
                       </td>
                       <td className="py-2.5 px-4 font-mono">{na.flapping_score}</td>
                       <td className="py-2.5 px-4 text-text-muted max-w-sm truncate" title={na.recommended_action}>
@@ -407,6 +412,7 @@ export function HandoffAnalyticsTab({ schedules }: HandoffAnalyticsTabProps) {
           )}
         </Card>
       </section>
+      {dialog}
     </div>
   );
 }

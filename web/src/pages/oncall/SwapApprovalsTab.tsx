@@ -3,11 +3,7 @@ import {
   UserCheck,
   Check,
   X,
-  Clock,
   RefreshCw,
-  AlertCircle,
-  Calendar,
-  UserX,
 } from 'lucide-react';
 import {
   Button,
@@ -16,8 +12,8 @@ import {
   EmptyState,
   Input,
   Label,
-  Select,
 } from '@/components/ui';
+import { useDialogs } from '@/components/ui/useDialogs';
 import { Modal } from '@/components/Modal';
 import { useI18n } from '@/i18n/locale';
 import {
@@ -33,6 +29,7 @@ interface SwapApprovalsTabProps {
 
 export function SwapApprovalsTab({ onPendingCountChange }: SwapApprovalsTabProps) {
   const { tr } = useI18n();
+  const { alertAction, dialog } = useDialogs();
 
   const [overrides, setOverrides] = useState<PendingOverride[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,9 +68,9 @@ export function SwapApprovalsTab({ onPendingCountChange }: SwapApprovalsTabProps
     try {
       await approveOverride(id);
       await fetchOverrides();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to approve override:', e);
-      alert(e.message || tr('审批通过失败', 'Failed to approve'));
+      await alertAction(e instanceof Error ? e.message : tr('审批通过失败', 'Failed to approve'));
     } finally {
       setApprovingId(null);
     }
@@ -88,7 +85,7 @@ export function SwapApprovalsTab({ onPendingCountChange }: SwapApprovalsTabProps
   const handleConfirmReject = async () => {
     if (!rejectingItem) return;
     if (!rejectReason.trim()) {
-      alert(tr('请输入驳回原因', 'Please enter a rejection reason'));
+      await alertAction(tr('请输入驳回原因', 'Please enter a rejection reason'));
       return;
     }
     setRejecting(true);
@@ -96,9 +93,9 @@ export function SwapApprovalsTab({ onPendingCountChange }: SwapApprovalsTabProps
       await rejectOverride(rejectingItem.id);
       setRejectModalOpen(false);
       await fetchOverrides();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to reject override:', e);
-      alert(e.message || tr('驳回操作失败', 'Failed to reject'));
+      await alertAction(e instanceof Error ? e.message : tr('驳回操作失败', 'Failed to reject'));
     } finally {
       setRejecting(false);
     }
@@ -115,7 +112,7 @@ export function SwapApprovalsTab({ onPendingCountChange }: SwapApprovalsTabProps
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-base font-semibold text-text">
-            {tr('换班与代班审批 (Shift Swap & Overrides)', 'Shift Swap & Overrides Approvals')}
+            {tr('换班与代班审批', 'Shift Swap & Overrides Approvals')}
           </h2>
           <p className="text-xs text-text-muted mt-0.5">
             {tr(
@@ -232,10 +229,10 @@ export function SwapApprovalsTab({ onPendingCountChange }: SwapApprovalsTabProps
                         dense
                       >
                         {item.status === 'approved'
-                          ? tr('已通过 (Approved)', 'Approved')
+                          ? tr('已通过', 'Approved')
                           : item.status === 'rejected'
-                          ? tr('已驳回 (Rejected)', 'Rejected')
-                          : tr('待审批 (Pending)', 'Pending')}
+                          ? tr('已驳回', 'Rejected')
+                          : tr('待审批', 'Pending')}
                       </Chip>
                     </td>
                     <td className="py-3 px-4">
@@ -306,12 +303,13 @@ export function SwapApprovalsTab({ onPendingCountChange }: SwapApprovalsTabProps
             <Input
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
-              placeholder="e.g. 该时段涉及生产核心系统例行发布，禁止临时更换值班人员"
+              placeholder={tr('例如：该时段涉及核心系统例行发布，暂不支持更换值班人', 'e.g. Critical release window; shift swap not allowed')}
               className="mt-1 text-xs"
             />
           </div>
         </div>
       </Modal>
+      {dialog}
     </div>
   );
 }

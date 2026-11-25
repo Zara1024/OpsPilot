@@ -14,7 +14,7 @@ const completed: Approval = { ...pending, status: 'executed', operation: { ...pe
 const show = () => render(<MemoryRouter initialEntries={['/approvals/specific-operation']}><Routes><Route path="/approvals/:id" element={<ApprovalConfirmationPage />} /></Routes></MemoryRouter>);
 beforeEach(() => {
   vi.resetAllMocks();
-  localStorage.setItem('ongrid-locale', 'en-US');
+  localStorage.setItem('opspilot-locale', 'en-US');
   vi.mocked(getApproval).mockResolvedValue(pending);
 });
 

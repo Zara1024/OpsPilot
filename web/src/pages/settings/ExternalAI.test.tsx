@@ -10,7 +10,7 @@ const list = { items: [token], total: 1, scopes: ['devices:read', 'devices:write
 
 beforeEach(() => {
   vi.resetAllMocks();
-  localStorage.setItem('ongrid-locale', 'en-US');
+  localStorage.setItem('opspilot-locale', 'en-US');
   vi.mocked(listMcpTokens).mockResolvedValue(list);
   vi.mocked(createMcpToken).mockResolvedValue({ item: token, token: 'fixture-only-secret' });
   vi.mocked(deleteMcpToken).mockResolvedValue();
@@ -157,7 +157,7 @@ it.each(['https://example.test/api/v1/integrations/mcp', '/api/v1/integrations/m
   await user.click(screen.getByRole('button', { name: 'Connection guide' }));
   expect(screen.getByRole('dialog', { name: 'Connection guide' })).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'Copy WorkBuddy configuration' }));
-  expect(JSON.parse(writeText.mock.calls[0][0])).toEqual({ mcpServers: { ongrid: { type: 'streamableHttp', url: new URL(endpoint, window.location.origin).href, headers: { Authorization: 'Bearer <Token>' } } } });
+  expect(JSON.parse(writeText.mock.calls[0][0])).toEqual({ mcpServers: { opspilot: { type: 'streamableHttp', url: new URL(endpoint, window.location.origin).href, headers: { Authorization: 'Bearer <Token>' } } } });
   expect(screen.getByRole('status')).toHaveTextContent('Copied');
   expect(screen.getByRole('heading', { name: 'WorkBuddy' })).toBeInTheDocument();
   expect(screen.getByRole('dialog', { name: 'Connection guide' })).not.toHaveTextContent(/豆包|Doubao/);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, startTransition, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   CalendarDays,
@@ -34,10 +34,10 @@ import {
 import { Modal } from '@/components/Modal';
 import { useI18n } from '@/i18n/locale';
 import { cn } from '@/lib/cn';
+import { usePoll } from '@/lib/usePoll';
 import { listUsers, type User } from '@/api/users';
 import {
   createOverride,
-  createSchedule,
   getCalendarShifts,
   getCurrentOnCall,
   listSchedules,
@@ -49,13 +49,35 @@ import {
   type ShiftSlot,
   type EscalationPolicy,
 } from '@/api/oncall';
-import { RouteTreeTab } from './oncall/RouteTreeTab';
-import { EscalationChatOpsTab } from './oncall/EscalationChatOpsTab';
-import { SwapApprovalsTab } from './oncall/SwapApprovalsTab';
-import { HandoffAnalyticsTab } from './oncall/HandoffAnalyticsTab';
-import { VoiceGatewayTab } from './oncall/VoiceGatewayTab';
-import { SecondaryRotationModal } from './oncall/SecondaryRotationModal';
-import { ScheduleEditModal } from './oncall/ScheduleEditModal';
+const RouteTreeTab = lazy(() =>
+  import('./oncall/RouteTreeTab').then((m) => ({ default: m.RouteTreeTab })),
+);
+const EscalationChatOpsTab = lazy(() =>
+  import('./oncall/EscalationChatOpsTab').then((m) => ({ default: m.EscalationChatOpsTab })),
+);
+const SwapApprovalsTab = lazy(() =>
+  import('./oncall/SwapApprovalsTab').then((m) => ({ default: m.SwapApprovalsTab })),
+);
+const HandoffAnalyticsTab = lazy(() =>
+  import('./oncall/HandoffAnalyticsTab').then((m) => ({ default: m.HandoffAnalyticsTab })),
+);
+const VoiceGatewayTab = lazy(() =>
+  import('./oncall/VoiceGatewayTab').then((m) => ({ default: m.VoiceGatewayTab })),
+);
+const SecondaryRotationModal = lazy(() =>
+  import('./oncall/SecondaryRotationModal').then((m) => ({ default: m.SecondaryRotationModal })),
+);
+const ScheduleEditModal = lazy(() =>
+  import('./oncall/ScheduleEditModal').then((m) => ({ default: m.ScheduleEditModal })),
+);
+
+function OnCallTabFallback() {
+  return (
+    <div className="flex h-64 items-center justify-center">
+      <RefreshCw size={22} className="animate-spin text-indigo-500" />
+    </div>
+  );
+}
 
 type ViewMode = 'month' | 'week' | 'day';
 
@@ -80,6 +102,46 @@ function toDateTimeLocalValue(isoString?: string): string {
   }
 }
 
+export function resolveHandoffTargetMs(
+  liveStatus: LiveOnCallStatus | null | undefined,
+  referenceNowMs: number,
+): number | null {
+  if (!liveStatus) return null;
+  if (liveStatus.handoff_time) {
+    const parsed = Date.parse(liveStatus.handoff_time);
+    // Reject NaN (e.g. "09:30" time-of-day strings) and Go zero time ("0001-01-01T00:00:00Z", <= 0).
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  if (
+    typeof liveStatus.remaining_seconds === 'number' &&
+    Number.isFinite(liveStatus.remaining_seconds) &&
+    liveStatus.remaining_seconds > 0
+  ) {
+    return referenceNowMs + liveStatus.remaining_seconds * 1000;
+  }
+  return null;
+}
+
+export function formatCountdownText(
+  targetMs: number | null,
+  nowMs: number,
+  reachedLabel: string,
+): string {
+  if (targetMs === null || !Number.isFinite(targetMs)) {
+    return '';
+  }
+  const diffSec = Math.floor((targetMs - nowMs) / 1000);
+  if (diffSec <= 0) {
+    return reachedLabel;
+  }
+  const hours = Math.floor(diffSec / 3600);
+  const mins = Math.floor((diffSec % 3600) / 60);
+  const secs = diffSec % 60;
+  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
 export default function OnCallPage() {
   const { tr } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -98,8 +160,10 @@ export default function OnCallPage() {
   // UI state
   const [loading, setLoading] = useState(true);
   const [calendarLoading, setCalendarLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
+  const [countdownTargetMs, setCountdownTargetMs] = useState<number | null>(null);
   const [countdown, setCountdown] = useState<string>('');
 
   // Modals
@@ -118,20 +182,23 @@ export default function OnCallPage() {
   const [detailShift, setDetailShift] = useState<ShiftSlot | null>(null);
 
   const handleTabChange = (nextTab: string) => {
-    setSearchParams((prev) => {
-      const p = new URLSearchParams(prev);
-      if (nextTab === 'board') {
-        p.delete('tab');
-      } else {
-        p.set('tab', nextTab);
-      }
-      return p;
+    startTransition(() => {
+      setSearchParams((prev) => {
+        const p = new URLSearchParams(prev);
+        if (nextTab === 'board') {
+          p.delete('tab');
+        } else {
+          p.set('tab', nextTab);
+        }
+        return p;
+      });
     });
   };
 
   // Fetch users & schedules on mount
   const fetchInitialData = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [schedRes, userRes, overridesRes, policiesRes] = await Promise.all([
         listSchedules(),
@@ -150,10 +217,15 @@ export default function OnCallPage() {
       }
     } catch (e) {
       console.error('Failed to load on-call data:', e);
+      setLoadError(
+        e instanceof Error
+          ? e.message
+          : tr('加载值班数据失败，请稍后重试', 'Failed to load on-call data. Please try again.'),
+      );
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [tr]);
 
   useEffect(() => {
     fetchInitialData();
@@ -174,7 +246,7 @@ export default function OnCallPage() {
       const endDayOffset = (7 - ((lastDay.getDay() + 6) % 7) - 1);
       const end = new Date(year, month + 1, endDayOffset, 23, 59, 59);
 
-      const label = `${year}年 ${month + 1}月`;
+      const label = tr(`${year}年 ${month + 1}月`, `${year}-${String(month + 1).padStart(2, '0')}`);
       return { rangeStart: start, rangeEnd: end, rangeLabel: label };
     } else if (viewMode === 'week') {
       const curr = new Date(currentDate);
@@ -185,7 +257,10 @@ export default function OnCallPage() {
       end.setDate(end.getDate() + 6);
       end.setHours(23, 59, 59, 999);
 
-      const label = `${start.getMonth() + 1}月${start.getDate()}日 - ${end.getMonth() + 1}月${end.getDate()}日`;
+      const label = tr(
+        `${start.getMonth() + 1}月${start.getDate()}日 - ${end.getMonth() + 1}月${end.getDate()}日`,
+        `${start.getMonth() + 1}/${start.getDate()} - ${end.getMonth() + 1}/${end.getDate()}`,
+      );
       return { rangeStart: start, rangeEnd: end, rangeLabel: label };
     } else {
       const start = new Date(currentDate);
@@ -193,15 +268,19 @@ export default function OnCallPage() {
       const end = new Date(currentDate);
       end.setHours(23, 59, 59, 999);
 
-      const label = `${year}年${month + 1}月${currentDate.getDate()}日`;
+      const label = tr(
+        `${year}年${month + 1}月${currentDate.getDate()}日`,
+        `${year}-${String(month + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`,
+      );
       return { rangeStart: start, rangeEnd: end, rangeLabel: label };
     }
-  }, [currentDate, viewMode]);
+  }, [currentDate, viewMode, tr]);
 
   // Fetch shifts & live status for selected schedule
   const fetchCalendar = useCallback(async () => {
     if (!selectedScheduleId) return;
     setCalendarLoading(true);
+    setLoadError(null);
     try {
       const [calRes, curRes] = await Promise.all([
         getCalendarShifts(selectedScheduleId, rangeStart.toISOString(), rangeEnd.toISOString()),
@@ -210,45 +289,39 @@ export default function OnCallPage() {
       setShifts(calRes.shifts || []);
       setGaps(calRes.gaps || []);
       setLiveStatus(curRes);
+      setCountdownTargetMs(resolveHandoffTargetMs(curRes, Date.now()));
     } catch (e) {
       console.error('Failed to load calendar shifts:', e);
+      setLoadError(
+        e instanceof Error
+          ? e.message
+          : tr('加载排班日历失败，请稍后重试', 'Failed to load schedule calendar. Please try again.'),
+      );
     } finally {
       setCalendarLoading(false);
     }
-  }, [selectedScheduleId, rangeStart, rangeEnd]);
+  }, [selectedScheduleId, rangeStart, rangeEnd, tr]);
 
   useEffect(() => {
     fetchCalendar();
   }, [fetchCalendar]);
 
-  // Live countdown ticker
+  const updateCountdown = useCallback(() => {
+    setCountdown(
+      formatCountdownText(
+        countdownTargetMs,
+        Date.now(),
+        tr('已到交接时间', 'Handoff time reached'),
+      ),
+    );
+  }, [countdownTargetMs, tr]);
+
   useEffect(() => {
-    const updateCountdown = () => {
-      if (!liveStatus || !liveStatus.handoff_time) {
-        setCountdown('');
-        return;
-      }
-      const handoff = new Date(liveStatus.handoff_time).getTime();
-      const now = Date.now();
-      const diffSec = Math.floor((handoff - now) / 1000);
-
-      if (diffSec <= 0) {
-        setCountdown(tr('已到交接时间', 'Handoff time reached'));
-        return;
-      }
-
-      const hours = Math.floor(diffSec / 3600);
-      const mins = Math.floor((diffSec % 3600) / 60);
-      const secs = diffSec % 60;
-      setCountdown(
-        `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
-      );
-    };
-
     updateCountdown();
-    const timer = setInterval(updateCountdown, 1000);
-    return () => clearInterval(timer);
-  }, [liveStatus, tr]);
+  }, [updateCountdown]);
+
+  // Pause 1s countdown ticks when the tab is hidden or user leaves the board tab.
+  usePoll(updateCountdown, 1000, countdownTargetMs !== null && currentTab === 'board');
 
   // Navigation handlers
   const handlePrev = () => {
@@ -421,6 +494,27 @@ export default function OnCallPage() {
 
         <div className="flex-1 min-w-0 overflow-y-auto px-6 py-6 space-y-6">
           <TabsContent value="board" className="space-y-6">
+          {loadError && (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-700 dark:text-red-300"
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <AlertTriangle size={16} className="shrink-0 text-red-600 dark:text-red-400" />
+                <span className="break-words">{loadError}</span>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  void fetchInitialData();
+                  void fetchCalendar();
+                }}
+              >
+                {tr('重试', 'Retry')}
+              </Button>
+            </div>
+          )}
           {/* Top Live On-Call Banner Card */}
           <Card className="p-5">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-4">
@@ -476,16 +570,16 @@ export default function OnCallPage() {
         {/* Current Personnel Cards */}
         <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Primary */}
-          <div className="flex items-center justify-between rounded-lg border border-border bg-bg/50 p-3.5">
-            <div className="flex items-center gap-3">
-              <div className="relative flex h-10 w-10 items-center justify-center rounded-full bg-indigo-500/10 text-indigo-600 font-semibold text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-bg/50 p-3.5">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-500/10 text-indigo-600 font-semibold text-sm">
                 {liveStatus?.primary_user?.user_name?.[0] || '1'}
                 <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-card" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold text-text-muted uppercase">
-                    {tr('一线主值班人 (Primary)', 'Primary On-Call')}
+                    {tr('一线主值班人', 'Primary On-Call')}
                   </span>
                   {liveStatus?.primary_user?.is_override && (
                     <Chip tone="warning" dense>
@@ -526,15 +620,15 @@ export default function OnCallPage() {
           </div>
 
           {/* Secondary */}
-          <div className="flex items-center justify-between rounded-lg border border-border bg-bg/50 p-3.5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 font-semibold text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-bg/50 p-3.5">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 font-semibold text-sm">
                 <ShieldCheck size={20} />
               </div>
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold text-text-muted uppercase">
-                    {tr('二线专家支持 (Secondary)', 'Secondary Support')}
+                    {tr('二线专家支持', 'Secondary Support')}
                   </span>
                   {liveStatus?.secondary_user ? (
                     <Chip tone="accent" dense>
@@ -562,7 +656,7 @@ export default function OnCallPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {liveStatus?.secondary_user ? (
                 <>
                   <Button
@@ -658,13 +752,23 @@ export default function OnCallPage() {
           </div>
 
           <div className="flex items-center gap-1.5">
-            <Button size="icon" variant="outline" onClick={handlePrev}>
+            <Button
+              size="icon"
+              variant="outline"
+              onClick={handlePrev}
+              aria-label={tr('上一周期', 'Previous period')}
+            >
               <ChevronLeft size={16} />
             </Button>
             <Button size="sm" variant="outline" onClick={handleToday}>
               {tr('今天', 'Today')}
             </Button>
-            <Button size="icon" variant="outline" onClick={handleNext}>
+            <Button
+              size="icon"
+              variant="outline"
+              onClick={handleNext}
+              aria-label={tr('下一周期', 'Next period')}
+            >
               <ChevronRight size={16} />
             </Button>
             <span className="text-sm font-semibold text-text ml-2 min-w-[120px] text-center">
@@ -806,9 +910,9 @@ export default function OnCallPage() {
                                 ? 'border-amber-500 bg-amber-500/10 text-amber-900 dark:text-amber-200'
                                 : isPrimary
                                   ? 'border-indigo-500 bg-indigo-500/10 text-indigo-900 dark:text-indigo-200 font-medium'
-                                  : 'border-zinc-400 bg-zinc-500/10 text-zinc-800 dark:text-zinc-300'
+                                  : 'border-border bg-bg text-text'
                             )}
-                            title={`${s.user_name} (${isPrimary ? '一线' : '二线'})\n${formatTime(s.start_time)} - ${formatTime(s.end_time)}`}
+                            title={`${s.user_name} (${isPrimary ? tr('一线', 'Primary') : tr('二线', 'Secondary')})\n${formatTime(s.start_time)} - ${formatTime(s.end_time)}`}
                           >
                             <span className="font-semibold mr-1">
                               {isPrimary ? '①' : '②'}
@@ -863,8 +967,8 @@ export default function OnCallPage() {
                     className={cn(
                       'flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold',
                       s.tier === 1
-                        ? 'bg-indigo-500/10 text-indigo-600'
-                        : 'bg-zinc-500/10 text-zinc-600'
+                        ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
+                        : 'border border-border bg-bg text-text-muted'
                     )}
                   >
                     {s.tier === 1 ? '1' : '2'}
@@ -915,56 +1019,74 @@ export default function OnCallPage() {
         </TabsContent>
 
         <TabsContent value="routes">
-          <RouteTreeTab schedules={schedules} escalationPolicies={escalationPolicies} />
+          <Suspense fallback={<OnCallTabFallback />}>
+            <RouteTreeTab schedules={schedules} escalationPolicies={escalationPolicies} />
+          </Suspense>
         </TabsContent>
 
         <TabsContent value="escalation">
-          <EscalationChatOpsTab schedules={schedules} />
+          <Suspense fallback={<OnCallTabFallback />}>
+            <EscalationChatOpsTab schedules={schedules} />
+          </Suspense>
         </TabsContent>
 
         <TabsContent value="approvals">
-          <SwapApprovalsTab onPendingCountChange={setPendingCount} />
+          <Suspense fallback={<OnCallTabFallback />}>
+            <SwapApprovalsTab onPendingCountChange={setPendingCount} />
+          </Suspense>
         </TabsContent>
 
         <TabsContent value="analytics">
-          <HandoffAnalyticsTab schedules={schedules} />
+          <Suspense fallback={<OnCallTabFallback />}>
+            <HandoffAnalyticsTab schedules={schedules} />
+          </Suspense>
         </TabsContent>
 
         <TabsContent value="voice">
-          <VoiceGatewayTab />
+          <Suspense fallback={<OnCallTabFallback />}>
+            <VoiceGatewayTab />
+          </Suspense>
         </TabsContent>
       </div>
     </main>
 
       {/* Schedule Edit / Create Modal */}
-      <ScheduleEditModal
-        open={scheduleModalOpen}
-        onClose={() => setScheduleModalOpen(false)}
-        mode={scheduleModalMode}
-        initialSchedule={scheduleModalMode === 'edit' ? selectedSchedule : null}
-        users={users}
-        onSuccess={handleScheduleSuccess}
-        onDelete={handleScheduleDelete}
-      />
+      {scheduleModalOpen && (
+        <Suspense fallback={null}>
+          <ScheduleEditModal
+            open={scheduleModalOpen}
+            onClose={() => setScheduleModalOpen(false)}
+            mode={scheduleModalMode}
+            initialSchedule={scheduleModalMode === 'edit' ? selectedSchedule : null}
+            users={users}
+            onSuccess={handleScheduleSuccess}
+            onDelete={handleScheduleDelete}
+          />
+        </Suspense>
+      )}
 
       {/* Secondary Specialist Rotation Modal */}
-      <SecondaryRotationModal
-        open={secondaryModalOpen}
-        onClose={() => setSecondaryModalOpen(false)}
-        schedule={selectedSchedule || null}
-        existingRotation={selectedSchedule?.rotations?.find((r) => r.tier === 2) || null}
-        users={users}
-        onSuccess={async () => {
-          await fetchInitialData();
-          await fetchCalendar();
-        }}
-      />
+      {secondaryModalOpen && (
+        <Suspense fallback={null}>
+          <SecondaryRotationModal
+            open={secondaryModalOpen}
+            onClose={() => setSecondaryModalOpen(false)}
+            schedule={selectedSchedule || null}
+            existingRotation={selectedSchedule?.rotations?.find((r) => r.tier === 2) || null}
+            users={users}
+            onSuccess={async () => {
+              await fetchInitialData();
+              await fetchCalendar();
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* Override / Shift Swap Modal */}
       <Modal
         open={overrideModalOpen}
         onClose={() => setOverrideModalOpen(false)}
-        title={tr('申请代班 / 换班覆盖 (Override)', 'Shift Swap / Override')}
+        title={tr('申请代班 / 换班覆盖', 'Shift Swap / Override')}
         size="md"
         footer={
           <div className="flex justify-end gap-2">
@@ -1048,7 +1170,7 @@ export default function OnCallPage() {
             <Textarea
               value={overrideReason}
               onChange={(e) => setOverrideReason(e.target.value)}
-              placeholder="e.g. 紧急事假外出 4 小时，由李四临时顶替接单"
+              placeholder={tr('例如：紧急事假外出 4 小时，由同事临时顶替接单', 'e.g. Urgent personal leave for 4 hours, covered by teammate')}
               className="mt-1 text-xs"
               rows={2}
             />
@@ -1115,7 +1237,7 @@ export default function OnCallPage() {
                 <span className="font-semibold">{tr('代班信息：', 'Override Info: ')}</span>
                 {tr('原值班人 ', 'Original: ')}
                 {detailShift.original_user_name || detailShift.original_user_id}
-                {detailShift.reason && ` (事由: ${detailShift.reason})`}
+                {detailShift.reason && ` (${tr('事由', 'Reason')}: ${detailShift.reason})`}
               </div>
             )}
           </div>

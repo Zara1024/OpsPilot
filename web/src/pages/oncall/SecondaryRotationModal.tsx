@@ -1,12 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Users,
-  Clock,
-  Calendar,
   AlertCircle,
   X,
   Search,
-  ShieldCheck,
 } from 'lucide-react';
 import {
   Button,
@@ -223,7 +220,7 @@ export function SecondaryRotationModal({
 
         <div className="rounded-lg border border-sky-500/20 bg-sky-50/40 dark:bg-sky-950/20 p-3 text-xs text-sky-800 dark:text-sky-300">
           <div className="font-semibold mb-0.5">
-            {tr('💡 什么是二线专家梯队 (Secondary Escalation Tier)？', '💡 What is Secondary Escalation Tier?')}
+            {tr('什么是二线专家梯队？', 'What is Secondary Escalation Tier?')}
           </div>
           <div className="text-text-muted dark:text-sky-200/80 leading-relaxed">
             {tr(
@@ -242,7 +239,7 @@ export function SecondaryRotationModal({
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. 二线技术专家支持梯队"
+              placeholder={tr('例如：二线技术专家支持梯队', 'e.g. Secondary Escalation Tier')}
               className="w-full text-xs"
             />
           </div>
@@ -259,7 +256,7 @@ export function SecondaryRotationModal({
                 className="flex-1"
                 type="button"
               >
-                {tr('按天 (Daily)', 'Daily')}
+                {tr('按天', 'Daily')}
               </Button>
               <Button
                 size="sm"
@@ -268,7 +265,7 @@ export function SecondaryRotationModal({
                 className="flex-1"
                 type="button"
               >
-                {tr('按周 (Weekly)', 'Weekly')}
+                {tr('按周', 'Weekly')}
               </Button>
               <Button
                 size="sm"
@@ -475,7 +472,7 @@ export function SecondaryRotationModal({
                           'flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold transition-colors',
                           isSelected
                             ? 'bg-sky-500 text-white'
-                            : 'bg-zinc-100 dark:bg-zinc-800 text-text-muted'
+                            : 'border border-border bg-bg text-text-muted'
                         )}
                       >
                         {isSelected ? orderIdx + 1 : u.display_name?.[0] || 'U'}

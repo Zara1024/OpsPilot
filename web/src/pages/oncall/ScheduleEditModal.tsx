@@ -1,7 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  CalendarDays,
-  Clock,
   ShieldCheck,
   UserCheck,
   Users,
@@ -9,7 +7,6 @@ import {
   X,
   Search,
   Trash2,
-  Settings,
 } from 'lucide-react';
 import {
   Button,
@@ -66,15 +63,18 @@ export function ScheduleEditModal({
   // Active Tab within Modal
   const [activeTab, setActiveTab] = useState<'basic' | 'tier1' | 'tier2'>('basic');
 
-  // Tier 1 (Primary 一线)
-  const [primaryName, setPrimaryName] = useState('一线值班轮转');
+  const defaultPrimaryName = tr('一线值班轮转', 'Primary Rotation');
+  const defaultSecondaryName = tr('二线技术专家支持梯队', 'Secondary Escalation Tier');
+
+  // Tier 1 (Primary)
+  const [primaryName, setPrimaryName] = useState(defaultPrimaryName);
   const [primaryCadence, setPrimaryCadence] = useState<'daily' | 'weekly'>('daily');
   const [primaryUserIds, setPrimaryUserIds] = useState<number[]>([]);
   const [primarySearch, setPrimarySearch] = useState('');
 
-  // Tier 2 (Secondary 二线)
+  // Tier 2 (Secondary)
   const [enableSecondary, setEnableSecondary] = useState(false);
-  const [secondaryName, setSecondaryName] = useState('二线技术专家支持梯队');
+  const [secondaryName, setSecondaryName] = useState(defaultSecondaryName);
   const [secondaryCadence, setSecondaryCadence] = useState<'daily' | 'weekly'>('weekly');
   const [secondaryUserIds, setSecondaryUserIds] = useState<number[]>([]);
   const [secondarySearch, setSecondarySearch] = useState('');
@@ -107,11 +107,11 @@ export function ScheduleEditModal({
       // Find rotations
       const t1 = initialSchedule.rotations?.find((r) => r.tier === 1);
       if (t1) {
-        setPrimaryName(t1.name || '一线值班轮转');
+        setPrimaryName(t1.name || defaultPrimaryName);
         setPrimaryCadence((t1.rotation_type as 'daily' | 'weekly') || 'daily');
         setPrimaryUserIds(getRotationUserIds(t1));
       } else {
-        setPrimaryName('一线值班轮转');
+        setPrimaryName(defaultPrimaryName);
         setPrimaryCadence('daily');
         setPrimaryUserIds([]);
       }
@@ -119,7 +119,7 @@ export function ScheduleEditModal({
       const t2 = initialSchedule.rotations?.find((r) => r.tier === 2);
       if (t2) {
         setEnableSecondary(true);
-        setSecondaryName(t2.name || '二线技术专家支持梯队');
+        setSecondaryName(t2.name || defaultSecondaryName);
         setSecondaryCadence((t2.rotation_type as 'daily' | 'weekly') || 'weekly');
         setSecondaryUserIds(getRotationUserIds(t2));
         setSecondaryTimeRestriction(t2.time_restriction_type || 'none');
@@ -127,7 +127,7 @@ export function ScheduleEditModal({
         setSecondaryEndTime(t2.restriction_end_time || '21:00:00');
       } else {
         setEnableSecondary(false);
-        setSecondaryName('二线技术专家支持梯队');
+        setSecondaryName(defaultSecondaryName);
         setSecondaryCadence('weekly');
         setSecondaryUserIds([]);
         setSecondaryTimeRestriction('none');
@@ -144,19 +144,19 @@ export function ScheduleEditModal({
       setRequireSwapApproval(false);
       setEnabled(true);
 
-      setPrimaryName('一线值班轮转');
+      setPrimaryName(defaultPrimaryName);
       setPrimaryCadence('daily');
       setPrimaryUserIds([]);
 
       setEnableSecondary(false);
-      setSecondaryName('二线技术专家支持梯队');
+      setSecondaryName(defaultSecondaryName);
       setSecondaryCadence('weekly');
       setSecondaryUserIds([]);
       setSecondaryTimeRestriction('none');
       setSecondaryStartTime('09:00:00');
       setSecondaryEndTime('21:00:00');
     }
-  }, [open, mode, initialSchedule]);
+  }, [open, mode, initialSchedule, defaultPrimaryName, defaultSecondaryName]);
 
   // User search filters
   const filteredPrimaryUsers = useMemo(() => {
@@ -219,7 +219,7 @@ export function ScheduleEditModal({
       const primaryShiftLen = primaryCadence === 'daily' ? 86400 : 7 * 86400;
       const rotations: OnCallRotation[] = [
         {
-          name: primaryName.trim() || '一线值班轮转',
+          name: primaryName.trim() || defaultPrimaryName,
           tier: 1,
           rotation_type: primaryCadence,
           shift_length_seconds: primaryShiftLen,
@@ -232,7 +232,7 @@ export function ScheduleEditModal({
       if (enableSecondary && secondaryUserIds.length > 0) {
         const secondaryShiftLen = secondaryCadence === 'daily' ? 86400 : 7 * 86400;
         rotations.push({
-          name: secondaryName.trim() || '二线技术专家支持梯队',
+          name: secondaryName.trim() || defaultSecondaryName,
           tier: 2,
           rotation_type: secondaryCadence,
           shift_length_seconds: secondaryShiftLen,
@@ -413,13 +413,13 @@ export function ScheduleEditModal({
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. SRE 核心生产运维 7x24h 值班"
+                  placeholder={tr('例如：核心生产运维全天候值班', 'e.g. Core Production 24/7 On-Call')}
                   className="w-full text-xs"
                 />
               </div>
 
               <div>
-                <Label className="text-xs mb-1 block">{tr('时区 (Timezone)', 'Timezone')}</Label>
+                <Label className="text-xs mb-1 block">{tr('时区', 'Timezone')}</Label>
                 <Select
                   value={timezone}
                   onValueChange={(val) => setTimezone(val)}
@@ -440,7 +440,7 @@ export function ScheduleEditModal({
               <Textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="简述该排班对应的业务线、服务范围与响应要求"
+                placeholder={tr('简述该排班对应的业务线、服务范围与响应要求', 'Describe the services, scope, and response expectations')}
                 rows={2}
                 className="w-full text-xs"
               />
@@ -449,7 +449,7 @@ export function ScheduleEditModal({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label className="text-xs mb-1 block">
-                  {tr('每日交接时刻点 (Handoff Time)', 'Handoff Time (HH:MM:SS)')}
+                  {tr('每日交接时刻', 'Handoff Time (HH:MM:SS)')}
                 </Label>
                 <Input
                   value={handoffTime}
@@ -526,7 +526,7 @@ export function ScheduleEditModal({
                 <Input
                   value={primaryName}
                   onChange={(e) => setPrimaryName(e.target.value)}
-                  placeholder="一线主值班轮转"
+                  placeholder={defaultPrimaryName}
                   className="w-full text-xs"
                 />
               </div>
@@ -540,7 +540,7 @@ export function ScheduleEditModal({
                     className="flex-1"
                     type="button"
                   >
-                    {tr('按天 (Daily)', 'Daily')}
+                    {tr('按天', 'Daily')}
                   </Button>
                   <Button
                     size="sm"
@@ -549,7 +549,7 @@ export function ScheduleEditModal({
                     className="flex-1"
                     type="button"
                   >
-                    {tr('按周 (Weekly)', 'Weekly')}
+                    {tr('按周', 'Weekly')}
                   </Button>
                 </div>
               </div>
@@ -642,7 +642,7 @@ export function ScheduleEditModal({
                         <div
                           className={cn(
                             'flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold',
-                            isSelected ? 'bg-indigo-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-text-muted'
+                            isSelected ? 'bg-indigo-600 text-white' : 'border border-border bg-bg text-text-muted'
                           )}
                         >
                           {isSelected ? order + 1 : u.display_name?.[0] || 'U'}
@@ -691,7 +691,7 @@ export function ScheduleEditModal({
                     <Input
                       value={secondaryName}
                       onChange={(e) => setSecondaryName(e.target.value)}
-                      placeholder="二线技术专家支持梯队"
+                      placeholder={defaultSecondaryName}
                       className="w-full text-xs"
                     />
                   </div>
@@ -705,7 +705,7 @@ export function ScheduleEditModal({
                         className="flex-1"
                         type="button"
                       >
-                        {tr('按天 (Daily)', 'Daily')}
+                        {tr('按天', 'Daily')}
                       </Button>
                       <Button
                         size="sm"
@@ -714,7 +714,7 @@ export function ScheduleEditModal({
                         className="flex-1"
                         type="button"
                       >
-                        {tr('按周 (Weekly)', 'Weekly')}
+                        {tr('按周', 'Weekly')}
                       </Button>
                     </div>
                   </div>
@@ -843,7 +843,7 @@ export function ScheduleEditModal({
                             <div
                               className={cn(
                                 'flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold',
-                                isSelected ? 'bg-sky-500 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-text-muted'
+                                isSelected ? 'bg-sky-500 text-white' : 'border border-border bg-bg text-text-muted'
                               )}
                             >
                               {isSelected ? order + 1 : u.display_name?.[0] || 'U'}

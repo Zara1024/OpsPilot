@@ -105,7 +105,7 @@ export default function ExternalAIPage() {
   const availableScopes = resources.flatMap(([resource]) => actions.map(([action]) => `${resource}:${action}`)).filter((scope) => data?.scopes.includes(scope));
   const allScopesSelected = availableScopes.length > 0 && availableScopes.every((scope) => scopes.includes(scope));
   const endpoint = data?.endpoint.startsWith('/') ? `${window.location.origin}${data.endpoint}` : data?.endpoint ?? '';
-  const workbuddyConfig = JSON.stringify({ mcpServers: { ongrid: { type: 'streamableHttp', url: endpoint, headers: { Authorization: 'Bearer <Token>' } } } }, null, 2);
+  const workbuddyConfig = JSON.stringify({ mcpServers: { opspilot: { type: 'streamableHttp', url: endpoint, headers: { Authorization: 'Bearer <Token>' } } } }, null, 2);
 
   useAssistantPage('外部 AI 接入', 'External AI', {
     token_count: data?.total,
@@ -118,7 +118,7 @@ export default function ExternalAIPage() {
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0 space-y-1">
         <h2 className="text-sm font-semibold">{tr('MCP 访问', 'MCP access')}</h2>
-        <p className="text-text-muted">{tr('管理客户端通过 MCP 访问 Ongrid 的 Token 和权限。', 'Manage tokens and permissions for MCP clients accessing Ongrid.')}</p>
+        <p className="text-text-muted">{tr('管理客户端通过 MCP 访问 OpsPilot 的 Token 和权限。', 'Manage tokens and permissions for MCP clients accessing OpsPilot.')}</p>
       </div>
       <div className="flex flex-wrap gap-2">
         <Button size="sm" onClick={() => { setNotice(''); setGuideOpen(true); }} disabled={!data} aria-haspopup="dialog"><BookOpen size={13} />{tr('接入指南', 'Connection guide')}</Button>
@@ -164,8 +164,8 @@ export default function ExternalAIPage() {
         <h3 className="font-medium">WorkBuddy</h3>
         <ol className="list-decimal space-y-2 pl-5 leading-relaxed">
           <li>{tr('打开 WorkBuddy「专家·技能·连接器 → 连接器 → 自定义连接器」。部分版本入口为「插件 → MCP 服务器 → 配置 MCP」。', 'In WorkBuddy, open Experts · Skills · Connectors → Connectors → Custom connector. Some versions use Plugins → MCP servers → Configure MCP.')}</li>
-          <li>{tr('在 MCP JSON 配置中加入下方 ongrid 项，保留已有的其他服务；将 <Token> 替换为刚创建的 Token。', 'Add the ongrid entry below to your MCP JSON configuration and keep your existing servers. Replace <Token> with the token you just created.')}</li>
-          <li>{tr('保存并启用 Ongrid。在任务输入框的「+ → 连接器」中选中 Ongrid。', 'Save and enable Ongrid. Select it from + → Connectors in the task input.')}</li>
+          <li>{tr('在 MCP JSON 配置中加入下方 opspilot 项，保留已有的其他服务；将 <Token> 替换为刚创建的 Token。', 'Add the opspilot entry below to your MCP JSON configuration and keep your existing servers. Replace <Token> with the token you just created.')}</li>
+          <li>{tr('保存并启用 OpsPilot。在任务输入框的「+ → 连接器」中选中 OpsPilot。', 'Save and enable OpsPilot. Select it from + → Connectors in the task input.')}</li>
         </ol>
         <div className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
