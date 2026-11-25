@@ -3,7 +3,9 @@ package oncall
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/Zara1024/OpsPilot/internal/manager/data/oncall/store"
 )
@@ -60,6 +62,11 @@ func NewBurnoutAnalyzer(store *store.Store) *BurnoutAnalyzer {
 func (a *BurnoutAnalyzer) GetBurnoutAnalytics(ctx context.Context, scheduleID uint64, timeRange string) (*BurnoutAnalytics, error) {
 	users, _ := a.store.ListAllUsers(ctx)
 	analyticsData, _ := a.store.GetAlertAnalyticsData(ctx)
+	nightByUser, totalNightCalls, nightErr := a.store.CountNightNotificationsByUser(ctx, time.Now().AddDate(0, 0, -30))
+	if nightErr != nil {
+		slog.Warn("count night notifications failed", slog.Any("err", nightErr))
+		nightByUser = map[uint64]int{}
+	}
 
 	var totalIncidents int
 	var avgMTTA float64 = 168.0
@@ -93,7 +100,7 @@ func (a *BurnoutAnalyzer) GetBurnoutAnalytics(ctx context.Context, scheduleID ui
 			if incidents == 0 && totalIncidents > 0 && i == 0 {
 				incidents = totalIncidents
 			}
-			nightCalls := 0
+			nightCalls := nightByUser[u.ID]
 			fatigue := 20 + nightCalls*20 + incidents*5
 			if fatigue > 100 {
 				fatigue = 95
@@ -145,7 +152,7 @@ func (a *BurnoutAnalyzer) GetBurnoutAnalytics(ctx context.Context, scheduleID ui
 	return &BurnoutAnalytics{
 		MTTASeconds:         avgMTTA,
 		MTTARating:          mttaRating,
-		NightCallCount:      0,
+		NightCallCount:      totalNightCalls,
 		TotalIncidents:      totalIncidents,
 		BurnoutIndex:        burnoutIndex,
 		NoiseReductionRatio: 88.5,

@@ -1,7 +1,6 @@
 package main
 
 import (
-	managerserveroncall "github.com/Zara1024/OpsPilot/internal/manager/server/oncall"
 	"log/slog"
 	"net/http"
 
@@ -24,7 +23,7 @@ type httpModule struct {
 	metricsServer *httpserver.Server
 }
 
-func buildHTTPServers(cfg *config.Config, log *slog.Logger, reg *prometheus.Registry, storage *storageModule, iam *iamModule, settings *settingsModule, devices *devicesModule, telemetry *telemetryModule, tunnel *tunnelModule, aiops *aiopsModule, runtime *runtimeModule, imbridge *imbridgeModule, automation *automationModule, system *systemModule, extensions *extensionsModule, external *externalMCPModule) (*httpModule, error) {
+func buildHTTPServers(cfg *config.Config, log *slog.Logger, reg *prometheus.Registry, storage *storageModule, iam *iamModule, settings *settingsModule, devices *devicesModule, telemetry *telemetryModule, tunnel *tunnelModule, aiops *aiopsModule, runtime *runtimeModule, imbridge *imbridgeModule, automation *automationModule, system *systemModule, extensions *extensionsModule, external *externalMCPModule, oncall *oncallModule) (*httpModule, error) {
 	promProxySvc := managersvcprom.New(iam.signer)
 	// Wire the cloud-Prom query client into the proxy handler so the
 	// SPA's Monitor page can issue range queries through the same
@@ -100,9 +99,8 @@ func buildHTTPServers(cfg *config.Config, log *slog.Logger, reg *prometheus.Regi
 		automation.reportHandler.Register(protected)
 		automation.flowHandler.Register(protected)
 		aiops.packetCaptureHandler.Register(protected)
-		if storage != nil && storage.oncallStore != nil {
-			oncallHandler := managerserveroncall.NewHandler(storage.oncallStore)
-			oncallHandler.Register(protected)
+		if oncall != nil && oncall.handler != nil {
+			oncall.handler.Register(protected)
 		}
 	}
 	if external.engine != nil {
@@ -162,9 +160,8 @@ func buildHTTPServers(cfg *config.Config, log *slog.Logger, reg *prometheus.Regi
 		// (GET /api/pages/{id} in the protected group); only an explicit share
 		// exposes a page off-platform, mirroring the report /r/{token} model.
 		pagesHandler.RegisterPublic(api)
-		if storage != nil && storage.oncallStore != nil {
-			oncallHandler := managerserveroncall.NewHandler(storage.oncallStore)
-			oncallHandler.RegisterPublic(api)
+		if oncall != nil && oncall.handler != nil {
+			oncall.handler.RegisterPublic(api)
 		}
 		// (admin endpoints registered inside the protected group below)
 

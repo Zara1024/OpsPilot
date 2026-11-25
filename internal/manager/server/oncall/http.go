@@ -18,6 +18,13 @@ import (
 	"github.com/Zara1024/OpsPilot/internal/pkg/tenantctx"
 )
 
+type HandlerDeps struct {
+	PublicURL    string
+	VoiceGateway *voice.VoiceGateway
+	Deliverer    bizoncall.MessageDeliverer
+	Worker       *bizoncall.EscalationWorker
+}
+
 type Handler struct {
 	store            *store.Store
 	scheduler        *bizoncall.Scheduler
@@ -28,20 +35,38 @@ type Handler struct {
 	handoffService   *bizoncall.HandoffService
 	burnoutAnalyzer  *bizoncall.BurnoutAnalyzer
 	voiceGateway     *voice.VoiceGateway
+	deliverer        bizoncall.MessageDeliverer
+	worker           *bizoncall.EscalationWorker
+	publicURL        string
 }
 
 func NewHandler(s *store.Store) *Handler {
+	return NewHandlerWithDeps(s, HandlerDeps{})
+}
+
+func NewHandlerWithDeps(s *store.Store, deps HandlerDeps) *Handler {
 	sched := bizoncall.NewScheduler(s)
+	ee := bizoncall.NewEscalationEngine(s, sched)
+	if deps.Worker != nil {
+		ee.SetWorker(deps.Worker)
+	}
+	vg := deps.VoiceGateway
+	if vg == nil {
+		vg = voice.NewVoiceGateway()
+	}
 	return &Handler{
 		store:            s,
 		scheduler:        sched,
 		gapDetector:      bizoncall.NewGapDetector(sched),
 		icalBuilder:      bizoncall.NewICalBuilder(),
 		routeMatcher:     bizoncall.NewRouteMatcher(s),
-		escalationEngine: bizoncall.NewEscalationEngine(s, sched),
+		escalationEngine: ee,
 		handoffService:   bizoncall.NewHandoffService(s, sched),
 		burnoutAnalyzer:  bizoncall.NewBurnoutAnalyzer(s),
-		voiceGateway:     voice.NewVoiceGateway(),
+		voiceGateway:     vg,
+		deliverer:        deps.Deliverer,
+		worker:           deps.Worker,
+		publicURL:        deps.PublicURL,
 	}
 }
 
@@ -103,6 +128,10 @@ func (h *Handler) Register(r chi.Router) {
 	r.Get("/v1/oncall/voice/config", h.getVoiceConfig)
 	r.Put("/v1/oncall/voice/config", h.updateVoiceConfig)
 	r.Post("/v1/oncall/voice/test-call", h.testVoiceCall)
+
+	// Notification Delivery Logs & Escalation State Tasks
+	r.Get("/v1/oncall/notifications/logs", h.listNotificationLogs)
+	r.Get("/v1/oncall/escalations/tasks", h.listEscalationTasks)
 }
 
 // RegisterPublic mounts public unauthenticated endpoints (e.g. token-secured Webcal feed).
@@ -621,6 +650,18 @@ func requireAuth(w http.ResponseWriter, r *http.Request) (caller, bool) {
 		return caller{}, false
 	}
 	return caller{UserID: t.UserID, Role: t.Role}, true
+}
+
+func requireAdmin(w http.ResponseWriter, r *http.Request) (caller, bool) {
+	c, ok := requireAuth(w, r)
+	if !ok {
+		return caller{}, false
+	}
+	if c.Role != "admin" {
+		writeErr(w, errs.ErrForbidden)
+		return caller{}, false
+	}
+	return c, true
 }
 
 func parseUintParam(r *http.Request, key string) (uint64, error) {

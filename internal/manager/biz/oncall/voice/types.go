@@ -2,25 +2,33 @@ package voice
 
 import "time"
 
-// VoiceGatewayConfig represents the configuration for voice alerting providers.
+// VoiceGatewayConfig represents the configuration for voice alerting providers and on-call dispatch.
 type VoiceGatewayConfig struct {
-	Provider string `json:"provider"` // "mock" | "aliyun" | "tencent"
+	Provider        string `json:"provider"` // "mock" | "aliyun" | "tencent"
+	DispatchEnabled bool   `json:"dispatch_enabled"`
 
 	// Aliyun Dyvmsapi configuration
 	AliyunAccessKeyID      string `json:"aliyun_access_key_id"`
-	AliyunAccessKeySecret  string `json:"aliyun_access_key_secret"`
+	AliyunAccessKeySecret  string `json:"aliyun_access_key_secret,omitempty"`
+	AliyunSecretConfigured bool   `json:"aliyun_secret_configured"`
 	AliyunCalledShowNumber string `json:"aliyun_called_show_number"`
 	AliyunTtsCode          string `json:"aliyun_tts_code"`
 	AliyunRegion           string `json:"aliyun_region"` // default: "cn-hangzhou"
 
 	// Tencent Cloud VMS configuration
-	TencentSecretID        string `json:"tencent_secret_id"`
-	TencentSecretKey       string `json:"tencent_secret_key"`
-	TencentSdkAppID        string `json:"tencent_sdk_app_id"`
-	TencentTemplateID      string `json:"tencent_template_id"`
+	TencentSecretID         string `json:"tencent_secret_id"`
+	TencentSecretKey        string `json:"tencent_secret_key,omitempty"`
+	TencentSecretConfigured bool   `json:"tencent_secret_configured"`
+	TencentSdkAppID         string `json:"tencent_sdk_app_id"`
+	TencentTemplateID       string `json:"tencent_template_id"`
 	TencentCalledShowNumber string `json:"tencent_called_show_number"`
-	TencentRegion          string `json:"tencent_region"` // default: "ap-guangzhou"
+	TencentRegion           string `json:"tencent_region"` // default: "ap-guangzhou"
 
+	// WebhookToken authenticates provider callback requests. Never returned in plain GET config outside signed callback_urls.
+	WebhookToken string            `json:"webhook_token,omitempty"`
+	CallbackURLs map[string]string `json:"callback_urls,omitempty"`
+
+	UpdatedBy uint64    `json:"updated_by,omitempty"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
@@ -39,7 +47,7 @@ type CallRequest struct {
 type CallResult struct {
 	CallID       string `json:"call_id"`
 	Provider     string `json:"provider"` // "mock" | "aliyun" | "tencent"
-	Status       string `json:"status"`   // "calling", "answered", "dtmf_confirmed", "failed"
+	Status       string `json:"status"`   // "calling", "answered", "dtmf_confirmed", "throttled", "failed"
 	OutCallID    string `json:"out_call_id,omitempty"`
 	PhoneNumber  string `json:"phone_number"`
 	TTSContent   string `json:"tts_content"`

@@ -1,0 +1,790 @@
+package oncall
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"sort"
+	"strings"
+	"time"
+
+	"gorm.io/gorm"
+
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/oncall/voice"
+	store "github.com/Zara1024/OpsPilot/internal/manager/data/oncall/store"
+	model "github.com/Zara1024/OpsPilot/internal/manager/model/oncall"
+)
+
+const (
+	defaultWorkerTick    = 10 * time.Second
+	defaultWorkerLease   = 30 * time.Second
+	defaultVoiceCooldown = 3 * time.Minute
+	maxStepRetries       = 2
+)
+
+// EscalationWorkerOpts configures EscalationWorker dependencies and timing.
+type EscalationWorkerOpts struct {
+	Store         *store.Store
+	Scheduler     *Scheduler
+	VoiceGateway  *voice.VoiceGateway
+	Deliverer     MessageDeliverer
+	Metrics       *Metrics
+	Log           *slog.Logger
+	TickInterval  time.Duration
+	LeaseDuration time.Duration
+	VoiceCooldown time.Duration
+	Now           func() time.Time
+}
+
+// EscalationWorker executes due On-Call escalation tasks with DB lease locking.
+type EscalationWorker struct {
+	store         *store.Store
+	scheduler     *Scheduler
+	voiceGateway  *voice.VoiceGateway
+	deliverer     MessageDeliverer
+	metrics       *Metrics
+	log           *slog.Logger
+	tickInterval  time.Duration
+	leaseDuration time.Duration
+	voiceCooldown time.Duration
+	now           func() time.Time
+	wakeCh        chan struct{}
+}
+
+// NewEscalationWorker constructs an EscalationWorker with sensible production defaults.
+func NewEscalationWorker(opts EscalationWorkerOpts) *EscalationWorker {
+	tick := opts.TickInterval
+	if tick <= 0 {
+		tick = defaultWorkerTick
+	}
+	lease := opts.LeaseDuration
+	if lease <= 0 {
+		lease = defaultWorkerLease
+	}
+	cooldown := opts.VoiceCooldown
+	if cooldown <= 0 {
+		cooldown = defaultVoiceCooldown
+	}
+	sched := opts.Scheduler
+	if sched == nil {
+		sched = NewScheduler(opts.Store)
+	}
+	vg := opts.VoiceGateway
+	if vg == nil {
+		vg = voice.NewVoiceGateway()
+	}
+	log := opts.Log
+	if log == nil {
+		log = slog.Default()
+	}
+	nowFn := opts.Now
+	if nowFn == nil {
+		nowFn = time.Now
+	}
+	return &EscalationWorker{
+		store:         opts.Store,
+		scheduler:     sched,
+		voiceGateway:  vg,
+		deliverer:     opts.Deliverer,
+		metrics:       opts.Metrics,
+		log:           log,
+		tickInterval:  tick,
+		leaseDuration: lease,
+		voiceCooldown: cooldown,
+		now:           nowFn,
+		wakeCh:        make(chan struct{}, 1),
+	}
+}
+
+// Wake nudges the worker to process due tasks immediately without waiting for the next ticker.
+func (w *EscalationWorker) Wake() {
+	if w == nil {
+		return
+	}
+	select {
+	case w.wakeCh <- struct{}{}:
+	default:
+	}
+}
+
+// Loop periodically claims and processes due On-Call escalation tasks until ctx is cancelled.
+func (w *EscalationWorker) Loop(ctx context.Context) error {
+	if w == nil || w.store == nil {
+		return nil
+	}
+	w.ProcessBatch(ctx)
+
+	ticker := time.NewTicker(w.tickInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			w.ProcessBatch(ctx)
+		case <-w.wakeCh:
+			w.ProcessBatch(ctx)
+		}
+	}
+}
+
+// ProcessBatch claims due pending tasks once and advances each state machine step.
+func (w *EscalationWorker) ProcessBatch(ctx context.Context) int {
+	if w == nil || w.store == nil {
+		return 0
+	}
+	now := w.now()
+	tasks, err := w.store.ClaimDueEscalationTasks(ctx, now, w.leaseDuration, 20)
+	if err != nil {
+		w.log.Warn("oncall claim due escalation tasks failed", slog.Any("err", err))
+		return 0
+	}
+	for _, task := range tasks {
+		w.processTask(ctx, task, now)
+	}
+	return len(tasks)
+}
+
+func (w *EscalationWorker) processTask(ctx context.Context, task *model.EscalationTask, now time.Time) {
+	inc, err := w.store.GetAlertIncident(ctx, task.IncidentID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			task.Status = model.TaskStatusCancelled
+			task.LockedUntil = nil
+			task.LastError = "incident not found"
+			w.finishSave(ctx, task, model.TaskStatusCancelled)
+			return
+		}
+		task.LockedUntil = nil
+		task.LastError = truncateString(err.Error(), 500)
+		task.NextRunAt = now.Add(30 * time.Second)
+		if saveErr := w.store.SaveEscalationTask(ctx, task); saveErr != nil {
+			w.log.Warn("oncall save retry task after incident lookup error failed", slog.Uint64("task_id", task.ID), slog.Any("err", saveErr))
+		}
+		return
+	}
+
+	if inc.Status != "open" {
+		finalStatus := model.TaskStatusCancelled
+		if inc.Status == "acknowledged" {
+			finalStatus = model.TaskStatusAcked
+		}
+		task.Status = finalStatus
+		task.LockedUntil = nil
+		w.finishSave(ctx, task, finalStatus)
+		return
+	}
+
+	cfg, err := w.store.GetVoiceConfig(ctx)
+	if err != nil {
+		cfg = store.DefaultVoiceGatewayConfig()
+	}
+	if !cfg.DispatchEnabled {
+		task.Status = model.TaskStatusCancelled
+		task.LockedUntil = nil
+		task.LastError = "oncall dispatch disabled"
+		w.finishSave(ctx, task, model.TaskStatusCancelled)
+		return
+	}
+
+	policies := w.loadPolicies(ctx, task.ScheduleID)
+	if task.StepStartedAt.IsZero() {
+		task.StepStartedAt = now
+	}
+	idx := int(task.CurrentStep) - 1
+	if idx < 0 {
+		idx = 0
+		task.CurrentStep = 1
+	}
+	if idx >= len(policies) {
+		task.Status = model.TaskStatusCompleted
+		task.LockedUntil = nil
+		w.finishSave(ctx, task, model.TaskStatusCompleted)
+		return
+	}
+
+	policy := policies[idx]
+	sched, _ := w.store.GetSchedule(ctx, task.ScheduleID)
+	isNight := isNightInSchedule(now, sched)
+
+	if policy.TargetType == "webhook" {
+		w.executeWebhookBroadcastStep(ctx, task, policies, idx, now, isNight)
+		return
+	}
+
+	targetUser, resolveErr := w.resolveTargetUser(ctx, task.ScheduleID, policy, sched, now)
+	if resolveErr != nil || targetUser == nil {
+		msg := "no active on-call engineer for target"
+		if resolveErr != nil {
+			msg = resolveErr.Error()
+		}
+		w.recordLog(ctx, &model.NotificationLog{
+			TaskID:         task.ID,
+			IncidentID:     task.IncidentID,
+			ScheduleID:     task.ScheduleID,
+			EscalationStep: task.CurrentStep,
+			Target:         policy.TargetType,
+			Channel:        "im_dm",
+			Provider:       "none",
+			Status:         model.NotifyStatusFailed,
+			Message:        truncateString(msg, 500),
+			IsNight:        isNight,
+			CreatedAt:      now,
+		})
+		w.advanceTeamStepImmediately(ctx, task, policies, idx, now, msg)
+		return
+	}
+
+	task.AssigneeUserID = targetUser.ID
+	rules := w.loadUserLadder(ctx, targetUser.ID, task.Urgency)
+	if int(task.LadderStep) <= 0 {
+		task.LadderStep = 1
+	}
+	if int(task.LadderStep) > len(rules) {
+		w.advanceAfterLadderComplete(ctx, task, policies, idx, now)
+		return
+	}
+
+	rule := rules[int(task.LadderStep)-1]
+	transientErr := w.executeRuleStep(ctx, task, rule, targetUser, cfg, inc.Title, isNight, now)
+	if transientErr != nil && task.AttemptCount < maxStepRetries {
+		task.AttemptCount++
+		task.LastError = truncateString(transientErr.Error(), 500)
+		backoff := time.Duration(30*(1<<(task.AttemptCount-1))) * time.Second
+		task.NextRunAt = now.Add(backoff)
+		task.LockedUntil = nil
+		if err := w.store.SaveEscalationTask(ctx, task); err != nil {
+			w.log.Warn("oncall save retry task failed", slog.Uint64("task_id", task.ID), slog.Any("err", err))
+		}
+		return
+	}
+
+	// Step either succeeded or exhausted/skipped permanently; advance ladder or team escalation.
+	task.AttemptCount = 0
+	if transientErr != nil {
+		task.LastError = truncateString(transientErr.Error(), 500)
+	} else {
+		task.LastError = ""
+	}
+	task.LockedUntil = nil
+
+	w.scheduleNextRun(ctx, task, policies, idx, rules, now)
+}
+
+func (w *EscalationWorker) executeWebhookBroadcastStep(ctx context.Context, task *model.EscalationTask, policies []*model.EscalationPolicy, idx int, now time.Time, isNight bool) {
+	subject := fmt.Sprintf("[OpsPilot On-Call Step %d] %s", task.CurrentStep, task.Title)
+	body := fmt.Sprintf("Incident: INC-%04d | Severity: %s | Step: %d", task.IncidentID, task.Severity, task.CurrentStep)
+	labels := map[string]string{
+		"incident_id": fmt.Sprintf("%d", task.IncidentID),
+		"severity":    task.Severity,
+		"rule":        task.RuleKey,
+	}
+
+	var provider string
+	var sendErr error
+	if w.deliverer == nil {
+		provider = "unconfigured"
+		sendErr = errors.New("notification deliverer not configured")
+	} else {
+		provider, sendErr = w.deliverer.Deliver(ctx, "webhook", nil, subject, body, task.Severity, labels)
+	}
+
+	status := model.NotifyStatusSent
+	msg := "webhook broadcast sent"
+	if sendErr != nil {
+		status = model.NotifyStatusFailed
+		msg = sendErr.Error()
+	}
+	w.recordLog(ctx, &model.NotificationLog{
+		TaskID:         task.ID,
+		IncidentID:     task.IncidentID,
+		ScheduleID:     task.ScheduleID,
+		EscalationStep: task.CurrentStep,
+		Target:         "webhook",
+		Channel:        "webhook",
+		Provider:       provider,
+		Status:         status,
+		Message:        truncateString(msg, 500),
+		IsNight:        isNight,
+		CreatedAt:      now,
+	})
+
+	task.LockedUntil = nil
+	task.AttemptCount = 0
+	w.advanceAfterLadderComplete(ctx, task, policies, idx, now)
+}
+
+func (w *EscalationWorker) executeRuleStep(
+	ctx context.Context,
+	task *model.EscalationTask,
+	rule *model.UserNotificationRule,
+	user *store.UserSummary,
+	cfg *voice.VoiceGatewayConfig,
+	incidentTitle string,
+	isNight bool,
+	now time.Time,
+) error {
+	userName := displayNameOrEmail(user)
+	title := task.Title
+	if title == "" {
+		title = incidentTitle
+	}
+	if title == "" {
+		title = fmt.Sprintf("Incident #%d", task.IncidentID)
+	}
+
+	switch rule.Channel {
+	case "voice_call":
+		cooldownSince := now.Add(-w.voiceCooldown)
+		throttled, tErr := w.store.HasRecentVoiceCall(ctx, user.ID, cooldownSince)
+		if tErr == nil && throttled {
+			w.recordLog(ctx, &model.NotificationLog{
+				TaskID:         task.ID,
+				IncidentID:     task.IncidentID,
+				ScheduleID:     task.ScheduleID,
+				EscalationStep: task.CurrentStep,
+				UserID:         user.ID,
+				UserName:       userName,
+				Target:         maskPhone(user.Phone),
+				Channel:        "voice_call",
+				Provider:       cfg.Provider,
+				Status:         model.NotifyStatusThrottled,
+				Message:        fmt.Sprintf("throttled: voice call cooldown (%v) active", w.voiceCooldown),
+				IsNight:        isNight,
+				CreatedAt:      now,
+			})
+			return nil
+		}
+
+		if strings.TrimSpace(user.Phone) == "" {
+			w.recordLog(ctx, &model.NotificationLog{
+				TaskID:         task.ID,
+				IncidentID:     task.IncidentID,
+				ScheduleID:     task.ScheduleID,
+				EscalationStep: task.CurrentStep,
+				UserID:         user.ID,
+				UserName:       userName,
+				Target:         user.Email,
+				Channel:        "voice_call",
+				Provider:       cfg.Provider,
+				Status:         model.NotifyStatusFailed,
+				Message:        "user phone number not configured",
+				IsNight:        isNight,
+				CreatedAt:      now,
+			})
+			return nil
+		}
+
+		callID := fmt.Sprintf("call_%d_%d", task.IncidentID, now.UnixNano())
+		res, err := w.voiceGateway.SendVoiceCall(ctx, cfg, &voice.CallRequest{
+			CallID:      callID,
+			PhoneNumber: user.Phone,
+			Urgency:     task.Urgency,
+			Title:       title,
+			Severity:    task.Severity,
+		})
+		if err != nil {
+			provider := cfg.Provider
+			if res != nil && res.Provider != "" {
+				provider = res.Provider
+			}
+			msg := err.Error()
+			if res != nil && res.Message != "" {
+				msg = res.Message
+			}
+			w.recordLog(ctx, &model.NotificationLog{
+				TaskID:         task.ID,
+				IncidentID:     task.IncidentID,
+				ScheduleID:     task.ScheduleID,
+				EscalationStep: task.CurrentStep,
+				UserID:         user.ID,
+				UserName:       userName,
+				Target:         maskPhone(user.Phone),
+				Channel:        "voice_call",
+				Provider:       provider,
+				CallID:         callID,
+				Status:         model.NotifyStatusFailed,
+				Message:        truncateString(msg, 500),
+				IsNight:        isNight,
+				CreatedAt:      now,
+			})
+			if isPermanentVoiceConfigErr(msg) {
+				return nil
+			}
+			return err
+		}
+
+		// Record call log. Note: mock provider returns dtmf_confirmed in simulation,
+		// while automated pipeline NEVER auto-acks real alert incidents from mock mode;
+		// real ack comes from signed Aliyun/Tencent callbacks or human action.
+		status := model.NotifyStatusCalling
+		provider := cfg.Provider
+		outCallID := ""
+		dtmf := ""
+		dur := 0
+		msg := ""
+		if res != nil {
+			if res.Status != "" {
+				status = res.Status
+			}
+			if res.Provider != "" {
+				provider = res.Provider
+			}
+			outCallID = res.OutCallID
+			dtmf = res.DTMFCode
+			dur = res.DurationSecs
+			msg = res.Message
+		}
+		w.recordLog(ctx, &model.NotificationLog{
+			TaskID:         task.ID,
+			IncidentID:     task.IncidentID,
+			ScheduleID:     task.ScheduleID,
+			EscalationStep: task.CurrentStep,
+			UserID:         user.ID,
+			UserName:       userName,
+			Target:         maskPhone(user.Phone),
+			Channel:        "voice_call",
+			Provider:       provider,
+			CallID:         callID,
+			OutCallID:      outCallID,
+			Status:         status,
+			DTMFCode:       dtmf,
+			DurationSecs:   dur,
+			Message:        truncateString(msg, 500),
+			IsNight:        isNight,
+			CreatedAt:      now,
+		})
+		return nil
+
+	case "im_dm", "im_group_at", "webhook":
+		subject := fmt.Sprintf("[OpsPilot On-Call] %s (%s)", title, strings.ToUpper(task.Severity))
+		body := fmt.Sprintf("告警单号: INC-%04d | 值班人: %s | 升级步骤: %d", task.IncidentID, userName, task.CurrentStep)
+		labels := map[string]string{
+			"incident_id": fmt.Sprintf("%d", task.IncidentID),
+			"severity":    task.Severity,
+			"rule":        task.RuleKey,
+			"assignee":    userName,
+		}
+		if w.deliverer == nil {
+			w.recordLog(ctx, &model.NotificationLog{
+				TaskID:         task.ID,
+				IncidentID:     task.IncidentID,
+				ScheduleID:     task.ScheduleID,
+				EscalationStep: task.CurrentStep,
+				UserID:         user.ID,
+				UserName:       userName,
+				Target:         userName,
+				Channel:        rule.Channel,
+				Provider:       "unconfigured",
+				Status:         model.NotifyStatusFailed,
+				Message:        "notification channel not configured",
+				IsNight:        isNight,
+				CreatedAt:      now,
+			})
+			return nil
+		}
+		provider, err := w.deliverer.Deliver(ctx, rule.Channel, user, subject, body, task.Severity, labels)
+		if err != nil {
+			if provider == "" {
+				provider = "notify_router"
+			}
+			w.recordLog(ctx, &model.NotificationLog{
+				TaskID:         task.ID,
+				IncidentID:     task.IncidentID,
+				ScheduleID:     task.ScheduleID,
+				EscalationStep: task.CurrentStep,
+				UserID:         user.ID,
+				UserName:       userName,
+				Target:         userName,
+				Channel:        rule.Channel,
+				Provider:       provider,
+				Status:         model.NotifyStatusFailed,
+				Message:        truncateString(err.Error(), 500),
+				IsNight:        isNight,
+				CreatedAt:      now,
+			})
+			if strings.Contains(err.Error(), "no notification channel configured") {
+				return nil
+			}
+			return err
+		}
+		w.recordLog(ctx, &model.NotificationLog{
+			TaskID:         task.ID,
+			IncidentID:     task.IncidentID,
+			ScheduleID:     task.ScheduleID,
+			EscalationStep: task.CurrentStep,
+			UserID:         user.ID,
+			UserName:       userName,
+			Target:         userName,
+			Channel:        rule.Channel,
+			Provider:       provider,
+			Status:         model.NotifyStatusSent,
+			Message:        fmt.Sprintf("dispatched via %s", provider),
+			IsNight:        isNight,
+			CreatedAt:      now,
+		})
+		return nil
+
+	default:
+		// sms, email, or future channels without an active external gateway yet: fail honestly, do not fabricate mock success.
+		w.recordLog(ctx, &model.NotificationLog{
+			TaskID:         task.ID,
+			IncidentID:     task.IncidentID,
+			ScheduleID:     task.ScheduleID,
+			EscalationStep: task.CurrentStep,
+			UserID:         user.ID,
+			UserName:       userName,
+			Target:         fallbackTarget(user),
+			Channel:        rule.Channel,
+			Provider:       "unconfigured",
+			Status:         model.NotifyStatusFailed,
+			Message:        fmt.Sprintf("provider for channel %s is not configured", rule.Channel),
+			IsNight:        isNight,
+			CreatedAt:      now,
+		})
+		return nil
+	}
+}
+
+func (w *EscalationWorker) loadPolicies(ctx context.Context, scheduleID uint64) []*model.EscalationPolicy {
+	policies, err := w.store.ListEscalationPolicies(ctx, scheduleID)
+	if err != nil || len(policies) == 0 {
+		return []*model.EscalationPolicy{
+			{ScheduleID: scheduleID, Name: "一线主值班即时通知", StepNumber: 1, WaitSeconds: 0, TargetType: "primary_oncall"},
+			{ScheduleID: scheduleID, Name: "未响应升级至二线技术专家", StepNumber: 2, WaitSeconds: 300, TargetType: "secondary_oncall"},
+			{ScheduleID: scheduleID, Name: "仍未响应升级至SRE应急负责人", StepNumber: 3, WaitSeconds: 900, TargetType: "fallback_lead"},
+		}
+	}
+	sort.Slice(policies, func(i, j int) bool {
+		if policies[i].StepNumber == policies[j].StepNumber {
+			return policies[i].ID < policies[j].ID
+		}
+		return policies[i].StepNumber < policies[j].StepNumber
+	})
+	return policies
+}
+
+func (w *EscalationWorker) loadUserLadder(ctx context.Context, userID uint64, urgency string) []*model.UserNotificationRule {
+	all, err := w.store.ListUserNotificationRules(ctx, userID, urgency)
+	var enabled []*model.UserNotificationRule
+	if err == nil {
+		for _, r := range all {
+			if r != nil && r.Enabled {
+				enabled = append(enabled, r)
+			}
+		}
+	}
+	if len(enabled) > 0 {
+		return enabled
+	}
+	if urgency == "high" {
+		return []*model.UserNotificationRule{
+			{UserID: userID, Urgency: "high", StepNumber: 1, DelayMinutes: 0, Channel: "im_dm", Enabled: true},
+			{UserID: userID, Urgency: "high", StepNumber: 2, DelayMinutes: 2, Channel: "voice_call", Enabled: true},
+		}
+	}
+	return []*model.UserNotificationRule{
+		{UserID: userID, Urgency: "low", StepNumber: 1, DelayMinutes: 0, Channel: "im_dm", Enabled: true},
+	}
+}
+
+func (w *EscalationWorker) resolveTargetUser(ctx context.Context, scheduleID uint64, policy *model.EscalationPolicy, sched *model.Schedule, now time.Time) (*store.UserSummary, error) {
+	var userID uint64
+	switch policy.TargetType {
+	case "primary_oncall":
+		live, err := w.scheduler.GetLiveStatus(ctx, scheduleID, now)
+		if err != nil {
+			return nil, fmt.Errorf("resolve live primary on-call: %w", err)
+		}
+		if live != nil && live.PrimaryUser != nil {
+			userID = live.PrimaryUser.UserID
+		}
+	case "secondary_oncall":
+		live, err := w.scheduler.GetLiveStatus(ctx, scheduleID, now)
+		if err != nil {
+			return nil, fmt.Errorf("resolve live secondary on-call: %w", err)
+		}
+		if live != nil && live.SecondaryUser != nil {
+			userID = live.SecondaryUser.UserID
+		}
+	case "specific_user":
+		if policy.TargetID != nil {
+			userID = *policy.TargetID
+		}
+	case "fallback_lead":
+		if sched != nil && sched.CreatedBy > 0 {
+			userID = sched.CreatedBy
+		} else {
+			users, err := w.store.ListAllUsers(ctx)
+			if err == nil && len(users) > 0 {
+				return users[0], nil
+			}
+		}
+	default:
+		return nil, fmt.Errorf("unsupported escalation target type %q", policy.TargetType)
+	}
+
+	if userID == 0 {
+		return nil, fmt.Errorf("no user on shift for %s", policy.TargetType)
+	}
+	usersMap, err := w.store.GetUsersByIDs(ctx, []uint64{userID})
+	if err != nil {
+		return nil, err
+	}
+	user, ok := usersMap[userID]
+	if !ok || user == nil {
+		return nil, fmt.Errorf("user %d not found", userID)
+	}
+	return user, nil
+}
+
+func (w *EscalationWorker) scheduleNextRun(ctx context.Context, task *model.EscalationTask, policies []*model.EscalationPolicy, idx int, rules []*model.UserNotificationRule, now time.Time) {
+	hasNextTeam := idx+1 < len(policies)
+	var teamEscalateAt time.Time
+	if hasNextTeam {
+		wait := time.Duration(policies[idx+1].WaitSeconds) * time.Second
+		if wait <= 0 {
+			wait = 5 * time.Minute
+		}
+		teamEscalateAt = task.StepStartedAt.Add(wait)
+		if teamEscalateAt.Before(now) {
+			teamEscalateAt = now
+		}
+	}
+
+	if int(task.LadderStep) < len(rules) {
+		nextRule := rules[int(task.LadderStep)]
+		nextLadderAt := task.StepStartedAt.Add(time.Duration(nextRule.DelayMinutes) * time.Minute)
+		if nextLadderAt.Before(now) {
+			nextLadderAt = now
+		}
+		if hasNextTeam && nextLadderAt.After(teamEscalateAt) {
+			task.CurrentStep++
+			task.LadderStep = 1
+			task.StepStartedAt = teamEscalateAt
+			task.NextRunAt = teamEscalateAt
+		} else {
+			task.LadderStep++
+			task.NextRunAt = nextLadderAt
+		}
+		if err := w.store.SaveEscalationTask(ctx, task); err != nil {
+			w.log.Warn("oncall save next ladder task failed", slog.Uint64("task_id", task.ID), slog.Any("err", err))
+		}
+		return
+	}
+
+	w.advanceAfterLadderComplete(ctx, task, policies, idx, now)
+}
+
+func (w *EscalationWorker) advanceAfterLadderComplete(ctx context.Context, task *model.EscalationTask, policies []*model.EscalationPolicy, idx int, now time.Time) {
+	if idx+1 < len(policies) {
+		wait := time.Duration(policies[idx+1].WaitSeconds) * time.Second
+		if wait <= 0 {
+			wait = 5 * time.Minute
+		}
+		nextTeamAt := task.StepStartedAt.Add(wait)
+		if nextTeamAt.Before(now) {
+			nextTeamAt = now
+		}
+		task.CurrentStep++
+		task.LadderStep = 1
+		task.StepStartedAt = nextTeamAt
+		task.NextRunAt = nextTeamAt
+		task.LockedUntil = nil
+		if err := w.store.SaveEscalationTask(ctx, task); err != nil {
+			w.log.Warn("oncall save next escalation step failed", slog.Uint64("task_id", task.ID), slog.Any("err", err))
+		}
+		return
+	}
+	task.Status = model.TaskStatusCompleted
+	task.LockedUntil = nil
+	w.finishSave(ctx, task, model.TaskStatusCompleted)
+}
+
+func (w *EscalationWorker) advanceTeamStepImmediately(ctx context.Context, task *model.EscalationTask, policies []*model.EscalationPolicy, idx int, now time.Time, reason string) {
+	task.AttemptCount = 0
+	task.LastError = truncateString(reason, 500)
+	task.LockedUntil = nil
+	if idx+1 < len(policies) {
+		task.CurrentStep++
+		task.LadderStep = 1
+		task.StepStartedAt = now
+		task.NextRunAt = now
+		if err := w.store.SaveEscalationTask(ctx, task); err != nil {
+			w.log.Warn("oncall save skipped step failed", slog.Uint64("task_id", task.ID), slog.Any("err", err))
+		}
+		return
+	}
+	task.Status = model.TaskStatusCompleted
+	w.finishSave(ctx, task, model.TaskStatusCompleted)
+}
+
+func (w *EscalationWorker) finishSave(ctx context.Context, task *model.EscalationTask, outcome string) {
+	if err := w.store.SaveEscalationTask(ctx, task); err != nil {
+		w.log.Warn("oncall save completed task failed", slog.Uint64("task_id", task.ID), slog.Any("err", err))
+		return
+	}
+	w.metrics.incEscalation(outcome)
+}
+
+func (w *EscalationWorker) recordLog(ctx context.Context, entry *model.NotificationLog) {
+	if err := w.store.CreateNotificationLog(ctx, entry); err != nil {
+		w.log.Warn("oncall create notification log failed", slog.Uint64("incident_id", entry.IncidentID), slog.Any("err", err))
+	}
+	w.metrics.incNotification(entry.Channel, entry.Provider, entry.Status)
+}
+
+func isNightInSchedule(now time.Time, sched *model.Schedule) bool {
+	tz := "Asia/Shanghai"
+	if sched != nil && sched.Timezone != "" {
+		tz = sched.Timezone
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil || loc == nil {
+		loc = time.FixedZone("CST", 8*3600)
+	}
+	h := now.In(loc).Hour()
+	return h >= 22 || h < 8
+}
+
+func isPermanentVoiceConfigErr(msg string) bool {
+	return strings.Contains(msg, "未配置") || strings.Contains(msg, "不能为空") || strings.Contains(msg, "not configured")
+}
+
+func maskPhone(p string) string {
+	p = strings.TrimSpace(p)
+	if len(p) < 7 {
+		return p
+	}
+	return p[:3] + "****" + p[len(p)-4:]
+}
+
+func displayNameOrEmail(u *store.UserSummary) string {
+	if u == nil {
+		return ""
+	}
+	if strings.TrimSpace(u.DisplayName) != "" {
+		return u.DisplayName
+	}
+	return u.Email
+}
+
+func fallbackTarget(u *store.UserSummary) string {
+	if u == nil {
+		return ""
+	}
+	if strings.TrimSpace(u.Phone) != "" {
+		return maskPhone(u.Phone)
+	}
+	return u.Email
+}
+
+func truncateString(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max])
+}

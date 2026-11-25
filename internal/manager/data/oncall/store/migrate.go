@@ -17,5 +17,8 @@ func Migrate(db *gorm.DB) error {
 		&model.UserNotificationRule{},
 		&model.UserCalendarToken{},
 		&model.HandoffLog{},
+		&model.VoiceConfigRecord{},
+		&model.EscalationTask{},
+		&model.NotificationLog{},
 	)
 }

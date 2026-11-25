@@ -45,10 +45,16 @@ type IncidentSummary struct {
 type EscalationEngine struct {
 	store     *store.Store
 	scheduler *Scheduler
+	worker    *EscalationWorker
 }
 
 func NewEscalationEngine(s *store.Store, sched *Scheduler) *EscalationEngine {
 	return &EscalationEngine{store: s, scheduler: sched}
+}
+
+// SetWorker attaches the background escalation worker so manual escalations wake immediately.
+func (ee *EscalationEngine) SetWorker(w *EscalationWorker) {
+	ee.worker = w
 }
 
 // HandleAction processes a ChatOps / On-Call dashboard response action on real alert incidents.
@@ -92,6 +98,9 @@ func (ee *EscalationEngine) HandleAction(ctx context.Context, req ChatOpsActionR
 		if incID > 0 {
 			if err := ee.store.EscalateAlertIncident(ctx, incID, req.OperatorID, req.Note); err != nil {
 				return nil, fmt.Errorf("escalate alert incident %d: %w", incID, err)
+			}
+			if advanced, err := ee.store.TriggerImmediateEscalationByIncident(ctx, incID, time.Now()); err == nil && advanced && ee.worker != nil {
+				ee.worker.Wake()
 			}
 		}
 		return &ChatOpsActionResult{

@@ -360,7 +360,14 @@ export async function setMyNotificationRules(
 export async function testNotification(
   channel: string,
   urgency: string
-): Promise<{ ok: boolean; channel: string; target: string; message: string; result: unknown }> {
+): Promise<{
+  ok: boolean;
+  channel: string;
+  target: string;
+  status?: string;
+  message: string;
+  result?: unknown;
+}> {
   return request('POST', '/oncall/users/me/notification-rules/test', { channel, urgency });
 }
 
@@ -531,17 +538,22 @@ export async function getNoisyAlerts(
 
 export interface VoiceGatewayConfig {
   provider: 'mock' | 'aliyun' | 'tencent';
+  dispatch_enabled?: boolean;
   aliyun_access_key_id?: string;
   aliyun_access_key_secret?: string;
+  aliyun_secret_configured?: boolean;
   aliyun_called_show_number?: string;
   aliyun_tts_code?: string;
   aliyun_region?: string;
   tencent_secret_id?: string;
   tencent_secret_key?: string;
+  tencent_secret_configured?: boolean;
   tencent_sdk_app_id?: string;
   tencent_template_id?: string;
   tencent_called_show_number?: string;
   tencent_region?: string;
+  callback_urls?: Record<string, string>;
+  updated_by?: number;
   updated_at?: string;
 }
 
@@ -557,7 +569,7 @@ export interface VoiceCallRequest {
 export interface VoiceCallResult {
   call_id: string;
   provider: string;
-  status: 'calling' | 'answered' | 'dtmf_confirmed' | 'failed';
+  status: 'calling' | 'answered' | 'dtmf_confirmed' | 'throttled' | 'failed';
   out_call_id?: string;
   phone_number: string;
   tts_content: string;
@@ -565,6 +577,47 @@ export interface VoiceCallResult {
   duration_secs: number;
   message: string;
   raw_response?: string;
+}
+
+export interface OnCallNotificationLog {
+  id: number;
+  task_id: number;
+  incident_id: number;
+  schedule_id: number;
+  escalation_step: number;
+  user_id: number;
+  user_name: string;
+  target: string;
+  channel: string;
+  provider: string;
+  call_id?: string;
+  out_call_id?: string;
+  status: string;
+  dtmf_code?: string;
+  duration_secs: number;
+  message: string;
+  is_night: boolean;
+  created_at: string;
+}
+
+export interface OnCallEscalationTask {
+  id: number;
+  incident_id: number;
+  rule_key: string;
+  title: string;
+  severity: string;
+  urgency: string;
+  schedule_id: number;
+  route_id: number;
+  current_step: number;
+  ladder_step: number;
+  assignee_user_id: number;
+  status: 'pending' | 'acked' | 'cancelled' | 'completed' | 'failed';
+  next_run_at: string;
+  attempt_count: number;
+  last_error?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export async function getVoiceConfig(): Promise<VoiceGatewayConfig> {
@@ -581,4 +634,26 @@ export async function testVoiceCall(
   data: VoiceCallRequest
 ): Promise<VoiceCallResult> {
   return request('POST', '/oncall/voice/test-call', data);
+}
+
+export async function listNotificationLogs(params?: {
+  page?: number;
+  page_size?: number;
+  channel?: string;
+  status?: string;
+}): Promise<{ items: OnCallNotificationLog[]; total: number; page: number; page_size: number }> {
+  const sp = new URLSearchParams();
+  if (params?.page != null) sp.set('page', String(params.page));
+  if (params?.page_size != null) sp.set('page_size', String(params.page_size));
+  if (params?.channel && params.channel !== 'all') sp.set('channel', params.channel);
+  if (params?.status && params.status !== 'all') sp.set('status', params.status);
+  const q = sp.toString();
+  return request('GET', `/oncall/notifications/logs${q ? `?${q}` : ''}`);
+}
+
+export async function listEscalationTasks(
+  status?: string
+): Promise<{ items: OnCallEscalationTask[]; total: number }> {
+  const q = status && status !== 'all' ? `?status=${encodeURIComponent(status)}` : '';
+  return request('GET', `/oncall/escalations/tasks${q}`);
 }

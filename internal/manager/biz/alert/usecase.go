@@ -72,6 +72,16 @@ type WorkflowDispatcher interface {
 	OnAlertFired(incidentID uint64, ruleKey, ruleName, severity string, edgeID, deviceID uint64, labels map[string]string, firedAt time.Time)
 }
 
+// OnCallDispatcher bridges firing and closed alert incidents into On-Call
+// routing and escalation state machines. Optional; nil-safe. Declared on
+// the consumer side so biz/alert never imports biz/oncall.
+type OnCallDispatcher interface {
+	// OnAlertFired MUST be non-blocking.
+	OnAlertFired(incidentID uint64, ruleKey, title, severity string, deviceID uint64, labels map[string]string, firedAt time.Time)
+	// OnAlertClosed MUST be non-blocking.
+	OnAlertClosed(incidentID uint64, status string)
+}
+
 // RuleCacheRefresher makes persisted rule migrations visible to the running
 // evaluator before a log backend switch is committed.
 type RuleCacheRefresher interface {
@@ -88,6 +98,7 @@ type Usecase struct {
 	// workflowDispatcher is optional; nil-safe. main.go injects the flow
 	// dispatcher so a fired alert can auto-start matching workflows.
 	workflowDispatcher WorkflowDispatcher
+	oncallDispatcher   OnCallDispatcher
 	ruleCacheRefresher RuleCacheRefresher
 }
 
@@ -111,6 +122,12 @@ func (u *Usecase) SetInvestigator(inv Investigator) {
 // Safe to leave unset.
 func (u *Usecase) SetWorkflowDispatcher(d WorkflowDispatcher) {
 	u.workflowDispatcher = d
+}
+
+// SetOnCallDispatcher wires the alert→oncall escalation dispatcher.
+// Safe to leave unset.
+func (u *Usecase) SetOnCallDispatcher(d OnCallDispatcher) {
+	u.oncallDispatcher = d
 }
 
 // SetRuleCacheRefresher wires the runtime alert snapshot refresh used after a
@@ -222,7 +239,7 @@ func (u *Usecase) SilenceIncident(ctx context.Context, id, operatorUserID uint64
 	}); err != nil {
 		return fmt.Errorf("create silence: %w", err)
 	}
-	return u.createEvent(ctx, &model.Event{
+	if err := u.createEvent(ctx, &model.Event{
 		IncidentID:  id,
 		EventType:   model.EventTypeSilenced,
 		StatusAfter: model.IncidentStatusSilenced,
@@ -232,7 +249,16 @@ func (u *Usecase) SilenceIncident(ctx context.Context, id, operatorUserID uint64
 		ActorType:   model.ActorTypeUser,
 		ActorID:     &operatorUserID,
 		OccurredAt:  now,
-	}, incident.Rule)
+	}, incident.Rule); err != nil {
+		return err
+	}
+	if u.oncallDispatcher != nil {
+		d := u.oncallDispatcher
+		dbx.AfterCommit(ctx, func() {
+			d.OnAlertClosed(id, model.IncidentStatusSilenced)
+		})
+	}
+	return nil
 }
 
 func buildSilenceName(incident *model.Incident) string {
@@ -290,7 +316,16 @@ func (u *Usecase) transition(ctx context.Context, id uint64, eventType string, s
 		noteCopy := note
 		evt.Message = &noteCopy
 	}
-	return u.createEvent(ctx, evt, incident.Rule)
+	if err := u.createEvent(ctx, evt, incident.Rule); err != nil {
+		return err
+	}
+	if u.oncallDispatcher != nil && (status == model.IncidentStatusAcknowledged || status == model.IncidentStatusResolved) {
+		d := u.oncallDispatcher
+		dbx.AfterCommit(ctx, func() {
+			d.OnAlertClosed(id, status)
+		})
+	}
+	return nil
 }
 
 // FiringInput is the parameter object for RecordFiring. Fields below the
@@ -510,6 +545,25 @@ func (u *Usecase) RecordFiring(ctx context.Context, in FiringInput) (*FiringResu
 		}
 		// Host identity is durable; execution resolves the current Edge at dispatch.
 		u.workflowDispatcher.OnAlertFired(incident.ID, incident.Rule, incident.RuleName, incident.Severity, 0, devID, labels, occurredAt)
+	}
+
+	if (isNew || isReopen) && !silenced && u.oncallDispatcher != nil {
+		var devID uint64
+		if incident.DeviceID != nil {
+			devID = *incident.DeviceID
+		}
+		var labels map[string]string
+		if incident.LabelsJSON != "" {
+			_ = json.Unmarshal([]byte(incident.LabelsJSON), &labels)
+		}
+		title := firstNonEmpty(incident.Title, firstNonEmpty(incident.RuleName, incident.Rule))
+		d := u.oncallDispatcher
+		incID := incident.ID
+		ruleKey := incident.Rule
+		sev := incident.Severity
+		dbx.AfterCommit(ctx, func() {
+			d.OnAlertFired(incID, ruleKey, title, sev, devID, labels, occurredAt)
+		})
 	}
 
 	return &FiringResult{
@@ -1329,6 +1383,13 @@ func (u *Usecase) SystemResolveIncident(ctx context.Context, dedupeKey, reason s
 		Reason:      reasonCopy,
 		OccurredAt:  occurredAt,
 	}, incident.Rule)
+	if u.oncallDispatcher != nil {
+		d := u.oncallDispatcher
+		incID := incident.ID
+		dbx.AfterCommit(ctx, func() {
+			d.OnAlertClosed(incID, model.IncidentStatusResolved)
+		})
+	}
 	return true, nil
 }
 

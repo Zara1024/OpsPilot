@@ -1,14 +1,18 @@
 package oncall
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	bizoncall "github.com/Zara1024/OpsPilot/internal/manager/biz/oncall"
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/oncall/voice"
+	store "github.com/Zara1024/OpsPilot/internal/manager/data/oncall/store"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/oncall"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 )
@@ -82,8 +86,11 @@ func (h *Handler) setMyNotificationRules(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "items": ptrRules})
 }
 
+// @Summary Test personal notification channel connectivity
+// @Router /api/v1/oncall/users/me/notification-rules/test [post]
+// @Success 200 {object} map[string]any
 func (h *Handler) testNotification(w http.ResponseWriter, r *http.Request) {
-	caller, ok := requireAuth(w, r)
+	c, ok := requireAuth(w, r)
 	if !ok {
 		return
 	}
@@ -92,18 +99,258 @@ func (h *Handler) testNotification(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: %v", errs.ErrInvalid, err))
 		return
 	}
-	usersMap, _ := h.store.GetUsersByIDs(r.Context(), []uint64{caller.UserID})
-	phone := "13800000000"
-	if u, ok := usersMap[caller.UserID]; ok && u.Phone != "" {
-		phone = u.Phone
+	if req.Channel == "" {
+		req.Channel = "im_dm"
 	}
-	sim := h.escalationEngine.SimulateVoiceCall(phone, req.Urgency)
+	if req.Urgency == "" {
+		req.Urgency = "high"
+	}
+
+	usersMap, _ := h.store.GetUsersByIDs(r.Context(), []uint64{c.UserID})
+	userSummary := usersMap[c.UserID]
+	if userSummary == nil {
+		userSummary = &store.UserSummary{ID: c.UserID, DisplayName: fmt.Sprintf("user-%d", c.UserID)}
+	}
+	userName := userSummary.DisplayName
+	if userName == "" {
+		userName = userSummary.Email
+	}
+
+	switch req.Channel {
+	case "voice_call":
+		throttled, tErr := h.store.HasRecentVoiceCall(r.Context(), c.UserID, time.Now().Add(-3*time.Minute))
+		if tErr != nil {
+			slog.Warn("check recent voice calls failed", slog.Uint64("user_id", c.UserID), slog.Any("err", tErr))
+		}
+		if throttled {
+			msg := "3 分钟内已发起过语音外呼，触发频控保护，请稍后再试。"
+			h.recordNotificationLog(r.Context(), &model.NotificationLog{
+				UserID:    c.UserID,
+				UserName:  userName,
+				Target:    maskPhoneForLog(userSummary.Phone),
+				Channel:   "voice_call",
+				Provider:  "throttle",
+				Status:    model.NotifyStatusThrottled,
+				Message:   msg,
+				CreatedAt: time.Now(),
+			})
+			writeJSON(w, http.StatusOK, map[string]any{
+				"ok":      false,
+				"channel": req.Channel,
+				"target":  maskPhoneForLog(userSummary.Phone),
+				"status":  model.NotifyStatusThrottled,
+				"message": msg,
+			})
+			return
+		}
+
+		cfg, cfgErr := h.store.GetVoiceConfig(r.Context())
+		if cfgErr != nil || cfg == nil {
+			cfg = store.DefaultVoiceGatewayConfig()
+		}
+		forceMock := c.Role != "admin"
+		phone := userSummary.Phone
+		if phone == "" && (cfg.Provider == "mock" || forceMock) {
+			phone = "13800000000"
+		}
+		callID := fmt.Sprintf("call_rule_%d", time.Now().UnixNano())
+		res, callErr := h.voiceGateway.SendVoiceCall(r.Context(), cfg, &voice.CallRequest{
+			CallID:      callID,
+			PhoneNumber: phone,
+			Urgency:     req.Urgency,
+			Title:       "OpsPilot 个人通知阶梯语音连通性测试",
+			Severity:    "P1",
+			ForceMock:   forceMock,
+		})
+		status := model.NotifyStatusCalling
+		provider := cfg.Provider
+		outCallID := ""
+		dtmf := ""
+		dur := 0
+		msg := ""
+		if res != nil {
+			if res.Status != "" {
+				status = res.Status
+			}
+			if res.Provider != "" {
+				provider = res.Provider
+			}
+			outCallID = res.OutCallID
+			dtmf = res.DTMFCode
+			dur = res.DurationSecs
+			msg = res.Message
+		}
+		if callErr != nil {
+			status = model.NotifyStatusFailed
+			if msg == "" {
+				msg = callErr.Error()
+			}
+		}
+		h.recordNotificationLog(r.Context(), &model.NotificationLog{
+			UserID:       c.UserID,
+			UserName:     userName,
+			Target:       maskPhoneForLog(phone),
+			Channel:      "voice_call",
+			Provider:     provider,
+			CallID:       callID,
+			OutCallID:    outCallID,
+			Status:       status,
+			DTMFCode:     dtmf,
+			DurationSecs: dur,
+			Message:      truncateLogMsg(msg, 500),
+			CreatedAt:    time.Now(),
+		})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":      callErr == nil,
+			"channel": req.Channel,
+			"target":  maskPhoneForLog(phone),
+			"status":  status,
+			"result":  res,
+			"message": msg,
+		})
+
+	case "im_dm", "im_group_at", "webhook":
+		if h.deliverer == nil {
+			msg := "尚未配置 IM / Webhook 告警通知渠道，请先在系统设置中创建并启用通知渠道。"
+			h.recordNotificationLog(r.Context(), &model.NotificationLog{
+				UserID:    c.UserID,
+				UserName:  userName,
+				Target:    userName,
+				Channel:   req.Channel,
+				Provider:  "unconfigured",
+				Status:    model.NotifyStatusFailed,
+				Message:   msg,
+				CreatedAt: time.Now(),
+			})
+			writeJSON(w, http.StatusOK, map[string]any{
+				"ok":      false,
+				"channel": req.Channel,
+				"target":  userName,
+				"status":  model.NotifyStatusFailed,
+				"message": msg,
+			})
+			return
+		}
+		provider, err := h.deliverer.Deliver(
+			r.Context(),
+			req.Channel,
+			userSummary,
+			fmt.Sprintf("[OpsPilot On-Call] 通知通道连通性测试 (%s)", req.Channel),
+			fmt.Sprintf("触发人: %s | 紧急程度: %s", userName, req.Urgency),
+			"warning",
+			map[string]string{"source": "oncall_test", "channel": req.Channel},
+		)
+		status := model.NotifyStatusSent
+		msg := fmt.Sprintf("测试通知已通过 [%s] 发送。", provider)
+		if err != nil {
+			status = model.NotifyStatusFailed
+			msg = err.Error()
+			if provider == "" {
+				provider = "unconfigured"
+			}
+		}
+		h.recordNotificationLog(r.Context(), &model.NotificationLog{
+			UserID:    c.UserID,
+			UserName:  userName,
+			Target:    userName,
+			Channel:   req.Channel,
+			Provider:  provider,
+			Status:    status,
+			Message:   truncateLogMsg(msg, 500),
+			CreatedAt: time.Now(),
+		})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":      err == nil,
+			"channel": req.Channel,
+			"target":  userName,
+			"status":  status,
+			"message": msg,
+		})
+
+	default:
+		msg := fmt.Sprintf("通道 [%s] 尚未接入外部服务商，请优先使用语音网关或 IM/Webhook 渠道。", req.Channel)
+		h.recordNotificationLog(r.Context(), &model.NotificationLog{
+			UserID:    c.UserID,
+			UserName:  userName,
+			Target:    userName,
+			Channel:   req.Channel,
+			Provider:  "unconfigured",
+			Status:    model.NotifyStatusFailed,
+			Message:   msg,
+			CreatedAt: time.Now(),
+		})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":      false,
+			"channel": req.Channel,
+			"target":  userName,
+			"status":  model.NotifyStatusFailed,
+			"message": msg,
+		})
+	}
+}
+
+func (h *Handler) recordNotificationLog(ctx context.Context, entry *model.NotificationLog) {
+	if err := h.store.CreateNotificationLog(ctx, entry); err != nil {
+		slog.Warn("record oncall notification log failed", slog.Uint64("user_id", entry.UserID), slog.Any("err", err))
+	}
+}
+
+// @Summary List On-Call notification and voice delivery logs
+// @Router /api/v1/oncall/notifications/logs [get]
+// @Success 200 {object} map[string]any
+func (h *Handler) listNotificationLogs(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireAuth(w, r); !ok {
+		return
+	}
+	page := 0
+	if pStr := r.URL.Query().Get("page"); pStr != "" {
+		if p, err := strconv.Atoi(pStr); err == nil && p >= 0 {
+			page = p
+		}
+	}
+	pageSize := 20
+	if psStr := r.URL.Query().Get("page_size"); psStr != "" {
+		if ps, err := strconv.Atoi(psStr); err == nil && ps > 0 && ps <= 100 {
+			pageSize = ps
+		}
+	}
+	channel := r.URL.Query().Get("channel")
+	status := r.URL.Query().Get("status")
+	items, total, err := h.store.ListNotificationLogs(r.Context(), channel, status, page*pageSize, pageSize)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":      true,
-		"channel": req.Channel,
-		"target":  phone,
-		"result":  sim,
-		"message": fmt.Sprintf("测试通知已成功推送到渠道 [%s]，模拟拨号已接通并收到 DTMF 按键反馈。", req.Channel),
+		"items":     items,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	})
+}
+
+// @Summary List On-Call escalation state machine tasks
+// @Router /api/v1/oncall/escalations/tasks [get]
+// @Success 200 {object} map[string]any
+func (h *Handler) listEscalationTasks(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireAuth(w, r); !ok {
+		return
+	}
+	status := r.URL.Query().Get("status")
+	limit := 50
+	if lStr := r.URL.Query().Get("limit"); lStr != "" {
+		if l, err := strconv.Atoi(lStr); err == nil && l > 0 && l <= 200 {
+			limit = l
+		}
+	}
+	items, err := h.store.ListEscalationTasks(r.Context(), status, limit)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": items,
+		"total": len(items),
 	})
 }
 
@@ -252,14 +499,17 @@ func (h *Handler) listActiveIncidents(w http.ResponseWriter, r *http.Request) {
 		incidents, _ = h.store.ListAlertIncidents(r.Context(), "all", 20)
 	}
 
-	// Gather acked_by user IDs for display name resolution
+	// Gather acked_by user IDs and incident IDs for display name & live escalation step resolution
 	var userIDs []uint64
+	incidentIDs := make([]uint64, 0, len(incidents))
 	for _, inc := range incidents {
+		incidentIDs = append(incidentIDs, inc.ID)
 		if inc.AcknowledgedBy != nil && *inc.AcknowledgedBy > 0 {
 			userIDs = append(userIDs, *inc.AcknowledgedBy)
 		}
 	}
 	userMap, _ := h.store.GetUsersByIDs(r.Context(), userIDs)
+	activeSteps, _ := h.store.GetActiveEscalationStepsByIncidents(r.Context(), incidentIDs)
 
 	items := make([]bizoncall.IncidentSummary, 0, len(incidents))
 	for _, inc := range incidents {
@@ -331,6 +581,10 @@ func (h *Handler) listActiveIncidents(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		step := uint8(1)
+		if s := activeSteps[inc.ID]; s > 0 {
+			step = s
+		}
 		items = append(items, bizoncall.IncidentSummary{
 			ID:              fmt.Sprintf("INC-%04d", inc.ID),
 			Title:           inc.Title,
@@ -343,7 +597,7 @@ func (h *Handler) listActiveIncidents(w http.ResponseWriter, r *http.Request) {
 			StartedAt:       inc.FirstFiredAt,
 			AckedAt:         inc.AcknowledgedAt,
 			AckedBy:         ackedByName,
-			EscalationStep:  1,
+			EscalationStep:  step,
 		})
 	}
 

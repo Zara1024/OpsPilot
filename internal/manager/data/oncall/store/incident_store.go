@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	alertmodel "github.com/Zara1024/OpsPilot/internal/manager/model/alert"
+	oncallmodel "github.com/Zara1024/OpsPilot/internal/manager/model/oncall"
 )
 
 // AlertAnalyticsData holds aggregated metrics from the real alert_incidents table.
@@ -101,6 +102,15 @@ func (s *Store) AckAlertIncident(ctx context.Context, id uint64, userID uint64, 
 		if err := tx.Create(evt).Error; err != nil {
 			return fmt.Errorf("create ack event: %w", err)
 		}
+		if err := tx.Model(&oncallmodel.EscalationTask{}).
+			Where("incident_id = ? AND status = ?", id, oncallmodel.TaskStatusPending).
+			Updates(map[string]any{
+				"status":       oncallmodel.TaskStatusAcked,
+				"locked_until": nil,
+				"updated_at":   now,
+			}).Error; err != nil {
+			return fmt.Errorf("cancel pending escalation tasks on ack: %w", err)
+		}
 		return nil
 	})
 }
@@ -143,6 +153,15 @@ func (s *Store) SilenceAlertIncident(ctx context.Context, id uint64, userID uint
 		}
 		if err := tx.Create(evt).Error; err != nil {
 			return fmt.Errorf("create silence event: %w", err)
+		}
+		if err := tx.Model(&oncallmodel.EscalationTask{}).
+			Where("incident_id = ? AND status = ?", id, oncallmodel.TaskStatusPending).
+			Updates(map[string]any{
+				"status":       oncallmodel.TaskStatusCancelled,
+				"locked_until": nil,
+				"updated_at":   now,
+			}).Error; err != nil {
+			return fmt.Errorf("cancel pending escalation tasks on silence: %w", err)
 		}
 		return nil
 	})

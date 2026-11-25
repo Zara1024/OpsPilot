@@ -11,13 +11,16 @@ import {
   Send,
   RefreshCw,
   ExternalLink,
+  History,
 } from 'lucide-react';
 import {
   Button,
   Card,
   Chip,
+  EmptyState,
   Input,
   Label,
+  PaginationFooter,
   Select,
   Switch,
 } from '@/components/ui';
@@ -34,10 +37,12 @@ import {
   testNotification,
   listActiveIncidents,
   triggerChatOpsAction,
+  listNotificationLogs,
   type EscalationPolicy,
   type UserNotificationRule,
   type ActiveIncident,
   type OnCallSchedule,
+  type OnCallNotificationLog,
 } from '@/api/oncall';
 
 interface EscalationChatOpsTabProps {
@@ -77,7 +82,15 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
   // Test notification state
   const [testChannel, setTestChannel] = useState<'im_dm' | 'sms' | 'voice_call'>('im_dm');
   const [testingNotification, setTestingNotification] = useState(false);
-  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // Delivery logs state
+  const [logs, setLogs] = useState<OnCallNotificationLog[]>([]);
+  const [logsTotal, setLogsTotal] = useState(0);
+  const [logsPage, setLogsPage] = useState(0);
+  const [logsChannel, setLogsChannel] = useState('all');
+  const [logsLoading, setLogsLoading] = useState(false);
+  const logsPageSize = 10;
 
   const fetchIncidents = useCallback(async (filter = incidentFilter) => {
     setIncidentsLoading(true);
@@ -128,10 +141,27 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
     }
   }, []);
 
+  const fetchLogs = useCallback(async (page = logsPage, channel = logsChannel) => {
+    setLogsLoading(true);
+    try {
+      const res = await listNotificationLogs({ page, page_size: logsPageSize, channel });
+      setLogs(res?.items || []);
+      setLogsTotal(res?.total || 0);
+    } catch (e) {
+      console.error('Failed to load notification logs:', e);
+    } finally {
+      setLogsLoading(false);
+    }
+  }, [logsPage, logsChannel]);
+
   useEffect(() => {
     fetchIncidents();
     fetchPolicies();
   }, [fetchIncidents, fetchPolicies]);
+
+  useEffect(() => {
+    fetchLogs(logsPage, logsChannel);
+  }, [fetchLogs, logsPage, logsChannel]);
 
   useEffect(() => {
     fetchMyRules(urgencyMode);
@@ -233,11 +263,18 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
     setTestResult(null);
     try {
       const res = await testNotification(testChannel, urgencyMode);
-      setTestResult(
-        `${tr('测试发送成功', 'Test notification sent')}: ${res.target || ''} [${res.message || 'OK'}]`
-      );
+      const prefix = res.ok ? tr('测试发送成功', 'Test notification sent') : tr('通道测试未发送', 'Channel test not delivered');
+      setTestResult({
+        ok: res.ok,
+        text: `${prefix}: ${res.target ? `${res.target} ` : ''}[${res.message || res.status || 'OK'}]`,
+      });
+      await fetchLogs(0, logsChannel);
+      setLogsPage(0);
     } catch (e: unknown) {
-      setTestResult(`${tr('测试失败', 'Failed')}: ${e instanceof Error ? e.message : String(e)}`);
+      setTestResult({
+        ok: false,
+        text: `${tr('测试失败', 'Failed')}: ${e instanceof Error ? e.message : String(e)}`,
+      });
     } finally {
       setTestingNotification(false);
     }
@@ -665,13 +702,165 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
               </Button>
 
               {testResult && (
-                <div className="rounded border border-border bg-bg p-2.5 text-xs font-mono text-text break-all">
-                  {testResult}
+                <div
+                  className={`rounded border p-2.5 text-xs font-mono break-all ${
+                    testResult.ok
+                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                      : 'border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400'
+                  }`}
+                >
+                  {testResult.text}
                 </div>
               )}
             </div>
           </Card>
         </div>
+      </section>
+
+      {/* 4. Notification & Voice Delivery Logs */}
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <History size={18} className="text-indigo-500" />
+            <div>
+              <h2 className="text-base font-semibold text-text">
+                {tr('通知与语音外呼投递流水', 'Notification & Voice Delivery Logs')}
+              </h2>
+              <p className="text-xs text-text-muted mt-0.5">
+                {tr(
+                  '审计每起告警派发与测试外呼的触达渠道、服务商回执及频控状态。',
+                  'Audit channel dispatches, voice provider callbacks, and anti-storm throttling records.'
+                )}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Select
+              value={logsChannel}
+              onValueChange={(val) => {
+                setLogsChannel(val);
+                setLogsPage(0);
+              }}
+              options={[
+                { value: 'all', label: tr('全部通道', 'All Channels') },
+                { value: 'voice_call', label: tr('语音外呼', 'Voice Call') },
+                { value: 'im_dm', label: tr('IM 私聊', 'IM Direct') },
+                { value: 'im_group_at', label: tr('IM 群聊提醒', 'IM Group') },
+                { value: 'webhook', label: tr('Webhook 广播', 'Webhook') },
+                { value: 'sms', label: tr('短信', 'SMS') },
+                { value: 'email', label: tr('邮件', 'Email') },
+              ]}
+              className="w-36 text-xs"
+            />
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => fetchLogs(logsPage, logsChannel)}
+              disabled={logsLoading}
+              aria-label={tr('刷新投递流水', 'Refresh delivery logs')}
+              title={tr('刷新投递流水', 'Refresh delivery logs')}
+            >
+              <RefreshCw size={14} className={logsLoading ? 'animate-spin' : ''} />
+            </Button>
+          </div>
+        </div>
+
+        <Card className="!p-0 overflow-hidden">
+          {logs.length === 0 ? (
+            <EmptyState
+              icon={History}
+              title={tr('暂无通知与外呼投递记录', 'No notification delivery logs yet')}
+              hint={tr('告警触发值班升级或发起网关测试后，投递明细将自动记录在此。', 'Records appear here after escalation dispatches or gateway tests.')}
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs text-text">
+                <thead>
+                  <tr className="border-b border-border bg-bg/60 text-text-muted">
+                    <th className="py-2.5 px-3 font-medium whitespace-nowrap">{tr('时间', 'Time')}</th>
+                    <th className="py-2.5 px-3 font-medium whitespace-nowrap">{tr('关联告警', 'Incident')}</th>
+                    <th className="py-2.5 px-3 font-medium whitespace-nowrap">{tr('目标对象', 'Target')}</th>
+                    <th className="py-2.5 px-3 font-medium whitespace-nowrap">{tr('触达通道', 'Channel')}</th>
+                    <th className="py-2.5 px-3 font-medium whitespace-nowrap">{tr('服务商', 'Provider')}</th>
+                    <th className="py-2.5 px-3 font-medium whitespace-nowrap">{tr('状态', 'Status')}</th>
+                    <th className="py-2.5 px-3 font-medium">{tr('结果与回执详情', 'Details')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {logs.map((item) => {
+                    const tone =
+                      item.status === 'failed'
+                        ? 'danger'
+                        : item.status === 'throttled'
+                        ? 'warning'
+                        : item.status === 'calling'
+                        ? 'accent'
+                        : 'success';
+                    const statusLabel =
+                      item.status === 'dtmf_confirmed'
+                        ? tr('按键确认', 'DTMF Acked')
+                        : item.status === 'answered'
+                        ? tr('已接听', 'Answered')
+                        : item.status === 'calling'
+                        ? tr('呼叫中', 'Calling')
+                        : item.status === 'sent'
+                        ? tr('已发送', 'Sent')
+                        : item.status === 'throttled'
+                        ? tr('频控限流', 'Throttled')
+                        : tr('发送失败', 'Failed');
+
+                    return (
+                      <tr key={item.id} className="hover:bg-bg/40 transition-colors">
+                        <td className="py-2.5 px-3 font-mono text-text-muted whitespace-nowrap">
+                          {new Date(item.created_at).toLocaleString()}
+                        </td>
+                        <td className="py-2.5 px-3 font-mono text-text whitespace-nowrap">
+                          {item.incident_id > 0
+                            ? `INC-${String(item.incident_id).padStart(4, '0')}`
+                            : tr('手动测试', 'Manual Test')}
+                        </td>
+                        <td className="py-2.5 px-3 whitespace-nowrap">
+                          <div className="font-medium text-text">{item.user_name || '-'}</div>
+                          {item.target && item.target !== item.user_name && (
+                            <div className="font-mono text-[11px] text-text-muted">{item.target}</div>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 font-mono text-text whitespace-nowrap">{item.channel}</td>
+                        <td className="py-2.5 px-3 uppercase font-mono text-text-muted whitespace-nowrap">
+                          {item.provider || '-'}
+                        </td>
+                        <td className="py-2.5 px-3 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <Chip tone={tone} dense>{statusLabel}</Chip>
+                            {item.is_night && (
+                              <Chip tone="info" dense>{tr('夜间', 'Night')}</Chip>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-3 min-w-[220px] max-w-md">
+                          <div className="text-text break-words">{item.message || '-'}</div>
+                          {item.out_call_id && (
+                            <div className="font-mono text-[11px] text-text-muted mt-0.5">
+                              {tr('回执单号', 'CallId')}: {item.out_call_id}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <PaginationFooter
+            page={logsPage}
+            pageSize={logsPageSize}
+            shown={logs.length}
+            total={logsTotal}
+            loading={logsLoading}
+            onPageChange={setLogsPage}
+          />
+        </Card>
       </section>
 
       {/* Policy Modal */}

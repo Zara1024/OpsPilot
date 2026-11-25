@@ -86,6 +86,9 @@ func (a *AliyunVoiceProvider) SendVoiceCall(ctx context.Context, cfg *VoiceGatew
 	if cfg.AliyunCalledShowNumber != "" {
 		params.Set("CalledShowNumber", cfg.AliyunCalledShowNumber)
 	}
+	if req.CallID != "" {
+		params.Set("OutId", req.CallID)
+	}
 
 	signature := a.sign("POST", params, cfg.AliyunAccessKeySecret)
 	params.Set("Signature", signature)

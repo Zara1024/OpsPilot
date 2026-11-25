@@ -18,7 +18,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func runWorkers(rootCtx context.Context, cfg *config.Config, log *slog.Logger, notifyRouter *notify.Router, storage *storageModule, settings *settingsModule, devices *devicesModule, alerts *alertsModule, telemetry *telemetryModule, aiops *aiopsModule, runtime *runtimeModule, automation *automationModule, http *httpModule, external *externalMCPModule) error {
+func runWorkers(rootCtx context.Context, cfg *config.Config, log *slog.Logger, notifyRouter *notify.Router, storage *storageModule, settings *settingsModule, devices *devicesModule, alerts *alertsModule, telemetry *telemetryModule, aiops *aiopsModule, runtime *runtimeModule, automation *automationModule, http *httpModule, external *externalMCPModule, oncall *oncallModule) error {
 	eg, egCtx := errgroup.WithContext(rootCtx)
 	if external.engine != nil {
 		eg.Go(func() error { return external.engine.Run(egCtx) })
@@ -131,6 +131,10 @@ func runWorkers(rootCtx context.Context, cfg *config.Config, log *slog.Logger, n
 			Log:         log.With(slog.String("comp", "alert-retry")),
 		})
 		eg.Go(func() error { return retryWorker.Loop(egCtx) })
+	}
+
+	if oncall != nil && oncall.worker != nil {
+		eg.Go(func() error { return oncall.worker.Loop(egCtx) })
 	}
 
 	// Optional crons: wire when ready to enable (leave commented for now).
