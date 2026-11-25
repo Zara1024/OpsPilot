@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.1.10 (2026-11-25)
+
+### ⚡ 前端首屏性能与错误隔离优化
+- **退出登录白屏修复与错误边界兜底**：将 `LoginPage` 改为静态导入彻底消除退出登录时的 React Suspense 同步挂起白屏；为路由与布局外框补充 `ErrorBoundary`，单页崩溃不再导致整个控制台白屏；
+- **全局悬浮组件按需拆包**：将右下角 `AgentSidePanel` 与 `CommandPalette`（`Ctrl/⌘+P`）改为 `React.lazy` 懒加载并仅在打开时挂载，前端主入口包由 `626.3 KB` 降至 `310.4 KB`（gzip `102.9 KB`，降幅约 50%）；
+
+### 📅 值班排班（`oncall/`）体验、倒计时修复与无障碍升级
+- **交接倒计时 `NaN:NaN:NaN` 修复**：校验 `handoff_time` 时间戳有效性并在 `09:30` 等时刻格式下优雅回退至 `remaining_seconds`，接入 `usePoll` 仅在「排班大屏」可见时每秒刷新；
+- **子标签页与弹窗懒加载拆分**：按需加载 `oncall/` 下 5 个二级 Tab 与 2 个复杂弹窗，`OnCallPage` 初始包由 `117.4 KB` 降至 `33.3 KB`（gzip `10.4 KB`）；
+- **统一弹窗与规范治理**：将全部 10 处原生 `window.confirm/alert` 迁移至 `useDialogs`、清零全部 40 条 `oncall/` ESLint 警告、清理 60+ 处中英混排文案与硬编码 `zinc-*` 配色、补齐加载失败重试条、窄屏人员卡片换行适配与图标按钮 `aria-label`；
+
+### 🔕 后台轮询节流与品牌一致性
+- **全局告警计数后台暂停**：为 `incidentBadge`（30s）接入 `document.visibilityState` 监听，标签页切至后台时暂停请求，切回前台立即补拉；
+- **外部 MCP 接入指引对齐与测试补全**：将 `ExternalAI` 中 `ongrid` / `Ongrid` 配置与文案统一为 `opspilot` / `OpsPilot`；补齐 `ErrorBoundary`、`OnCallDialogs`、`OnCallPage` 与 `incidentBadge` 单测，全量 93 文件前端回归通过。
+
 ## v1.1.9 (2026-11-25)
 
 ### 🤖 对话上下文窗口管理与压缩历史恢复（对齐上游 v0.22.0 / PR #602）
