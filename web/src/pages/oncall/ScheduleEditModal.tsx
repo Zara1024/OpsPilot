@@ -246,13 +246,17 @@ export function ScheduleEditModal({
         });
       }
 
+      const parsedAdvance = Number(reminderAdvanceHours);
+      const safeAdvanceHours =
+        Number.isFinite(parsedAdvance) && parsedAdvance >= 0 ? Math.min(48, Math.floor(parsedAdvance)) : 3;
+
       if (mode === 'create') {
         const res = await createSchedule({
           name: name.trim(),
           description: description.trim(),
           timezone: timezone.trim() || 'Asia/Shanghai',
           handoff_time: handoffTime.trim() || '09:00:00',
-          reminder_advance_hours: Number(reminderAdvanceHours) || 3,
+          reminder_advance_hours: safeAdvanceHours,
           require_swap_approval: requireSwapApproval,
           enabled,
           rotations,
@@ -264,7 +268,7 @@ export function ScheduleEditModal({
           description: description.trim(),
           timezone: timezone.trim() || 'Asia/Shanghai',
           handoff_time: handoffTime.trim() || '09:00:00',
-          reminder_advance_hours: Number(reminderAdvanceHours) || 3,
+          reminder_advance_hours: safeAdvanceHours,
           require_swap_approval: requireSwapApproval,
           enabled,
           rotations,
@@ -468,14 +472,20 @@ export function ScheduleEditModal({
                 </Label>
                 <Input
                   type="number"
-                  min={1}
+                  min={0}
                   max={48}
                   value={reminderAdvanceHours}
-                  onChange={(e) => setReminderAdvanceHours(Number(e.target.value))}
+                  onChange={(e) => {
+                    const nextVal = Number(e.target.value);
+                    setReminderAdvanceHours(Number.isFinite(nextVal) ? Math.max(0, nextVal) : 0);
+                  }}
                   className="w-full text-xs"
                 />
                 <span className="text-[11px] text-text-muted mt-1 block">
-                  {tr('在接班前多久向接班人发送交接班提醒通知', 'Advance hours before notifying upcoming on-call assignee.')}
+                  {tr(
+                    '在接班前多久向接班人发送交接班提醒通知，填 0 表示关闭自动提醒',
+                    'Advance hours before notifying incoming assignee (0 disables automatic reminders).'
+                  )}
                 </span>
               </div>
             </div>

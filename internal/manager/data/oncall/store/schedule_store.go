@@ -31,7 +31,29 @@ func NewStore(db *gorm.DB) *Store {
 // Schedules
 
 func (s *Store) CreateSchedule(ctx context.Context, sched *model.Schedule) error {
-	return s.db.WithContext(ctx).Create(sched).Error
+	wantZeroReminder := sched.ReminderAdvanceHours == 0
+	wantDisabled := !sched.Enabled
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(sched).Error; err != nil {
+			return err
+		}
+		zeroUpdates := make(map[string]any)
+		if wantZeroReminder {
+			zeroUpdates["reminder_advance_hours"] = 0
+			sched.ReminderAdvanceHours = 0
+		}
+		if wantDisabled {
+			zeroUpdates["enabled"] = false
+			sched.Enabled = false
+		}
+		if len(zeroUpdates) > 0 {
+			if err := tx.Model(sched).Updates(zeroUpdates).Error; err != nil {
+				return fmt.Errorf("apply zero fields on schedule: %w", err)
+			}
+		}
+		return nil
+	})
 }
 
 func (s *Store) GetSchedule(ctx context.Context, id uint64) (*model.Schedule, error) {

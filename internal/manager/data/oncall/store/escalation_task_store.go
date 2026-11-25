@@ -8,26 +8,83 @@ import (
 
 	"gorm.io/gorm"
 
+	alertmodel "github.com/Zara1024/OpsPilot/internal/manager/model/alert"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/oncall"
 )
 
-// EnqueueEscalationTask cancels any previous pending escalation tasks for the incident
+// EnqueueEscalationTask cancels any previous single-alert pending escalation tasks for the incident
 // and creates a fresh active state machine task atomically.
 func (s *Store) EnqueueEscalationTask(ctx context.Context, task *model.EscalationTask) error {
+	_, err := s.EnqueueOrMergeEscalationTask(ctx, task, 0, 0, time.Now())
+	return err
+}
+
+// EnqueueOrMergeEscalationTask creates a new escalation task or merges incidentID into an active pending group task.
+// Returns merged=true when appended to an existing pending group without resetting its dispatch deadline.
+func (s *Store) EnqueueOrMergeEscalationTask(
+	ctx context.Context,
+	task *model.EscalationTask,
+	groupWait time.Duration,
+	groupInterval time.Duration,
+	now time.Time,
+) (bool, error) {
 	if task == nil || task.IncidentID == 0 {
-		return errors.New("invalid escalation task")
+		return false, errors.New("invalid escalation task")
 	}
-	now := time.Now()
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&model.EscalationTask{}).
-			Where("incident_id = ? AND status = ?", task.IncidentID, model.TaskStatusPending).
-			Updates(map[string]any{
-				"status":       model.TaskStatusCancelled,
-				"locked_until": nil,
-				"updated_at":   now,
-			}).Error; err != nil {
-			return fmt.Errorf("cancel prior escalation tasks: %w", err)
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	var merged bool
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if task.GroupKey != "" {
+			var active model.EscalationTask
+			findErr := tx.Where("group_key = ? AND status = ?", task.GroupKey, model.TaskStatusPending).
+				Order("id desc").
+				First(&active).Error
+			if findErr == nil {
+				ids := appendUniqueUint64(model.ParseMergedIncidentIDs(&active), task.IncidentID)
+				res := tx.Model(&model.EscalationTask{}).
+					Where("id = ? AND status = ?", active.ID, model.TaskStatusPending).
+					Updates(map[string]any{
+						"merged_incident_ids_json": model.EncodeMergedIncidentIDs(ids),
+						"alert_count":              len(ids),
+						"updated_at":               now,
+					})
+				if res.Error != nil {
+					return fmt.Errorf("merge incident into active group task %d: %w", active.ID, res.Error)
+				}
+				if res.RowsAffected == 1 {
+					merged = true
+					return nil
+				}
+			} else if !errors.Is(findErr, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("query active grouped task: %w", findErr)
+			}
 		}
+
+		// Cancel any standalone pending tasks owned solely by this incident before inserting a new one.
+		if err := cancelOrShrinkTasksForIncidentTx(tx, task.IncidentID, model.TaskStatusCancelled, now); err != nil {
+			return err
+		}
+
+		nextRun := now
+		if groupWait > 0 {
+			nextRun = now.Add(groupWait)
+		}
+		if task.GroupKey != "" && groupInterval > 0 {
+			var recent model.EscalationTask
+			rErr := tx.Where("group_key = ? AND status = ? AND last_dispatched_at IS NOT NULL", task.GroupKey, model.TaskStatusCompleted).
+				Order("last_dispatched_at desc").
+				First(&recent).Error
+			if rErr == nil && recent.LastDispatchedAt != nil {
+				minNext := recent.LastDispatchedAt.Add(groupInterval)
+				if minNext.After(nextRun) {
+					nextRun = minNext
+				}
+			}
+		}
+
 		if task.Status == "" {
 			task.Status = model.TaskStatusPending
 		}
@@ -37,11 +94,14 @@ func (s *Store) EnqueueEscalationTask(ctx context.Context, task *model.Escalatio
 		if task.LadderStep == 0 {
 			task.LadderStep = 1
 		}
-		if task.StepStartedAt.IsZero() {
-			task.StepStartedAt = now
+		task.MergedIncidentIDsJSON = model.EncodeMergedIncidentIDs([]uint64{task.IncidentID})
+		task.AlertCount = 1
+		task.GroupIntervalSeconds = int(groupInterval.Seconds())
+		if task.StepStartedAt.IsZero() || groupWait > 0 || groupInterval > 0 {
+			task.StepStartedAt = nextRun
 		}
-		if task.NextRunAt.IsZero() {
-			task.NextRunAt = now
+		if task.NextRunAt.IsZero() || groupWait > 0 || groupInterval > 0 {
+			task.NextRunAt = nextRun
 		}
 		if task.CreatedAt.IsZero() {
 			task.CreatedAt = now
@@ -52,9 +112,23 @@ func (s *Store) EnqueueEscalationTask(ctx context.Context, task *model.Escalatio
 		}
 		return nil
 	})
+	return merged, err
 }
 
-// CancelEscalationTasksByIncident terminates all pending escalation tasks for an incident.
+// GetEscalationTaskByID loads an escalation task by primary key.
+func (s *Store) GetEscalationTaskByID(ctx context.Context, id uint64) (*model.EscalationTask, error) {
+	if id == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	var task model.EscalationTask
+	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&task).Error; err != nil {
+		return nil, err
+	}
+	return &task, nil
+}
+
+// CancelEscalationTasksByIncident terminates or shrinks pending escalation tasks covering incidentID.
+// A grouped task only terminates when all of its open incidents have closed.
 func (s *Store) CancelEscalationTasksByIncident(ctx context.Context, incidentID uint64, finalStatus string) error {
 	if incidentID == 0 {
 		return nil
@@ -63,40 +137,106 @@ func (s *Store) CancelEscalationTasksByIncident(ctx context.Context, incidentID 
 		finalStatus = model.TaskStatusCancelled
 	}
 	now := time.Now()
-	if err := s.db.WithContext(ctx).Model(&model.EscalationTask{}).
-		Where("incident_id = ? AND status = ?", incidentID, model.TaskStatusPending).
-		Updates(map[string]any{
-			"status":       finalStatus,
-			"locked_until": nil,
-			"updated_at":   now,
-		}).Error; err != nil {
-		return fmt.Errorf("cancel escalation tasks for incident %d: %w", incidentID, err)
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return cancelOrShrinkTasksForIncidentTx(tx, incidentID, finalStatus, now)
+	})
+}
+
+func cancelOrShrinkTasksForIncidentTx(tx *gorm.DB, incidentID uint64, finalStatus string, now time.Time) error {
+	if incidentID == 0 {
+		return nil
+	}
+	var candidates []*model.EscalationTask
+	if err := tx.Where("status = ? AND (incident_id = ? OR alert_count > 1)", model.TaskStatusPending, incidentID).
+		Find(&candidates).Error; err != nil {
+		return fmt.Errorf("query pending tasks for incident %d: %w", incidentID, err)
+	}
+	for _, task := range candidates {
+		if !model.ContainsIncidentID(task, incidentID) {
+			continue
+		}
+		ids := model.ParseMergedIncidentIDs(task)
+		if len(ids) <= 1 {
+			if err := tx.Model(&model.EscalationTask{}).
+				Where("id = ? AND status = ?", task.ID, model.TaskStatusPending).
+				Updates(map[string]any{
+					"status":       finalStatus,
+					"locked_until": nil,
+					"updated_at":   now,
+				}).Error; err != nil {
+				return fmt.Errorf("cancel escalation task %d: %w", task.ID, err)
+			}
+			continue
+		}
+
+		// Grouped task: keep running while sibling incidents in the batch remain open.
+		var openIncidents []*alertmodel.Incident
+		if err := tx.Where("id IN ? AND status = ?", ids, alertmodel.StatusOpen).
+			Order("id asc").
+			Find(&openIncidents).Error; err != nil {
+			return fmt.Errorf("check sibling open incidents for task %d: %w", task.ID, err)
+		}
+		remaining := make([]uint64, 0, len(openIncidents))
+		for _, inc := range openIncidents {
+			if inc.ID != incidentID {
+				remaining = append(remaining, inc.ID)
+			}
+		}
+		if len(remaining) == 0 {
+			if err := tx.Model(&model.EscalationTask{}).
+				Where("id = ? AND status = ?", task.ID, model.TaskStatusPending).
+				Updates(map[string]any{
+					"status":       finalStatus,
+					"locked_until": nil,
+					"updated_at":   now,
+				}).Error; err != nil {
+				return fmt.Errorf("close grouped task %d: %w", task.ID, err)
+			}
+			continue
+		}
+
+		if err := tx.Model(&model.EscalationTask{}).
+			Where("id = ? AND status = ?", task.ID, model.TaskStatusPending).
+			Updates(map[string]any{
+				"incident_id":              remaining[0],
+				"merged_incident_ids_json": model.EncodeMergedIncidentIDs(remaining),
+				"alert_count":              len(remaining),
+				"updated_at":               now,
+			}).Error; err != nil {
+			return fmt.Errorf("shrink grouped task %d: %w", task.ID, err)
+		}
 	}
 	return nil
 }
 
-// TriggerImmediateEscalationByIncident advances an active task to the next team escalation step immediately.
+// TriggerImmediateEscalationByIncident advances an active task (single or grouped) to the next team step immediately.
 func (s *Store) TriggerImmediateEscalationByIncident(ctx context.Context, incidentID uint64, now time.Time) (bool, error) {
 	if incidentID == 0 {
 		return false, nil
 	}
 	var updated bool
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var task model.EscalationTask
-		qErr := tx.Where("incident_id = ? AND status = ?", incidentID, model.TaskStatusPending).
+		var candidates []*model.EscalationTask
+		if err := tx.Where("status = ? AND (incident_id = ? OR alert_count > 1)", model.TaskStatusPending, incidentID).
 			Order("id desc").
-			First(&task).Error
-		if errors.Is(qErr, gorm.ErrRecordNotFound) {
-			return nil
+			Find(&candidates).Error; err != nil {
+			return fmt.Errorf("find pending escalation tasks: %w", err)
 		}
-		if qErr != nil {
-			return fmt.Errorf("find pending escalation task: %w", qErr)
+		var target *model.EscalationTask
+		for _, c := range candidates {
+			if model.ContainsIncidentID(c, incidentID) {
+				target = c
+				break
+			}
+		}
+		if target == nil {
+			return nil
 		}
 
 		res := tx.Model(&model.EscalationTask{}).
-			Where("id = ? AND status = ?", task.ID, model.TaskStatusPending).
+			Where("id = ? AND status = ?", target.ID, model.TaskStatusPending).
 			Updates(map[string]any{
-				"current_step":    task.CurrentStep + 1,
+				"current_step":    target.CurrentStep + 1,
 				"ladder_step":     uint8(1),
 				"step_started_at": now,
 				"next_run_at":     now,
@@ -179,25 +319,28 @@ func (s *Store) ListEscalationTasks(ctx context.Context, status string, limit in
 	return list, nil
 }
 
-// GetActiveEscalationStepsByIncidents maps incident_id -> current_step for pending escalation tasks.
+// GetActiveEscalationStepsByIncidents maps incident_id -> current_step for pending escalation tasks (including grouped alerts).
 func (s *Store) GetActiveEscalationStepsByIncidents(ctx context.Context, incidentIDs []uint64) (map[uint64]uint8, error) {
 	if len(incidentIDs) == 0 {
 		return map[uint64]uint8{}, nil
 	}
-	type stepRow struct {
-		IncidentID  uint64
-		CurrentStep uint8
-	}
-	var rows []stepRow
-	if err := s.db.WithContext(ctx).Model(&model.EscalationTask{}).
-		Select("incident_id, current_step").
-		Where("incident_id IN ? AND status = ?", incidentIDs, model.TaskStatusPending).
-		Find(&rows).Error; err != nil {
+	var pending []*model.EscalationTask
+	if err := s.db.WithContext(ctx).
+		Where("status = ?", model.TaskStatusPending).
+		Find(&pending).Error; err != nil {
 		return nil, fmt.Errorf("lookup active escalation steps: %w", err)
 	}
-	out := make(map[uint64]uint8, len(rows))
-	for _, r := range rows {
-		out[r.IncidentID] = r.CurrentStep
+	wanted := make(map[uint64]struct{}, len(incidentIDs))
+	for _, id := range incidentIDs {
+		wanted[id] = struct{}{}
+	}
+	out := make(map[uint64]uint8, len(incidentIDs))
+	for _, task := range pending {
+		for _, id := range model.ParseMergedIncidentIDs(task) {
+			if _, ok := wanted[id]; ok {
+				out[id] = task.CurrentStep
+			}
+		}
 	}
 	return out, nil
 }
@@ -206,6 +349,9 @@ func (s *Store) GetActiveEscalationStepsByIncidents(ctx context.Context, inciden
 func (s *Store) CreateNotificationLog(ctx context.Context, entry *model.NotificationLog) error {
 	if entry == nil {
 		return errors.New("notification log is nil")
+	}
+	if entry.AlertCount <= 0 {
+		entry.AlertCount = 1
 	}
 	if entry.CreatedAt.IsZero() {
 		entry.CreatedAt = time.Now()
@@ -319,4 +465,16 @@ func (s *Store) CountNightNotificationsByUser(ctx context.Context, since time.Ti
 		total += c
 	}
 	return byUser, total, nil
+}
+
+func appendUniqueUint64(slice []uint64, val uint64) []uint64 {
+	if val == 0 {
+		return slice
+	}
+	for _, item := range slice {
+		if item == val {
+			return slice
+		}
+	}
+	return append(slice, val)
 }

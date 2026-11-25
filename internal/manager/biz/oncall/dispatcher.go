@@ -2,6 +2,8 @@ package oncall
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -13,15 +15,17 @@ import (
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/oncall"
 )
 
-// MessageDeliverer abstracts non-voice IM/Webhook channel delivery for On-Call escalations and tests.
+// MessageDeliverer abstracts non-voice IM/Webhook channel delivery for On-Call escalations, reminders, and tests.
 type MessageDeliverer interface {
 	Deliver(ctx context.Context, channel string, targetUser *store.UserSummary, subject, body, severity string, labels map[string]string) (provider string, err error)
 }
 
-// Metrics holds low-cardinality Prometheus collectors for On-Call dispatch and escalation outcomes.
+// Metrics holds low-cardinality Prometheus collectors for On-Call dispatch, grouping, failover, and escalation outcomes.
 type Metrics struct {
-	NotificationsTotal *prometheus.CounterVec
-	EscalationsTotal   *prometheus.CounterVec
+	NotificationsTotal  *prometheus.CounterVec
+	EscalationsTotal    *prometheus.CounterVec
+	AlertsMergedTotal   prometheus.Counter
+	VoiceFailoversTotal *prometheus.CounterVec
 }
 
 // NewMetrics constructs On-Call Prometheus metrics and registers them with reg when non-nil.
@@ -40,27 +44,55 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		Help:      "Total On-Call escalation task lifecycle transitions by outcome.",
 	}, []string{"outcome"})
 
+	merged := prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "opspilot",
+		Subsystem: "oncall",
+		Name:      "alerts_merged_total",
+		Help:      "Total firing alerts merged into existing grouped escalation tasks.",
+	})
+
+	failovers := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "opspilot",
+		Subsystem: "oncall",
+		Name:      "voice_failovers_total",
+		Help:      "Total voice gateway failovers from primary to backup provider by outcome.",
+	}, []string{"from_provider", "to_provider", "outcome"})
+
 	if reg != nil {
-		if err := reg.Register(notifications); err != nil {
-			if are, ok := err.(prometheus.AlreadyRegisteredError); ok {
-				if existing, ok := are.ExistingCollector.(*prometheus.CounterVec); ok {
-					notifications = existing
-				}
-			}
-		}
-		if err := reg.Register(escalations); err != nil {
-			if are, ok := err.(prometheus.AlreadyRegisteredError); ok {
-				if existing, ok := are.ExistingCollector.(*prometheus.CounterVec); ok {
-					escalations = existing
-				}
-			}
-		}
+		notifications = registerCounterVec(reg, notifications)
+		escalations = registerCounterVec(reg, escalations)
+		merged = registerCounter(reg, merged)
+		failovers = registerCounterVec(reg, failovers)
 	}
 
 	return &Metrics{
-		NotificationsTotal: notifications,
-		EscalationsTotal:   escalations,
+		NotificationsTotal:  notifications,
+		EscalationsTotal:    escalations,
+		AlertsMergedTotal:   merged,
+		VoiceFailoversTotal: failovers,
 	}
+}
+
+func registerCounterVec(reg prometheus.Registerer, c *prometheus.CounterVec) *prometheus.CounterVec {
+	if err := reg.Register(c); err != nil {
+		if are, ok := err.(prometheus.AlreadyRegisteredError); ok {
+			if existing, ok := are.ExistingCollector.(*prometheus.CounterVec); ok {
+				return existing
+			}
+		}
+	}
+	return c
+}
+
+func registerCounter(reg prometheus.Registerer, c prometheus.Counter) prometheus.Counter {
+	if err := reg.Register(c); err != nil {
+		if are, ok := err.(prometheus.AlreadyRegisteredError); ok {
+			if existing, ok := are.ExistingCollector.(prometheus.Counter); ok {
+				return existing
+			}
+		}
+	}
+	return c
 }
 
 func (m *Metrics) incNotification(channel, provider, status string) {
@@ -86,7 +118,24 @@ func (m *Metrics) incEscalation(outcome string) {
 	m.EscalationsTotal.WithLabelValues(outcome).Inc()
 }
 
-// Dispatcher implements alert.OnCallDispatcher using non-blocking bounded async dispatch.
+func (m *Metrics) incMerged() {
+	if m == nil || m.AlertsMergedTotal == nil {
+		return
+	}
+	m.AlertsMergedTotal.Inc()
+}
+
+func (m *Metrics) incVoiceFailover(fromProvider, toProvider, outcome string) {
+	if m == nil || m.VoiceFailoversTotal == nil || fromProvider == "" || toProvider == "" {
+		return
+	}
+	if outcome == "" {
+		outcome = "unknown"
+	}
+	m.VoiceFailoversTotal.WithLabelValues(fromProvider, toProvider, outcome).Inc()
+}
+
+// Dispatcher implements alert.OnCallDispatcher using non-blocking bounded async dispatch and route-based grouping.
 type Dispatcher struct {
 	store        *store.Store
 	routeMatcher *RouteMatcher
@@ -124,7 +173,7 @@ func (d *Dispatcher) SetClock(fn func() time.Time) {
 	}
 }
 
-// OnAlertFired enqueues an On-Call escalation task asynchronously without blocking alert evaluation.
+// OnAlertFired enqueues or merges an On-Call escalation task asynchronously without blocking alert evaluation.
 func (d *Dispatcher) OnAlertFired(incidentID uint64, ruleKey, title, severity string, deviceID uint64, labels map[string]string, firedAt time.Time) {
 	if d == nil || d.store == nil || incidentID == 0 {
 		return
@@ -151,7 +200,7 @@ func (d *Dispatcher) OnAlertFired(incidentID uint64, ruleKey, title, severity st
 	}
 }
 
-// DispatchFiredSync synchronously evaluates routing and persists an escalation task.
+// DispatchFiredSync synchronously evaluates routing, grouping, and persists or merges an escalation task.
 func (d *Dispatcher) DispatchFiredSync(ctx context.Context, incidentID uint64, ruleKey, title, severity string, deviceID uint64, labels map[string]string, firedAt time.Time) {
 	if d == nil || d.store == nil || incidentID == 0 {
 		return
@@ -200,31 +249,85 @@ func (d *Dispatcher) DispatchFiredSync(ctx context.Context, incidentID uint64, r
 		firedAt = now
 	}
 	urgency := mapSeverityToUrgency(severity)
+	groupKey, waitDur, intervalDur := buildGroupKey(matchRes, ruleKey, urgency, matchLabels)
+
 	task := &model.EscalationTask{
-		IncidentID:    incidentID,
-		RuleKey:       ruleKey,
-		Title:         title,
-		Severity:      severity,
-		Urgency:       urgency,
-		ScheduleID:    matchRes.ScheduleID,
-		RouteID:       routeID,
-		CurrentStep:   1,
-		LadderStep:    1,
-		StepStartedAt: now,
-		Status:        model.TaskStatusPending,
-		NextRunAt:     now,
+		IncidentID:  incidentID,
+		GroupKey:    groupKey,
+		RuleKey:     ruleKey,
+		Title:       title,
+		Severity:    severity,
+		Urgency:     urgency,
+		ScheduleID:  matchRes.ScheduleID,
+		RouteID:     routeID,
+		CurrentStep: 1,
+		LadderStep:  1,
+		Status:      model.TaskStatusPending,
 	}
-	if err := d.store.EnqueueEscalationTask(ctx, task); err != nil {
-		d.log.Warn("oncall enqueue escalation task failed", slog.Uint64("incident_id", incidentID), slog.Any("err", err))
+	merged, err := d.store.EnqueueOrMergeEscalationTask(ctx, task, waitDur, intervalDur, now)
+	if err != nil {
+		d.log.Warn("oncall enqueue or merge escalation task failed", slog.Uint64("incident_id", incidentID), slog.Any("err", err))
+		return
+	}
+	if merged {
+		d.metrics.incMerged()
 		return
 	}
 	d.metrics.incEscalation("enqueued")
-	if d.wake != nil {
+	if waitDur == 0 && d.wake != nil {
 		d.wake()
 	}
 }
 
-// OnAlertClosed cancels active On-Call escalation tasks asynchronously when an incident leaves open status.
+func buildGroupKey(matchRes *MatchResult, ruleKey, urgency string, labels map[string]string) (string, time.Duration, time.Duration) {
+	if matchRes == nil || matchRes.MatchedRoute == nil {
+		return "", 0, 0
+	}
+	route := matchRes.MatchedRoute
+	if route.GroupWaitSeconds <= 0 {
+		return "", 0, 0
+	}
+	waitDur := time.Duration(route.GroupWaitSeconds) * time.Second
+	intervalSecs := route.GroupIntervalSeconds
+	if intervalSecs < 0 {
+		intervalSecs = 0
+	}
+	intervalDur := time.Duration(intervalSecs) * time.Second
+
+	var groupKeys []string
+	if strings.TrimSpace(route.GroupByJSON) != "" {
+		_ = json.Unmarshal([]byte(route.GroupByJSON), &groupKeys)
+	}
+
+	var parts []string
+	parts = append(parts, fmt.Sprintf("r%d:s%d", route.ID, matchRes.ScheduleID))
+	if len(groupKeys) > 0 {
+		for _, k := range groupKeys {
+			k = strings.TrimSpace(k)
+			if k == "" {
+				continue
+			}
+			v := strings.TrimSpace(labels[k])
+			if k == "rule" && v == "" {
+				v = ruleKey
+			}
+			if k == "urgency" && v == "" {
+				v = urgency
+			}
+			parts = append(parts, fmt.Sprintf("%s=%s", k, v))
+		}
+	} else {
+		parts = append(parts, fmt.Sprintf("rule=%s", ruleKey), fmt.Sprintf("urgency=%s", urgency))
+	}
+
+	raw := strings.Join(parts, ":")
+	if len(raw) > 120 {
+		raw = raw[:120]
+	}
+	return raw, waitDur, intervalDur
+}
+
+// OnAlertClosed cancels or shrinks active On-Call escalation tasks asynchronously when an incident leaves open status.
 func (d *Dispatcher) OnAlertClosed(incidentID uint64, status string) {
 	if d == nil || d.store == nil || incidentID == 0 {
 		return
@@ -242,14 +345,13 @@ func (d *Dispatcher) OnAlertClosed(incidentID uint64, status string) {
 			d.DispatchClosedSync(ctx, incidentID, status)
 		}()
 	default:
-		// Best-effort bounded fallback if semaphore is full during burst closes.
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		d.DispatchClosedSync(ctx, incidentID, status)
 	}
 }
 
-// DispatchClosedSync synchronously cancels pending escalation tasks for the incident.
+// DispatchClosedSync synchronously cancels or shrinks pending escalation tasks for the incident.
 func (d *Dispatcher) DispatchClosedSync(ctx context.Context, incidentID uint64, status string) {
 	if d == nil || d.store == nil || incidentID == 0 {
 		return

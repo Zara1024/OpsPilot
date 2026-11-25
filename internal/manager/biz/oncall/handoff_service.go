@@ -2,8 +2,11 @@ package oncall
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
+
+	"gorm.io/gorm"
 
 	"github.com/Zara1024/OpsPilot/internal/manager/data/oncall/store"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/oncall"
@@ -146,7 +149,7 @@ func (s *HandoffService) GetCurrentHandoffStatus(ctx context.Context, scheduleID
 	notes := "白班核心生产集群与网络链路运行平稳；注意今日 14:00 支付核心网关灰度升级；当前暂无未关闭 P0/P1 故障。"
 	var signOffAt *time.Time
 
-	if latest != nil && (latest.ShiftStart.Equal(shiftStart) || (latest.AckAt != nil && latest.AckAt.After(shiftStart))) {
+	if latest != nil && (latest.ShiftStart.Truncate(time.Second).Equal(shiftStart.Truncate(time.Second)) || (latest.AckAt != nil && latest.AckAt.After(shiftStart))) {
 		status = latest.AckStatus
 		if latest.Notes != "" {
 			notes = latest.Notes
@@ -209,22 +212,51 @@ func (s *HandoffService) AckHandoff(ctx context.Context, scheduleID uint64, user
 		return nil, err
 	}
 
-	now := time.Now()
-	logRecord := &model.HandoffLog{
-		ScheduleID:   scheduleID,
-		UserID:       userID,
-		ShiftStart:   status.ShiftStart,
-		ShiftEnd:     status.ShiftEnd,
-		ReminderType: "shift_handoff",
-		Notes:        notes,
-		AckStatus:    "signed_off",
-		AckAt:        &now,
-		ChannelType:  "feishu",
-		Status:       "sent",
-		CreatedAt:    now,
+	now := time.Now().UTC()
+	shiftStart := status.ShiftStart.UTC().Truncate(time.Second)
+	shiftEnd := status.ShiftEnd.UTC().Truncate(time.Second)
+	var prevUserID *uint64
+	if status.OutgoingUserID > 0 && status.OutgoingUserID != userID {
+		uid := status.OutgoingUserID
+		prevUserID = &uid
 	}
 
-	_ = s.store.CreateHandoffLog(ctx, logRecord)
+	existing, findErr := s.store.FindHandoffLogByUniqueKey(ctx, scheduleID, userID, shiftStart, "shift_handoff")
+	if findErr == nil && existing != nil {
+		existing.PreviousUserID = prevUserID
+		existing.ShiftEnd = shiftEnd
+		existing.Notes = notes
+		existing.AckStatus = "signed_off"
+		existing.AckAt = &now
+		existing.ChannelType = "feishu"
+		existing.Status = "sent"
+		existing.ErrorMessage = ""
+		if err := s.store.UpdateHandoffLog(ctx, existing); err != nil {
+			return nil, fmt.Errorf("update shift handoff log: %w", err)
+		}
+		return s.GetCurrentHandoffStatus(ctx, scheduleID)
+	}
+	if findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("lookup shift handoff log: %w", findErr)
+	}
+
+	logRecord := &model.HandoffLog{
+		ScheduleID:     scheduleID,
+		UserID:         userID,
+		PreviousUserID: prevUserID,
+		ShiftStart:     shiftStart,
+		ShiftEnd:       shiftEnd,
+		ReminderType:   "shift_handoff",
+		Notes:          notes,
+		AckStatus:      "signed_off",
+		AckAt:          &now,
+		ChannelType:    "feishu",
+		Status:         "sent",
+		CreatedAt:      now,
+	}
+	if err := s.store.CreateHandoffLog(ctx, logRecord); err != nil {
+		return nil, fmt.Errorf("create shift handoff log: %w", err)
+	}
 	return s.GetCurrentHandoffStatus(ctx, scheduleID)
 }
 

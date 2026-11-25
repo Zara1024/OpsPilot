@@ -19,9 +19,10 @@ import (
 )
 
 type oncallModule struct {
-	handler    *managerserveroncall.Handler
-	dispatcher *managerbizoncall.Dispatcher
-	worker     *managerbizoncall.EscalationWorker
+	handler         *managerserveroncall.Handler
+	dispatcher      *managerbizoncall.Dispatcher
+	worker          *managerbizoncall.EscalationWorker
+	handoffReminder *managerbizoncall.HandoffReminderWorker
 }
 
 func bootstrapOncall(cfg *config.Config, log *slog.Logger, reg *prometheus.Registry, notifyRouter *notify.Router, storage *storageModule, alerts *alertsModule) *oncallModule {
@@ -50,6 +51,13 @@ func bootstrapOncall(cfg *config.Config, log *slog.Logger, reg *prometheus.Regis
 		Metrics:      metrics,
 		Log:          compLog,
 	})
+	handoffReminder := managerbizoncall.NewHandoffReminderWorker(managerbizoncall.HandoffReminderWorkerOpts{
+		Store:     storage.oncallStore,
+		Scheduler: sched,
+		Deliverer: deliverer,
+		Metrics:   metrics,
+		Log:       compLog,
+	})
 
 	rm := managerbizoncall.NewRouteMatcher(storage.oncallStore)
 	dispatcher := managerbizoncall.NewDispatcher(storage.oncallStore, rm, worker.Wake, metrics, compLog)
@@ -63,16 +71,18 @@ func bootstrapOncall(cfg *config.Config, log *slog.Logger, reg *prometheus.Regis
 		publicURL = cfg.PublicURL
 	}
 	handler := managerserveroncall.NewHandlerWithDeps(storage.oncallStore, managerserveroncall.HandlerDeps{
-		PublicURL:    publicURL,
-		VoiceGateway: vg,
-		Deliverer:    deliverer,
-		Worker:       worker,
+		PublicURL:       publicURL,
+		VoiceGateway:    vg,
+		Deliverer:       deliverer,
+		Worker:          worker,
+		HandoffReminder: handoffReminder,
 	})
 
 	return &oncallModule{
-		handler:    handler,
-		dispatcher: dispatcher,
-		worker:     worker,
+		handler:         handler,
+		dispatcher:      dispatcher,
+		worker:          worker,
+		handoffReminder: handoffReminder,
 	}
 }
 

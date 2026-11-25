@@ -4,8 +4,10 @@ import "time"
 
 // VoiceGatewayConfig represents the configuration for voice alerting providers and on-call dispatch.
 type VoiceGatewayConfig struct {
-	Provider        string `json:"provider"` // "mock" | "aliyun" | "tencent"
-	DispatchEnabled bool   `json:"dispatch_enabled"`
+	Provider               string `json:"provider"` // "mock" | "aliyun" | "tencent"
+	FallbackProvider       string `json:"fallback_provider"`
+	FailoverTimeoutSeconds int    `json:"failover_timeout_seconds"`
+	DispatchEnabled        bool   `json:"dispatch_enabled"`
 
 	// Aliyun Dyvmsapi configuration
 	AliyunAccessKeyID      string `json:"aliyun_access_key_id"`
@@ -43,16 +45,27 @@ type CallRequest struct {
 	ForceMock   bool              `json:"force_mock,omitempty"`
 }
 
+// CallAttempt records an individual provider attempt during primary/fallback execution.
+type CallAttempt struct {
+	Provider  string `json:"provider"`
+	Status    string `json:"status"`
+	OutCallID string `json:"out_call_id,omitempty"`
+	Message   string `json:"message"`
+}
+
 // CallResult represents the execution result of a voice call.
 type CallResult struct {
-	CallID       string `json:"call_id"`
-	Provider     string `json:"provider"` // "mock" | "aliyun" | "tencent"
-	Status       string `json:"status"`   // "calling", "answered", "dtmf_confirmed", "throttled", "failed"
-	OutCallID    string `json:"out_call_id,omitempty"`
-	PhoneNumber  string `json:"phone_number"`
-	TTSContent   string `json:"tts_content"`
-	DTMFCode     string `json:"dtmf_code,omitempty"`
-	DurationSecs int    `json:"duration_secs"`
-	Message      string `json:"message"`
-	RawResponse  string `json:"raw_response,omitempty"`
+	CallID       string        `json:"call_id"`
+	Provider     string        `json:"provider"` // "mock" | "aliyun" | "tencent"
+	Status       string        `json:"status"`   // "calling", "answered", "dtmf_confirmed", "throttled", "failed"
+	OutCallID    string        `json:"out_call_id,omitempty"`
+	PhoneNumber  string        `json:"phone_number"`
+	TTSContent   string        `json:"tts_content"`
+	DTMFCode     string        `json:"dtmf_code,omitempty"`
+	DurationSecs int           `json:"duration_secs"`
+	Message      string        `json:"message"`
+	RawResponse  string        `json:"raw_response,omitempty"`
+	FallbackFrom string        `json:"fallback_from,omitempty"`
+	PrimaryError string        `json:"primary_error,omitempty"`
+	Attempts     []CallAttempt `json:"attempts,omitempty"`
 }

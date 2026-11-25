@@ -18,9 +18,11 @@ type CreateRouteRequest struct {
 	Priority             int                      `json:"priority"`
 	ScheduleID           uint64                   `json:"schedule_id"`
 	EscalationPolicyID   uint64                   `json:"escalation_policy_id"`
-	GroupWaitSeconds     int                      `json:"group_wait_seconds"`
-	GroupIntervalSeconds int                      `json:"group_interval_seconds"`
-	Enabled              bool                     `json:"enabled"`
+	GroupBy              []string                 `json:"group_by"`
+	GroupByJSON          string                   `json:"group_by_json"`
+	GroupWaitSeconds     *int                     `json:"group_wait_seconds"`
+	GroupIntervalSeconds *int                     `json:"group_interval_seconds"`
+	Enabled              *bool                    `json:"enabled"`
 }
 
 type TestMatchRouteRequest struct {
@@ -98,11 +100,29 @@ func (h *Handler) createRoute(w http.ResponseWriter, r *http.Request) {
 		mJSON = "[]"
 	}
 
-	if req.GroupWaitSeconds <= 0 {
-		req.GroupWaitSeconds = 30
+	waitSecs := 30
+	if req.GroupWaitSeconds != nil {
+		waitSecs = *req.GroupWaitSeconds
+		if waitSecs < 0 {
+			waitSecs = 0
+		}
 	}
-	if req.GroupIntervalSeconds <= 0 {
-		req.GroupIntervalSeconds = 300
+	intervalSecs := 300
+	if req.GroupIntervalSeconds != nil {
+		intervalSecs = *req.GroupIntervalSeconds
+		if intervalSecs < 0 {
+			intervalSecs = 0
+		}
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	gbJSON := req.GroupByJSON
+	if gbJSON == "" && len(req.GroupBy) > 0 {
+		if b, mErr := json.Marshal(req.GroupBy); mErr == nil {
+			gbJSON = string(b)
+		}
 	}
 
 	route := &model.Route{
@@ -111,9 +131,10 @@ func (h *Handler) createRoute(w http.ResponseWriter, r *http.Request) {
 		Priority:             req.Priority,
 		ScheduleID:           req.ScheduleID,
 		EscalationPolicyID:   req.EscalationPolicyID,
-		GroupWaitSeconds:     req.GroupWaitSeconds,
-		GroupIntervalSeconds: req.GroupIntervalSeconds,
-		Enabled:              req.Enabled,
+		GroupByJSON:          gbJSON,
+		GroupWaitSeconds:     waitSecs,
+		GroupIntervalSeconds: intervalSecs,
+		Enabled:              enabled,
 		CreatedAt:            time.Now(),
 		UpdatedAt:            time.Now(),
 	}
@@ -156,7 +177,9 @@ func (h *Handler) updateRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	existing.EscalationPolicyID = req.EscalationPolicyID
 	existing.Priority = req.Priority
-	existing.Enabled = req.Enabled
+	if req.Enabled != nil {
+		existing.Enabled = *req.Enabled
+	}
 
 	if len(req.Matchers) > 0 {
 		b, _ := json.Marshal(req.Matchers)
@@ -165,11 +188,27 @@ func (h *Handler) updateRoute(w http.ResponseWriter, r *http.Request) {
 		existing.MatcherJSON = req.MatcherJSON
 	}
 
-	if req.GroupWaitSeconds > 0 {
-		existing.GroupWaitSeconds = req.GroupWaitSeconds
+	if len(req.GroupBy) > 0 {
+		if b, mErr := json.Marshal(req.GroupBy); mErr == nil {
+			existing.GroupByJSON = string(b)
+		}
+	} else if req.GroupByJSON != "" {
+		existing.GroupByJSON = req.GroupByJSON
 	}
-	if req.GroupIntervalSeconds > 0 {
-		existing.GroupIntervalSeconds = req.GroupIntervalSeconds
+
+	if req.GroupWaitSeconds != nil {
+		v := *req.GroupWaitSeconds
+		if v < 0 {
+			v = 0
+		}
+		existing.GroupWaitSeconds = v
+	}
+	if req.GroupIntervalSeconds != nil {
+		v := *req.GroupIntervalSeconds
+		if v < 0 {
+			v = 0
+		}
+		existing.GroupIntervalSeconds = v
 	}
 	existing.UpdatedAt = time.Now()
 

@@ -206,6 +206,8 @@ export interface OnCallRoute {
   name: string;
   matcher_json: string;
   matchers?: LabelMatcher[];
+  group_by_json?: string;
+  group_by?: string[];
   priority: number;
   schedule_id: number;
   escalation_policy_id?: number;
@@ -440,14 +442,20 @@ export interface CurrentHandoffStatus {
 export interface HandoffLogItem {
   id: number;
   schedule_id: number;
+  schedule_name?: string;
   user_id: number;
+  user_name?: string;
   previous_user_id?: number;
+  previous_user_name?: string;
   shift_start: string;
   shift_end: string;
   reminder_type: string;
   notes: string;
   ack_status: string;
   ack_at?: string;
+  channel_type?: string;
+  status?: string;
+  error_message?: string;
   created_at: string;
 }
 
@@ -514,6 +522,16 @@ export async function ackHandoff(data: {
   return request('POST', '/oncall/handoff/ack', data);
 }
 
+export async function sendHandoffReminderNow(scheduleId: number): Promise<{
+  ok: boolean;
+  status: string;
+  channel_type: string;
+  error_message?: string;
+  log?: HandoffLogItem;
+}> {
+  return request('POST', '/oncall/handoff/remind-now', { schedule_id: scheduleId });
+}
+
 export async function getBurnoutAnalytics(
   scheduleId?: number,
   timeRange?: string
@@ -538,6 +556,8 @@ export async function getNoisyAlerts(
 
 export interface VoiceGatewayConfig {
   provider: 'mock' | 'aliyun' | 'tencent';
+  fallback_provider?: '' | 'aliyun' | 'tencent';
+  failover_timeout_seconds?: number;
   dispatch_enabled?: boolean;
   aliyun_access_key_id?: string;
   aliyun_access_key_secret?: string;
@@ -569,6 +589,8 @@ export interface VoiceCallRequest {
 export interface VoiceCallResult {
   call_id: string;
   provider: string;
+  fallback_from?: string;
+  primary_error?: string;
   status: 'calling' | 'answered' | 'dtmf_confirmed' | 'throttled' | 'failed';
   out_call_id?: string;
   phone_number: string;
@@ -583,6 +605,7 @@ export interface OnCallNotificationLog {
   id: number;
   task_id: number;
   incident_id: number;
+  alert_count?: number;
   schedule_id: number;
   escalation_step: number;
   user_id: number;
@@ -603,6 +626,9 @@ export interface OnCallNotificationLog {
 export interface OnCallEscalationTask {
   id: number;
   incident_id: number;
+  group_key?: string;
+  merged_incident_ids_json?: string;
+  alert_count?: number;
   rule_key: string;
   title: string;
   severity: string;

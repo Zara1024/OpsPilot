@@ -2,6 +2,9 @@ package store
 
 import (
 	"context"
+	"fmt"
+
+	"gorm.io/gorm"
 
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/oncall"
 )
@@ -27,9 +30,36 @@ func (s *Store) GetRoute(ctx context.Context, id uint64) (*model.Route, error) {
 	return &r, nil
 }
 
-// CreateRoute inserts a new alert route.
+// CreateRoute inserts a new alert route while preserving explicit zero values (such as group_wait_seconds=0 or enabled=false).
 func (s *Store) CreateRoute(ctx context.Context, route *model.Route) error {
-	return s.db.WithContext(ctx).Create(route).Error
+	wantZeroWait := route.GroupWaitSeconds == 0
+	wantZeroInterval := route.GroupIntervalSeconds == 0
+	wantDisabled := !route.Enabled
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(route).Error; err != nil {
+			return fmt.Errorf("create route: %w", err)
+		}
+		zeroUpdates := make(map[string]any)
+		if wantZeroWait {
+			zeroUpdates["group_wait_seconds"] = 0
+			route.GroupWaitSeconds = 0
+		}
+		if wantZeroInterval {
+			zeroUpdates["group_interval_seconds"] = 0
+			route.GroupIntervalSeconds = 0
+		}
+		if wantDisabled {
+			zeroUpdates["enabled"] = false
+			route.Enabled = false
+		}
+		if len(zeroUpdates) > 0 {
+			if err := tx.Model(route).Updates(zeroUpdates).Error; err != nil {
+				return fmt.Errorf("apply zero fields on route: %w", err)
+			}
+		}
+		return nil
+	})
 }
 
 // UpdateRoute updates an existing route rule.

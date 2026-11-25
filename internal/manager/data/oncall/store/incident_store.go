@@ -61,6 +61,18 @@ func (s *Store) GetAlertIncident(ctx context.Context, id uint64) (*alertmodel.In
 	return &inc, nil
 }
 
+// GetAlertIncidentsByIDs loads a batch of incidents keyed by ID.
+func (s *Store) GetAlertIncidentsByIDs(ctx context.Context, ids []uint64) ([]*alertmodel.Incident, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var list []*alertmodel.Incident
+	if err := s.db.WithContext(ctx).Where("id IN ?", ids).Order("id asc").Find(&list).Error; err != nil {
+		return nil, fmt.Errorf("batch load alert incidents: %w", err)
+	}
+	return list, nil
+}
+
 // AckAlertIncident acknowledges an incident and records an audit event in alert_events.
 func (s *Store) AckAlertIncident(ctx context.Context, id uint64, userID uint64, note string) error {
 	now := time.Now()
@@ -102,14 +114,59 @@ func (s *Store) AckAlertIncident(ctx context.Context, id uint64, userID uint64, 
 		if err := tx.Create(evt).Error; err != nil {
 			return fmt.Errorf("create ack event: %w", err)
 		}
-		if err := tx.Model(&oncallmodel.EscalationTask{}).
-			Where("incident_id = ? AND status = ?", id, oncallmodel.TaskStatusPending).
-			Updates(map[string]any{
-				"status":       oncallmodel.TaskStatusAcked,
-				"locked_until": nil,
-				"updated_at":   now,
-			}).Error; err != nil {
-			return fmt.Errorf("cancel pending escalation tasks on ack: %w", err)
+		return cancelOrShrinkTasksForIncidentTx(tx, id, oncallmodel.TaskStatusAcked, now)
+	})
+}
+
+// AckAlertIncidentsBatch acknowledges all still-open incidents in ids and halts associated escalation tasks.
+func (s *Store) AckAlertIncidentsBatch(ctx context.Context, ids []uint64, userID uint64, note string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	now := time.Now()
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var incidents []*alertmodel.Incident
+		if err := tx.Where("id IN ? AND status = ?", ids, alertmodel.StatusOpen).Find(&incidents).Error; err != nil {
+			return fmt.Errorf("query open incidents for batch ack: %w", err)
+		}
+		reason := note
+		if reason == "" {
+			reason = "语音电话按键 1 批量确认接单"
+		}
+		var userPtr *uint64
+		if userID > 0 {
+			userPtr = &userID
+		}
+		for _, inc := range incidents {
+			inc.Status = alertmodel.StatusAcknowledged
+			inc.AcknowledgedAt = &now
+			if userPtr != nil {
+				inc.AcknowledgedBy = userPtr
+			}
+			if err := tx.Save(inc).Error; err != nil {
+				return fmt.Errorf("save batch acked incident %d: %w", inc.ID, err)
+			}
+			evt := &alertmodel.Event{
+				IncidentID:     inc.ID,
+				EventType:      alertmodel.EventTypeAcknowledged,
+				StatusAfter:    alertmodel.StatusAcknowledged,
+				Severity:       inc.Severity,
+				Title:          inc.Title,
+				ActorType:      alertmodel.ActorTypeUser,
+				ActorID:        userPtr,
+				OperatorUserID: userPtr,
+				Reason:         reason,
+				SnapshotJSON:   "{}",
+				OccurredAt:     now,
+			}
+			if err := tx.Create(evt).Error; err != nil {
+				return fmt.Errorf("create batch ack event for %d: %w", inc.ID, err)
+			}
+		}
+		for _, id := range ids {
+			if err := cancelOrShrinkTasksForIncidentTx(tx, id, oncallmodel.TaskStatusAcked, now); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -154,16 +211,7 @@ func (s *Store) SilenceAlertIncident(ctx context.Context, id uint64, userID uint
 		if err := tx.Create(evt).Error; err != nil {
 			return fmt.Errorf("create silence event: %w", err)
 		}
-		if err := tx.Model(&oncallmodel.EscalationTask{}).
-			Where("incident_id = ? AND status = ?", id, oncallmodel.TaskStatusPending).
-			Updates(map[string]any{
-				"status":       oncallmodel.TaskStatusCancelled,
-				"locked_until": nil,
-				"updated_at":   now,
-			}).Error; err != nil {
-			return fmt.Errorf("cancel pending escalation tasks on silence: %w", err)
-		}
-		return nil
+		return cancelOrShrinkTasksForIncidentTx(tx, id, oncallmodel.TaskStatusCancelled, now)
 	})
 }
 

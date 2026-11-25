@@ -22,9 +22,9 @@ type CreateScheduleRequest struct {
 	Description          string          `json:"description"`
 	Timezone             string          `json:"timezone"`
 	HandoffTime          string          `json:"handoff_time"`
-	ReminderAdvanceHours uint32          `json:"reminder_advance_hours"`
+	ReminderAdvanceHours *uint32         `json:"reminder_advance_hours"`
 	RequireSwapApproval  bool            `json:"require_swap_approval"`
-	Enabled              bool            `json:"enabled"`
+	Enabled              *bool           `json:"enabled"`
 	Rotations            []RotationInput `json:"rotations"`
 }
 
@@ -33,9 +33,9 @@ type UpdateScheduleRequest struct {
 	Description          string          `json:"description"`
 	Timezone             string          `json:"timezone"`
 	HandoffTime          string          `json:"handoff_time"`
-	ReminderAdvanceHours uint32          `json:"reminder_advance_hours"`
+	ReminderAdvanceHours *uint32         `json:"reminder_advance_hours"`
 	RequireSwapApproval  bool            `json:"require_swap_approval"`
-	Enabled              bool            `json:"enabled"`
+	Enabled              *bool           `json:"enabled"`
 	Rotations            []RotationInput `json:"rotations"`
 }
 

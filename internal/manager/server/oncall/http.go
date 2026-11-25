@@ -19,10 +19,11 @@ import (
 )
 
 type HandlerDeps struct {
-	PublicURL    string
-	VoiceGateway *voice.VoiceGateway
-	Deliverer    bizoncall.MessageDeliverer
-	Worker       *bizoncall.EscalationWorker
+	PublicURL       string
+	VoiceGateway    *voice.VoiceGateway
+	Deliverer       bizoncall.MessageDeliverer
+	Worker          *bizoncall.EscalationWorker
+	HandoffReminder *bizoncall.HandoffReminderWorker
 }
 
 type Handler struct {
@@ -37,6 +38,7 @@ type Handler struct {
 	voiceGateway     *voice.VoiceGateway
 	deliverer        bizoncall.MessageDeliverer
 	worker           *bizoncall.EscalationWorker
+	handoffReminder  *bizoncall.HandoffReminderWorker
 	publicURL        string
 }
 
@@ -54,6 +56,14 @@ func NewHandlerWithDeps(s *store.Store, deps HandlerDeps) *Handler {
 	if vg == nil {
 		vg = voice.NewVoiceGateway()
 	}
+	hr := deps.HandoffReminder
+	if hr == nil {
+		hr = bizoncall.NewHandoffReminderWorker(bizoncall.HandoffReminderWorkerOpts{
+			Store:     s,
+			Scheduler: sched,
+			Deliverer: deps.Deliverer,
+		})
+	}
 	return &Handler{
 		store:            s,
 		scheduler:        sched,
@@ -66,6 +76,7 @@ func NewHandlerWithDeps(s *store.Store, deps HandlerDeps) *Handler {
 		voiceGateway:     vg,
 		deliverer:        deps.Deliverer,
 		worker:           deps.Worker,
+		handoffReminder:  hr,
 		publicURL:        deps.PublicURL,
 	}
 }
@@ -121,6 +132,7 @@ func (h *Handler) Register(r chi.Router) {
 	r.Get("/v1/oncall/handoff/current", h.getCurrentHandoff)
 	r.Get("/v1/oncall/handoff/logs", h.listHandoffLogs)
 	r.Post("/v1/oncall/handoff/ack", h.ackHandoff)
+	r.Post("/v1/oncall/handoff/remind-now", h.remindHandoffNow)
 	r.Get("/v1/oncall/analytics/burnout", h.getBurnoutAnalytics)
 	r.Get("/v1/oncall/analytics/noisy-alerts", h.getNoisyAlerts)
 
@@ -187,8 +199,13 @@ func (h *Handler) createSchedule(w http.ResponseWriter, r *http.Request) {
 	if req.HandoffTime == "" {
 		req.HandoffTime = "09:00:00"
 	}
-	if req.ReminderAdvanceHours == 0 {
-		req.ReminderAdvanceHours = 3
+	reminderAdvance := uint32(3)
+	if req.ReminderAdvanceHours != nil {
+		reminderAdvance = *req.ReminderAdvanceHours
+	}
+	enabledVal := true
+	if req.Enabled != nil {
+		enabledVal = *req.Enabled
 	}
 
 	sched := &model.Schedule{
@@ -196,9 +213,9 @@ func (h *Handler) createSchedule(w http.ResponseWriter, r *http.Request) {
 		Description:          req.Description,
 		Timezone:             req.Timezone,
 		HandoffTime:          req.HandoffTime,
-		ReminderAdvanceHours: req.ReminderAdvanceHours,
+		ReminderAdvanceHours: reminderAdvance,
 		RequireSwapApproval:  req.RequireSwapApproval,
-		Enabled:              req.Enabled,
+		Enabled:              enabledVal,
 		CreatedBy:            caller.UserID,
 		CreatedAt:            time.Now(),
 		UpdatedAt:            time.Now(),
@@ -281,9 +298,13 @@ func (h *Handler) updateSchedule(w http.ResponseWriter, r *http.Request) {
 	if req.HandoffTime != "" {
 		sched.HandoffTime = req.HandoffTime
 	}
-	sched.ReminderAdvanceHours = req.ReminderAdvanceHours
+	if req.ReminderAdvanceHours != nil {
+		sched.ReminderAdvanceHours = *req.ReminderAdvanceHours
+	}
 	sched.RequireSwapApproval = req.RequireSwapApproval
-	sched.Enabled = req.Enabled
+	if req.Enabled != nil {
+		sched.Enabled = *req.Enabled
+	}
 	sched.UpdatedAt = time.Now()
 
 	if err := h.store.UpdateSchedule(r.Context(), sched); err != nil {

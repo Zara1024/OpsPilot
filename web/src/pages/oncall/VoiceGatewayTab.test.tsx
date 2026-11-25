@@ -135,4 +135,62 @@ describe('VoiceGatewayTab', () => {
     expect(screen.getByRole('button', { name: '保存网关配置' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '发起在线语音外呼测试' })).toBeDisabled();
   });
+
+  it('renders backup provider credentials, saves failover settings, and shows failover banner', async () => {
+    const user = userEvent.setup();
+    vi.mocked(oncallApi.getVoiceConfig).mockResolvedValue({
+      provider: 'aliyun',
+      fallback_provider: 'tencent',
+      failover_timeout_seconds: 12,
+      dispatch_enabled: true,
+      aliyun_access_key_id: 'LTAI5tTestKey',
+      aliyun_secret_configured: true,
+      tencent_secret_id: 'AKIDTest',
+      tencent_secret_configured: false,
+    });
+    vi.mocked(oncallApi.updateVoiceConfig).mockResolvedValue({
+      ok: true,
+      config: {
+        provider: 'aliyun',
+        fallback_provider: 'tencent',
+        failover_timeout_seconds: 12,
+        dispatch_enabled: true,
+        aliyun_access_key_id: 'LTAI5tTestKey',
+        aliyun_secret_configured: true,
+        tencent_secret_id: 'AKIDTest',
+      },
+    });
+    vi.mocked(oncallApi.testVoiceCall).mockResolvedValue({
+      call_id: 'call_failover_1',
+      provider: 'tencent',
+      fallback_from: 'aliyun',
+      primary_error: 'aliyun upstream 500',
+      status: 'calling',
+      out_call_id: 'tx_123',
+      phone_number: '13800000001',
+      tts_content: 'Core DB down',
+      duration_secs: 0,
+      message: '已切换腾讯云呼叫',
+    });
+
+    render(<VoiceGatewayTab />);
+
+    expect(await screen.findByText('备援通道：腾讯云语音参数')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '保存网关配置' }));
+    await waitFor(() => {
+      expect(oncallApi.updateVoiceConfig).toHaveBeenCalledTimes(1);
+    });
+    expect(vi.mocked(oncallApi.updateVoiceConfig).mock.calls[0][0]).toMatchObject({
+      provider: 'aliyun',
+      fallback_provider: 'tencent',
+      failover_timeout_seconds: 12,
+    });
+
+    await user.click(screen.getByRole('button', { name: '发起在线语音外呼测试' }));
+    expect(
+      await screen.findByText('主通道（aliyun）外呼异常，已自动切换至备援通道（tencent）'),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/aliyun upstream 500/)).toBeInTheDocument();
+  });
 });

@@ -40,11 +40,11 @@ func (s *Store) ListHandoffLogs(ctx context.Context, scheduleID uint64, limit in
 	return list, err
 }
 
-// GetLatestHandoff gets the most recent handoff record for a schedule.
+// GetLatestHandoff gets the most recent shift handoff sign-off record for a schedule.
 func (s *Store) GetLatestHandoff(ctx context.Context, scheduleID uint64) (*model.HandoffLog, error) {
 	var l model.HandoffLog
 	err := s.db.WithContext(ctx).
-		Where("schedule_id = ?", scheduleID).
+		Where("schedule_id = ? AND reminder_type = ?", scheduleID, "shift_handoff").
 		Order("shift_start desc, id desc").
 		First(&l).Error
 	if err != nil {

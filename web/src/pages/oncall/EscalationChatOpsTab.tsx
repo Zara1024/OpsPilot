@@ -815,9 +815,16 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
                           {new Date(item.created_at).toLocaleString()}
                         </td>
                         <td className="py-2.5 px-3 font-mono text-text whitespace-nowrap">
-                          {item.incident_id > 0
-                            ? `INC-${String(item.incident_id).padStart(4, '0')}`
-                            : tr('手动测试', 'Manual Test')}
+                          <div>
+                            {item.incident_id > 0
+                              ? `INC-${String(item.incident_id).padStart(4, '0')}`
+                              : tr('手动测试', 'Manual Test')}
+                          </div>
+                          {(item.alert_count ?? 1) > 1 && (
+                            <Chip tone="info" dense className="mt-1">
+                              {tr(`合并 ${item.alert_count} 条`, `Grouped ${item.alert_count}`)}
+                            </Chip>
+                          )}
                         </td>
                         <td className="py-2.5 px-3 whitespace-nowrap">
                           <div className="font-medium text-text">{item.user_name || '-'}</div>

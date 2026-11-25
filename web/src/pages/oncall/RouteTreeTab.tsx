@@ -65,6 +65,8 @@ export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProp
   const [escalationPolicyId, setEscalationPolicyId] = useState<number>(0);
   const [groupWait, setGroupWait] = useState<number>(30);
   const [groupInterval, setGroupInterval] = useState<number>(300);
+  const [groupBy, setGroupBy] = useState<string>('');
+  const [routeEnabled, setRouteEnabled] = useState<boolean>(true);
   const [matchers, setMatchers] = useState<LabelMatcher[]>([
     { name: 'service', operator: '=', value: 'payment' },
   ]);
@@ -94,8 +96,27 @@ export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProp
     setEscalationPolicyId(escalationPolicies[0]?.id || 0);
     setGroupWait(30);
     setGroupInterval(300);
+    setGroupBy('');
+    setRouteEnabled(true);
     setMatchers([{ name: 'severity', operator: '=', value: 'critical' }]);
     setModalOpen(true);
+  };
+
+  const parseRouteGroupBy = (route: OnCallRoute): string[] => {
+    if (Array.isArray(route.group_by) && route.group_by.length > 0) {
+      return route.group_by;
+    }
+    if (route.group_by_json) {
+      try {
+        const parsed = JSON.parse(route.group_by_json);
+        if (Array.isArray(parsed)) {
+          return parsed.map((x) => String(x).trim()).filter(Boolean);
+        }
+      } catch {
+        // ignore invalid json
+      }
+    }
+    return [];
   };
 
   const handleOpenEdit = (route: OnCallRoute) => {
@@ -104,8 +125,10 @@ export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProp
     setPriority(route.priority);
     setTargetScheduleId(route.schedule_id);
     setEscalationPolicyId(route.escalation_policy_id || 0);
-    setGroupWait(route.group_wait_seconds || 30);
-    setGroupInterval(route.group_interval_seconds || 300);
+    setGroupWait(route.group_wait_seconds ?? 30);
+    setGroupInterval(route.group_interval_seconds ?? 300);
+    setGroupBy(parseRouteGroupBy(route).join(', '));
+    setRouteEnabled(route.enabled ?? true);
 
     let parsedMatchers: LabelMatcher[] = [];
     if (route.matchers && route.matchers.length > 0) {
@@ -126,13 +149,22 @@ export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProp
     setSaving(true);
     try {
       const validMatchers = matchers.filter((m) => m.name.trim() !== '');
+      const parsedGroupBy = groupBy
+        .split(/[,，]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const safeWait = Number.isFinite(Number(groupWait)) ? Math.max(0, Number(groupWait)) : 0;
+      const safeInterval = Number.isFinite(Number(groupInterval)) ? Math.max(0, Number(groupInterval)) : 0;
       const payload: Partial<OnCallRoute> & { matchers?: LabelMatcher[] } = {
         name: name.trim(),
         priority: Number(priority),
         schedule_id: Number(targetScheduleId),
         escalation_policy_id: Number(escalationPolicyId) || undefined,
-        group_wait_seconds: Number(groupWait),
-        group_interval_seconds: Number(groupInterval),
+        group_wait_seconds: safeWait,
+        group_interval_seconds: safeInterval,
+        group_by: parsedGroupBy,
+        group_by_json: JSON.stringify(parsedGroupBy),
+        enabled: routeEnabled,
         matchers: validMatchers,
         matcher_json: JSON.stringify(validMatchers),
       };
@@ -397,7 +429,18 @@ export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProp
                     </td>
                     <td className="py-3 px-4 font-semibold text-text">
                       <div>{route.name}</div>
-                      <div className="text-[11px] text-text-faint font-mono">ID: {route.id}</div>
+                      <div className="text-[11px] text-text-faint font-mono">
+                        ID: {route.id} ·{' '}
+                        {(route.group_wait_seconds ?? 30) === 0
+                          ? tr('即时触发', 'Immediate')
+                          : `${tr('防抖', 'Wait')} ${route.group_wait_seconds}s / ${tr('周期', 'Interval')} ${route.group_interval_seconds}s`}
+                      </div>
+                      {parseRouteGroupBy(route).length > 0 && (
+                        <div className="mt-1 text-[11px] font-normal text-text-muted">
+                          {tr('分组维度：', 'Group By: ')}
+                          <span className="font-mono">{parseRouteGroupBy(route).join(', ')}</span>
+                        </div>
+                      )}
                     </td>
                     <td className="py-3 px-4">{renderMatchers(route)}</td>
                     <td className="py-3 px-4 text-text font-medium">
@@ -516,23 +559,50 @@ export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProp
                 className="mt-1 w-full"
               />
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label className="text-xs">{tr('防抖等待 (秒)', 'Wait Sec')}</Label>
-                <Input
-                  type="number"
-                  value={groupWait}
-                  onChange={(e) => setGroupWait(Number(e.target.value))}
-                  className="mt-1 text-xs"
-                />
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs">{tr('防抖等待 (秒)', 'Wait Sec')}</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={groupWait}
+                    onChange={(e) => {
+                      const nextVal = Number(e.target.value);
+                      setGroupWait(Number.isFinite(nextVal) ? Math.max(0, nextVal) : 0);
+                    }}
+                    className="mt-1 text-xs"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">{tr('聚合周期 (秒)', 'Interval Sec')}</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={groupInterval}
+                    onChange={(e) => {
+                      const nextVal = Number(e.target.value);
+                      setGroupInterval(Number.isFinite(nextVal) ? Math.max(0, nextVal) : 0);
+                    }}
+                    className="mt-1 text-xs"
+                  />
+                </div>
               </div>
+              <p className="text-[11px] text-text-muted">
+                {tr(
+                  '等待 0 秒表示立即触发升级，不等待风暴聚合。',
+                  'Wait 0s triggers escalation immediately without waiting for alert grouping.'
+                )}
+              </p>
               <div>
-                <Label className="text-xs">{tr('聚合周期 (秒)', 'Interval Sec')}</Label>
+                <Label className="text-xs">
+                  {tr('聚合分组标签键，多个用逗号分隔', 'Group By Label Keys (comma-separated)')}
+                </Label>
                 <Input
-                  type="number"
-                  value={groupInterval}
-                  onChange={(e) => setGroupInterval(Number(e.target.value))}
-                  className="mt-1 text-xs"
+                  value={groupBy}
+                  onChange={(e) => setGroupBy(e.target.value)}
+                  placeholder={tr('例如 service, cluster（留空默认按规则与紧急度）', 'e.g. service, cluster (blank defaults to rule + urgency)')}
+                  className="mt-1 text-xs font-mono"
                 />
               </div>
             </div>

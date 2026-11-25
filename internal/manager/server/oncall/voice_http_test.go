@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	iammodel "github.com/Zara1024/OpsPilot/internal/iam/model"
+	bizoncall "github.com/Zara1024/OpsPilot/internal/manager/biz/oncall"
 	alertstore "github.com/Zara1024/OpsPilot/internal/manager/data/alert/store"
 	oncallstore "github.com/Zara1024/OpsPilot/internal/manager/data/oncall/store"
 	alertmodel "github.com/Zara1024/OpsPilot/internal/manager/model/alert"
@@ -265,4 +267,175 @@ func TestVoiceCallback_SignedTokenAndDTMFAck(t *testing.T) {
 	if updatedTask.Status != oncallmodel.TaskStatusAcked {
 		t.Fatalf("expected task status acked, got %q", updatedTask.Status)
 	}
+}
+
+type spyHTTPDeliverer struct {
+	sent int
+}
+
+func (s *spyHTTPDeliverer) Deliver(_ context.Context, _ string, _ *oncallstore.UserSummary, _, _, _ string, _ map[string]string) (string, error) {
+	s.sent++
+	return "feishu", nil
+}
+
+func TestVoiceCallback_GroupedTaskBatchAckAndFailoverValidation(t *testing.T) {
+	_, s, db, r := newTestHTTPHandler(t)
+	ctx := context.Background()
+	adminTenant := tenantctx.Tenant{UserID: 1, Email: "admin@opspilot.local", Role: iammodel.RoleAdmin, IsSuperuser: true}
+
+	// 1. Validate fallback_provider rejects self-fallback and accepts alternate cloud + timeout.
+	wBad := httptest.NewRecorder()
+	r.ServeHTTP(wBad, reqWithTenant(http.MethodPut, "/v1/oncall/voice/config",
+		`{"provider":"aliyun","fallback_provider":"aliyun","failover_timeout_seconds":10}`, adminTenant))
+	if wBad.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 when fallback_provider == provider, got %d (%s)", wBad.Code, wBad.Body.String())
+	}
+
+	wGood := httptest.NewRecorder()
+	r.ServeHTTP(wGood, reqWithTenant(http.MethodPut, "/v1/oncall/voice/config",
+		`{"provider":"aliyun","fallback_provider":"tencent","failover_timeout_seconds":12,"aliyun_access_key_id":"k1","aliyun_access_key_secret":"s1","aliyun_tts_code":"t1","tencent_secret_id":"tk1","tencent_secret_key":"ts1","tencent_sdk_app_id":"1400","tencent_template_id":"888"}`, adminTenant))
+	if wGood.Code != http.StatusOK {
+		t.Fatalf("expected 200 saving dual-cloud config, got %d (%s)", wGood.Code, wGood.Body.String())
+	}
+
+	// 2. DTMF 1 callback on grouped task batch-acks ALL open incidents in merged_incident_ids_json.
+	tok, err := s.EnsureVoiceWebhookToken(ctx)
+	if err != nil {
+		t.Fatalf("EnsureVoiceWebhookToken: %v", err)
+	}
+	now := time.Now().UTC()
+	for _, id := range []uint64{201, 202, 203} {
+		if err := db.Create(&alertmodel.Incident{
+			ID:           id,
+			Scope:        "host",
+			ScopeType:    "host",
+			Rule:         "mem_high",
+			RuleName:     "Memory High",
+			Severity:     "critical",
+			Title:        "Memory > 95%",
+			Status:       alertmodel.StatusOpen,
+			DedupeKey:    "grp-" + string(rune('a'+int(id%10))),
+			FirstFiredAt: now,
+			LastFiredAt:  now,
+		}).Error; err != nil {
+			t.Fatalf("seed incident %d: %v", id, err)
+		}
+	}
+
+	groupedTask := &oncallmodel.EscalationTask{
+		IncidentID:            201,
+		GroupKey:              "r1:s1:rule=mem_high:urgency=high",
+		MergedIncidentIDsJSON: "[201,202,203]",
+		AlertCount:            3,
+		Title:                 "[合并 3 条] Memory > 95%",
+		Severity:              "critical",
+		Urgency:               "high",
+		ScheduleID:            1,
+		CurrentStep:           1,
+		LadderStep:            1,
+		StepStartedAt:         now,
+		Status:                oncallmodel.TaskStatusPending,
+		NextRunAt:             now.Add(5 * time.Minute),
+		CreatedAt:             now,
+		UpdatedAt:             now,
+	}
+	if err := db.Create(groupedTask).Error; err != nil {
+		t.Fatalf("seed grouped task: %v", err)
+	}
+	if err := s.CreateNotificationLog(ctx, &oncallmodel.NotificationLog{
+		TaskID:     groupedTask.ID,
+		IncidentID: 201,
+		AlertCount: 3,
+		UserID:     2,
+		UserName:   "Alice",
+		Channel:    "voice_call",
+		Provider:   "aliyun",
+		CallID:     "call_grp_1",
+		OutCallID:  "out_grp_1",
+		Status:     oncallmodel.NotifyStatusCalling,
+		CreatedAt:  now,
+	}); err != nil {
+		t.Fatalf("CreateNotificationLog: %v", err)
+	}
+
+	cbReq := httptest.NewRequest(http.MethodPost, "/v1/oncall/voice/callback/aliyun?token="+url.QueryEscape(tok),
+		bytes.NewBufferString(`{"call_id":"out_grp_1","out_id":"call_grp_1","dtmf":"1","duration":12}`))
+	cbReq.Header.Set("Content-Type", "application/json")
+	cbW := httptest.NewRecorder()
+	r.ServeHTTP(cbW, cbReq)
+	if cbW.Code != http.StatusOK {
+		t.Fatalf("expected 200 on grouped DTMF 1 callback, got %d", cbW.Code)
+	}
+
+	for _, id := range []uint64{201, 202, 203} {
+		var inc alertmodel.Incident
+		if err := db.First(&inc, id).Error; err != nil {
+			t.Fatalf("reload incident %d: %v", id, err)
+		}
+		if inc.Status != alertmodel.StatusAcknowledged {
+			t.Fatalf("expected grouped incident %d acknowledged after DTMF 1, got %q", id, inc.Status)
+		}
+	}
+}
+
+func TestHandoffHTTP_RemindNowLogsHydrationAndZeroAdvanceHours(t *testing.T) {
+	_, s, _, _ := newTestHTTPHandler(t)
+	del := &spyHTTPDeliverer{}
+	h := NewHandlerWithDeps(s, HandlerDeps{
+		PublicURL: "https://opspilot.test",
+		Deliverer: del,
+	})
+	r := chi.NewRouter()
+	h.Register(r)
+
+	adminTenant := tenantctx.Tenant{UserID: 1, Email: "admin@opspilot.local", Role: iammodel.RoleAdmin, IsSuperuser: true}
+
+	// 1. POST /v1/oncall/schedules with reminder_advance_hours: 0 must persist 0 instead of 3.
+	createSchedBody := `{
+		"name":"Zero Reminder Schedule",
+		"timezone":"Asia/Shanghai",
+		"handoff_time":"09:00:00",
+		"reminder_advance_hours":0,
+		"enabled":true,
+		"rotations":[{"name":"Primary","tier":1,"rotation_type":"daily","shift_length_seconds":86400,"users":[1,2]}]
+	}`
+	wSched := httptest.NewRecorder()
+	r.ServeHTTP(wSched, reqWithTenant(http.MethodPost, "/v1/oncall/schedules", createSchedBody, adminTenant))
+	if wSched.Code != http.StatusCreated {
+		t.Fatalf("expected 201 creating schedule, got %d (%s)", wSched.Code, wSched.Body.String())
+	}
+	var createdSched oncallmodel.Schedule
+	if err := json.Unmarshal(wSched.Body.Bytes(), &createdSched); err != nil {
+		t.Fatalf("decode schedule: %v", err)
+	}
+	if createdSched.ReminderAdvanceHours != 0 {
+		t.Fatalf("expected reminder_advance_hours=0 persisted, got %d", createdSched.ReminderAdvanceHours)
+	}
+
+	// 2. POST /v1/oncall/handoff/remind-now sends manual reminder and GET /v1/oncall/handoff/logs hydrates user names.
+	wRem := httptest.NewRecorder()
+	r.ServeHTTP(wRem, reqWithTenant(http.MethodPost, "/v1/oncall/handoff/remind-now", `{"schedule_id":`+strconv.FormatUint(createdSched.ID, 10)+`}`, adminTenant))
+	if wRem.Code != http.StatusOK {
+		t.Fatalf("expected 200 on remind-now, got %d (%s)", wRem.Code, wRem.Body.String())
+	}
+	if del.sent != 1 {
+		t.Fatalf("expected deliverer invoked once, got %d", del.sent)
+	}
+
+	wLogs := httptest.NewRecorder()
+	r.ServeHTTP(wLogs, reqWithTenant(http.MethodGet, "/v1/oncall/handoff/logs", "", adminTenant))
+	if wLogs.Code != http.StatusOK {
+		t.Fatalf("expected 200 on list handoff logs, got %d (%s)", wLogs.Code, wLogs.Body.String())
+	}
+	var logsResp struct {
+		Items []HandoffLogResponse `json:"items"`
+		Total int                  `json:"total"`
+	}
+	if err := json.Unmarshal(wLogs.Body.Bytes(), &logsResp); err != nil {
+		t.Fatalf("decode handoff logs: %v", err)
+	}
+	if logsResp.Total != 1 || logsResp.Items[0].UserName == "" || logsResp.Items[0].ScheduleName != "Zero Reminder Schedule" {
+		t.Fatalf("expected hydrated handoff log with names, got %+v", logsResp)
+	}
+	_ = bizoncall.NewScheduler
 }

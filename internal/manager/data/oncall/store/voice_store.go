@@ -19,10 +19,12 @@ import (
 // DefaultVoiceGatewayConfig returns the safe baseline voice gateway configuration.
 func DefaultVoiceGatewayConfig() *voice.VoiceGatewayConfig {
 	return &voice.VoiceGatewayConfig{
-		Provider:        "mock",
-		DispatchEnabled: true,
-		AliyunRegion:    "cn-hangzhou",
-		TencentRegion:   "ap-guangzhou",
+		Provider:               "mock",
+		FallbackProvider:       "",
+		FailoverTimeoutSeconds: 8,
+		DispatchEnabled:        true,
+		AliyunRegion:           "cn-hangzhou",
+		TencentRegion:          "ap-guangzhou",
 	}
 }
 
@@ -80,6 +82,7 @@ func (s *Store) GetVoiceConfig(ctx context.Context) (*voice.VoiceGatewayConfig, 
 	}
 
 	cfg.DispatchEnabled = rec.DispatchEnabled
+	cfg.FailoverTimeoutSeconds = voice.NormalizeFailoverTimeoutSeconds(cfg.FailoverTimeoutSeconds)
 	cfg.UpdatedBy = rec.UpdatedBy
 	cfg.UpdatedAt = rec.UpdatedAt
 	cfg.AliyunSecretConfigured = cfg.AliyunAccessKeySecret != ""

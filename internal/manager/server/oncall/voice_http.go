@@ -90,6 +90,14 @@ func (h *Handler) updateVoiceConfig(w http.ResponseWriter, r *http.Request) {
 	if cfg.Provider == "" {
 		cfg.Provider = "mock"
 	}
+	cfg.FallbackProvider = strings.TrimSpace(cfg.FallbackProvider)
+	if cfg.FallbackProvider != "" {
+		if cfg.FallbackProvider == cfg.Provider || (cfg.FallbackProvider != "aliyun" && cfg.FallbackProvider != "tencent") {
+			writeErr(w, fmt.Errorf("%w: fallback_provider must be empty or a different cloud provider (aliyun/tencent)", errs.ErrInvalid))
+			return
+		}
+	}
+	cfg.FailoverTimeoutSeconds = voice.NormalizeFailoverTimeoutSeconds(cfg.FailoverTimeoutSeconds)
 	if cfg.AliyunRegion == "" {
 		cfg.AliyunRegion = "cn-hangzhou"
 	}
@@ -166,6 +174,23 @@ func (h *Handler) testVoiceCall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, callErr := h.voiceGateway.SendVoiceCall(r.Context(), cfg, &req)
+	now := time.Now()
+	if result != nil && result.FallbackFrom != "" {
+		if err := h.store.CreateNotificationLog(r.Context(), &model.NotificationLog{
+			UserID:     c.UserID,
+			UserName:   callerName,
+			Target:     maskPhoneForLog(req.PhoneNumber),
+			Channel:    "voice_call",
+			Provider:   result.FallbackFrom,
+			CallID:     req.CallID,
+			Status:     model.NotifyStatusFailed,
+			Message:    truncateLogMsg(fmt.Sprintf("[容灾切换至 %s] %s", result.Provider, result.PrimaryError), 500),
+			CreatedAt:  now,
+		}); err != nil {
+			slog.Warn("record primary failover voice log failed", slog.Uint64("user_id", c.UserID), slog.Any("err", err))
+		}
+	}
+
 	logStatus := model.NotifyStatusCalling
 	logProvider := effectiveProvider
 	outCallID := ""
@@ -203,7 +228,7 @@ func (h *Handler) testVoiceCall(w http.ResponseWriter, r *http.Request) {
 		DTMFCode:     dtmf,
 		DurationSecs: dur,
 		Message:      truncateLogMsg(msg, 500),
-		CreatedAt:    time.Now(),
+		CreatedAt:    now,
 	}); err != nil {
 		slog.Warn("record voice test notification log failed", slog.Uint64("user_id", c.UserID), slog.Any("err", err))
 	}
@@ -322,6 +347,16 @@ func (h *Handler) applyVoiceCallbackEvent(r *http.Request, ev parsedVoiceCallbac
 		entry.Message = "语音电话按键 '1' 已确认认领接单"
 		if err := h.store.UpdateNotificationLog(r.Context(), entry); err != nil {
 			slog.Warn("update voice callback log failed", slog.Uint64("log_id", entry.ID), slog.Any("err", err))
+		}
+		if entry.TaskID > 0 {
+			if task, taskErr := h.store.GetEscalationTaskByID(r.Context(), entry.TaskID); taskErr == nil && task != nil {
+				if batchIDs := model.ParseMergedIncidentIDs(task); len(batchIDs) > 0 {
+					if err := h.store.AckAlertIncidentsBatch(r.Context(), batchIDs, entry.UserID, "语音电话按键 1 确认接单"); err != nil {
+						slog.Warn("batch ack grouped incidents from voice callback failed", slog.Uint64("task_id", entry.TaskID), slog.Any("err", err))
+					}
+					return
+				}
+			}
 		}
 		if entry.IncidentID > 0 {
 			if err := h.store.AckAlertIncident(r.Context(), entry.IncidentID, entry.UserID, "语音电话按键 1 确认接单"); err != nil {

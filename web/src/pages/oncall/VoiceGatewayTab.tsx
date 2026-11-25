@@ -35,6 +35,8 @@ export function VoiceGatewayTab() {
 
   const [config, setConfig] = useState<VoiceGatewayConfig>({
     provider: 'mock',
+    fallback_provider: '',
+    failover_timeout_seconds: 8,
     dispatch_enabled: true,
     aliyun_access_key_id: '',
     aliyun_access_key_secret: '',
@@ -74,6 +76,8 @@ export function VoiceGatewayTab() {
         setConfig((prev) => ({
           ...prev,
           ...res,
+          fallback_provider: res.fallback_provider ?? '',
+          failover_timeout_seconds: res.failover_timeout_seconds ?? 8,
           dispatch_enabled: res.dispatch_enabled ?? true,
           aliyun_access_key_secret: '',
           tencent_secret_key: '',
@@ -95,11 +99,18 @@ export function VoiceGatewayTab() {
     setSaving(true);
     setSaveSuccess(false);
     try {
-      const res = await updateVoiceConfig(config);
+      const payload: VoiceGatewayConfig = {
+        ...config,
+        fallback_provider: config.provider === 'mock' ? '' : (config.fallback_provider || ''),
+        failover_timeout_seconds: Math.min(30, Math.max(3, Number(config.failover_timeout_seconds) || 8)),
+      };
+      const res = await updateVoiceConfig(payload);
       if (res?.config) {
         setConfig((prev) => ({
           ...prev,
           ...res.config,
+          fallback_provider: res.config.fallback_provider ?? '',
+          failover_timeout_seconds: res.config.failover_timeout_seconds ?? 8,
           aliyun_access_key_secret: '',
           tencent_secret_key: '',
         }));
@@ -113,6 +124,170 @@ export function VoiceGatewayTab() {
       setSaving(false);
     }
   };
+
+  const renderAliyunFields = (sectionTitle: string) => (
+    <div className="space-y-3 pt-2 border-t border-border">
+      <span className="font-semibold text-text block">{sectionTitle}</span>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <Label className="text-xs">AccessKey ID</Label>
+          <Input
+            value={config.aliyun_access_key_id || ''}
+            onChange={(e) => setConfig({ ...config, aliyun_access_key_id: e.target.value })}
+            placeholder="LTAI5t..."
+            disabled={!isAdmin}
+            className="mt-1 text-xs font-mono"
+          />
+        </div>
+        <div>
+          <div className="flex items-center justify-between gap-2">
+            <Label className="text-xs">AccessKey Secret</Label>
+            {config.aliyun_secret_configured && (
+              <Chip tone="success" dense>{tr('已加密存储', 'Encrypted')}</Chip>
+            )}
+          </div>
+          <Input
+            type="password"
+            value={config.aliyun_access_key_secret || ''}
+            onChange={(e) => setConfig({ ...config, aliyun_access_key_secret: e.target.value })}
+            placeholder={
+              config.aliyun_secret_configured
+                ? tr('已配置密钥，留空保持不变', 'Configured, leave blank to keep')
+                : '••••••••••••'
+            }
+            disabled={!isAdmin}
+            className="mt-1 text-xs font-mono"
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div>
+          <Label className="text-xs">{tr('主叫显号', 'Called Show Number')}</Label>
+          <Input
+            value={config.aliyun_called_show_number || ''}
+            onChange={(e) => setConfig({ ...config, aliyun_called_show_number: e.target.value })}
+            placeholder="057188888888"
+            disabled={!isAdmin}
+            className="mt-1 text-xs font-mono"
+          />
+        </div>
+        <div>
+          <Label className="text-xs">{tr('TTS 语音模版 Code', 'TTS Template Code')}</Label>
+          <Input
+            value={config.aliyun_tts_code || ''}
+            onChange={(e) => setConfig({ ...config, aliyun_tts_code: e.target.value })}
+            placeholder="TTS_12345678"
+            disabled={!isAdmin}
+            className="mt-1 text-xs font-mono"
+          />
+        </div>
+        <div>
+          <Label className="text-xs">{tr('服务地域', 'Region')}</Label>
+          <Input
+            value={config.aliyun_region || ''}
+            onChange={(e) => setConfig({ ...config, aliyun_region: e.target.value })}
+            placeholder="cn-hangzhou"
+            disabled={!isAdmin}
+            className="mt-1 text-xs font-mono"
+          />
+        </div>
+      </div>
+      <p className="text-xs text-text-muted">
+        {tr(
+          '阿里云 TTS 模板变量默认传入 JSON 字段 urgency 与 title，回调支持按 1 认领、按 2 升级。',
+          'Aliyun TTS parameters default to urgency and title; DTMF 1 acknowledges and DTMF 2 escalates.'
+        )}
+      </p>
+    </div>
+  );
+
+  const renderTencentFields = (sectionTitle: string) => (
+    <div className="space-y-3 pt-2 border-t border-border">
+      <span className="font-semibold text-text block">{sectionTitle}</span>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <Label className="text-xs">SecretId</Label>
+          <Input
+            value={config.tencent_secret_id || ''}
+            onChange={(e) => setConfig({ ...config, tencent_secret_id: e.target.value })}
+            placeholder="AKID..."
+            disabled={!isAdmin}
+            className="mt-1 text-xs font-mono"
+          />
+        </div>
+        <div>
+          <div className="flex items-center justify-between gap-2">
+            <Label className="text-xs">SecretKey</Label>
+            {config.tencent_secret_configured && (
+              <Chip tone="success" dense>{tr('已加密存储', 'Encrypted')}</Chip>
+            )}
+          </div>
+          <Input
+            type="password"
+            value={config.tencent_secret_key || ''}
+            onChange={(e) => setConfig({ ...config, tencent_secret_key: e.target.value })}
+            placeholder={
+              config.tencent_secret_configured
+                ? tr('已配置密钥，留空保持不变', 'Configured, leave blank to keep')
+                : '••••••••••••'
+            }
+            disabled={!isAdmin}
+            className="mt-1 text-xs font-mono"
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <Label className="text-xs">SdkAppId</Label>
+          <Input
+            value={config.tencent_sdk_app_id || ''}
+            onChange={(e) => setConfig({ ...config, tencent_sdk_app_id: e.target.value })}
+            placeholder="1400000000"
+            disabled={!isAdmin}
+            className="mt-1 text-xs font-mono"
+          />
+        </div>
+        <div>
+          <Label className="text-xs">{tr('模板 ID', 'Template ID')}</Label>
+          <Input
+            value={config.tencent_template_id || ''}
+            onChange={(e) => setConfig({ ...config, tencent_template_id: e.target.value })}
+            placeholder="123456"
+            disabled={!isAdmin}
+            className="mt-1 text-xs font-mono"
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <Label className="text-xs">{tr('主叫显号', 'Called Show Number')}</Label>
+          <Input
+            value={config.tencent_called_show_number || ''}
+            onChange={(e) => setConfig({ ...config, tencent_called_show_number: e.target.value })}
+            placeholder="+861088888888"
+            disabled={!isAdmin}
+            className="mt-1 text-xs font-mono"
+          />
+        </div>
+        <div>
+          <Label className="text-xs">{tr('服务地域', 'Region')}</Label>
+          <Input
+            value={config.tencent_region || ''}
+            onChange={(e) => setConfig({ ...config, tencent_region: e.target.value })}
+            placeholder="ap-guangzhou"
+            disabled={!isAdmin}
+            className="mt-1 text-xs font-mono"
+          />
+        </div>
+      </div>
+      <p className="text-xs text-text-muted">
+        {tr(
+          '腾讯云模板参数按顺序传入 {1}=紧急度、{2}=告警标题，回调支持按 1 认领、按 2 升级。',
+          'Tencent template params map {1}=urgency and {2}=title; DTMF 1 acknowledges and DTMF 2 escalates.'
+        )}
+      </p>
+    </div>
+  );
 
   const handleTestCall = async () => {
     if (!isAdmin) return;
@@ -260,7 +435,14 @@ export function VoiceGatewayTab() {
               <Label className="text-xs">{tr('选择默认语音服务商', 'Active Provider')}</Label>
               <Select
                 value={config.provider}
-                onValueChange={(val) => setConfig({ ...config, provider: val as VoiceGatewayConfig['provider'] })}
+                onValueChange={(val) => {
+                  const nextProvider = val as VoiceGatewayConfig['provider'];
+                  const nextFallback =
+                    nextProvider === 'mock' || nextProvider === config.fallback_provider
+                      ? ''
+                      : config.fallback_provider || '';
+                  setConfig({ ...config, provider: nextProvider, fallback_provider: nextFallback });
+                }}
                 disabled={!isAdmin}
                 options={[
                   { value: 'mock', label: tr('本地仿真网关', 'Mock Gateway') },
@@ -271,6 +453,49 @@ export function VoiceGatewayTab() {
               />
             </div>
 
+            {config.provider !== 'mock' && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-lg border border-border bg-bg/40 p-3">
+                <div className="sm:col-span-2">
+                  <Label className="text-xs">{tr('备援语音服务商', 'Backup Provider')}</Label>
+                  <Select
+                    value={config.fallback_provider || 'none'}
+                    onValueChange={(val) =>
+                      setConfig({
+                        ...config,
+                        fallback_provider: val === 'none' ? '' : (val as 'aliyun' | 'tencent'),
+                      })
+                    }
+                    disabled={!isAdmin}
+                    options={[
+                      { value: 'none', label: tr('无备援（单通道）', 'None (Single Provider)') },
+                      config.provider === 'aliyun'
+                        ? { value: 'tencent', label: tr('腾讯云语音消息外呼', 'Tencent Voice') }
+                        : { value: 'aliyun', label: tr('阿里云智能语音服务', 'Aliyun Voice') },
+                    ]}
+                    className="mt-1 w-full text-xs"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">{tr('主通道超时阈值 (秒)', 'Failover Timeout (s)')}</Label>
+                  <Input
+                    type="number"
+                    min={3}
+                    max={30}
+                    value={config.failover_timeout_seconds ?? 8}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setConfig({
+                        ...config,
+                        failover_timeout_seconds: Number.isFinite(v) ? v : 8,
+                      });
+                    }}
+                    disabled={!isAdmin}
+                    className="mt-1 text-xs font-mono"
+                  />
+                </div>
+              </div>
+            )}
+
             {config.provider === 'mock' && (
               <div className="rounded-lg border border-indigo-500/30 bg-indigo-50/20 dark:bg-indigo-950/20 p-3 text-xs text-indigo-700 dark:text-indigo-300">
                 {tr(
@@ -280,173 +505,14 @@ export function VoiceGatewayTab() {
               </div>
             )}
 
-            {config.provider === 'aliyun' && (
-              <div className="space-y-3 pt-2 border-t border-border">
-                <span className="font-semibold text-text block">
-                  {tr('阿里云语音参数', 'Aliyun Settings')}
-                </span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <Label className="text-xs">AccessKey ID</Label>
-                    <Input
-                      value={config.aliyun_access_key_id || ''}
-                      onChange={(e) => setConfig({ ...config, aliyun_access_key_id: e.target.value })}
-                      placeholder="LTAI5t..."
-                      disabled={!isAdmin}
-                      className="mt-1 text-xs font-mono"
-                    />
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between gap-2">
-                      <Label className="text-xs">AccessKey Secret</Label>
-                      {config.aliyun_secret_configured && (
-                        <Chip tone="success" dense>{tr('已加密存储', 'Encrypted')}</Chip>
-                      )}
-                    </div>
-                    <Input
-                      type="password"
-                      value={config.aliyun_access_key_secret || ''}
-                      onChange={(e) => setConfig({ ...config, aliyun_access_key_secret: e.target.value })}
-                      placeholder={
-                        config.aliyun_secret_configured
-                          ? tr('已配置密钥，留空保持不变', 'Configured, leave blank to keep')
-                          : '••••••••••••'
-                      }
-                      disabled={!isAdmin}
-                      className="mt-1 text-xs font-mono"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <Label className="text-xs">{tr('主叫显号', 'Called Show Number')}</Label>
-                    <Input
-                      value={config.aliyun_called_show_number || ''}
-                      onChange={(e) => setConfig({ ...config, aliyun_called_show_number: e.target.value })}
-                      placeholder="057188888888"
-                      disabled={!isAdmin}
-                      className="mt-1 text-xs font-mono"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs">{tr('TTS 语音模版 Code', 'TTS Template Code')}</Label>
-                    <Input
-                      value={config.aliyun_tts_code || ''}
-                      onChange={(e) => setConfig({ ...config, aliyun_tts_code: e.target.value })}
-                      placeholder="TTS_12345678"
-                      disabled={!isAdmin}
-                      className="mt-1 text-xs font-mono"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs">{tr('服务地域', 'Region')}</Label>
-                    <Input
-                      value={config.aliyun_region || ''}
-                      onChange={(e) => setConfig({ ...config, aliyun_region: e.target.value })}
-                      placeholder="cn-hangzhou"
-                      disabled={!isAdmin}
-                      className="mt-1 text-xs font-mono"
-                    />
-                  </div>
-                </div>
-                <p className="text-xs text-text-muted">
-                  {tr(
-                    '阿里云 TTS 模板变量默认传入 JSON 字段 urgency 与 title，回调支持按 1 认领、按 2 升级。',
-                    'Aliyun TTS parameters default to urgency and title; DTMF 1 acknowledges and DTMF 2 escalates.'
-                  )}
-                </p>
-              </div>
-            )}
-
-            {config.provider === 'tencent' && (
-              <div className="space-y-3 pt-2 border-t border-border">
-                <span className="font-semibold text-text block">
-                  {tr('腾讯云语音参数', 'Tencent Settings')}
-                </span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <Label className="text-xs">SecretId</Label>
-                    <Input
-                      value={config.tencent_secret_id || ''}
-                      onChange={(e) => setConfig({ ...config, tencent_secret_id: e.target.value })}
-                      placeholder="AKID..."
-                      disabled={!isAdmin}
-                      className="mt-1 text-xs font-mono"
-                    />
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between gap-2">
-                      <Label className="text-xs">SecretKey</Label>
-                      {config.tencent_secret_configured && (
-                        <Chip tone="success" dense>{tr('已加密存储', 'Encrypted')}</Chip>
-                      )}
-                    </div>
-                    <Input
-                      type="password"
-                      value={config.tencent_secret_key || ''}
-                      onChange={(e) => setConfig({ ...config, tencent_secret_key: e.target.value })}
-                      placeholder={
-                        config.tencent_secret_configured
-                          ? tr('已配置密钥，留空保持不变', 'Configured, leave blank to keep')
-                          : '••••••••••••'
-                      }
-                      disabled={!isAdmin}
-                      className="mt-1 text-xs font-mono"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <Label className="text-xs">SdkAppId</Label>
-                    <Input
-                      value={config.tencent_sdk_app_id || ''}
-                      onChange={(e) => setConfig({ ...config, tencent_sdk_app_id: e.target.value })}
-                      placeholder="1400000000"
-                      disabled={!isAdmin}
-                      className="mt-1 text-xs font-mono"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs">{tr('模板 ID', 'Template ID')}</Label>
-                    <Input
-                      value={config.tencent_template_id || ''}
-                      onChange={(e) => setConfig({ ...config, tencent_template_id: e.target.value })}
-                      placeholder="123456"
-                      disabled={!isAdmin}
-                      className="mt-1 text-xs font-mono"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <Label className="text-xs">{tr('主叫显号', 'Called Show Number')}</Label>
-                    <Input
-                      value={config.tencent_called_show_number || ''}
-                      onChange={(e) => setConfig({ ...config, tencent_called_show_number: e.target.value })}
-                      placeholder="+861088888888"
-                      disabled={!isAdmin}
-                      className="mt-1 text-xs font-mono"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs">{tr('服务地域', 'Region')}</Label>
-                    <Input
-                      value={config.tencent_region || ''}
-                      onChange={(e) => setConfig({ ...config, tencent_region: e.target.value })}
-                      placeholder="ap-guangzhou"
-                      disabled={!isAdmin}
-                      className="mt-1 text-xs font-mono"
-                    />
-                  </div>
-                </div>
-                <p className="text-xs text-text-muted">
-                  {tr(
-                    '腾讯云模板参数按顺序传入 {1}=紧急度、{2}=告警标题，回调支持按 1 认领、按 2 升级。',
-                    'Tencent template params map {1}=urgency and {2}=title; DTMF 1 acknowledges and DTMF 2 escalates.'
-                  )}
-                </p>
-              </div>
-            )}
+            {config.provider === 'aliyun' && renderAliyunFields(tr('阿里云语音参数', 'Aliyun Settings'))}
+            {config.provider === 'tencent' && renderTencentFields(tr('腾讯云语音参数', 'Tencent Settings'))}
+            {config.provider === 'aliyun' &&
+              config.fallback_provider === 'tencent' &&
+              renderTencentFields(tr('备援通道：腾讯云语音参数', 'Backup: Tencent Settings'))}
+            {config.provider === 'tencent' &&
+              config.fallback_provider === 'aliyun' &&
+              renderAliyunFields(tr('备援通道：阿里云语音参数', 'Backup: Aliyun Settings'))}
 
             {isAdmin && config.callback_urls && Object.keys(config.callback_urls).length > 0 && (
               <div className="space-y-2.5 pt-3 border-t border-border">
@@ -585,6 +651,22 @@ export function VoiceGatewayTab() {
 
             {callResult && (
               <div className="mt-4 rounded-lg border border-border bg-bg p-3.5 space-y-2 font-mono text-xs">
+                {callResult.fallback_from && (
+                  <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs font-sans text-amber-700 dark:text-amber-300 space-y-1">
+                    <div className="font-semibold">
+                      {tr(
+                        `主通道（${callResult.fallback_from}）外呼异常，已自动切换至备援通道（${callResult.provider}）`,
+                        `Primary (${callResult.fallback_from}) failed; failed over to backup (${callResult.provider})`
+                      )}
+                    </div>
+                    {callResult.primary_error && (
+                      <div className="text-[11px] break-words">
+                        {tr('主通道失败原因：', 'Primary Error: ')}
+                        {callResult.primary_error}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-text-muted">{tr('呼叫流水号', 'Call ID')}:</span>
                   <span className="text-text font-bold truncate">{callResult.call_id}</span>

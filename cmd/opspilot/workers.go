@@ -136,6 +136,9 @@ func runWorkers(rootCtx context.Context, cfg *config.Config, log *slog.Logger, n
 	if oncall != nil && oncall.worker != nil {
 		eg.Go(func() error { return oncall.worker.Loop(egCtx) })
 	}
+	if oncall != nil && oncall.handoffReminder != nil {
+		eg.Go(func() error { return oncall.handoffReminder.Loop(egCtx) })
+	}
 
 	// Optional crons: wire when ready to enable (leave commented for now).
 	// metricDownsampler := managerbizmetric.NewDownsampler(metricWriter, metricReader, log)

@@ -9,10 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"gorm.io/gorm"
-
 	"github.com/Zara1024/OpsPilot/internal/manager/biz/oncall/voice"
 	store "github.com/Zara1024/OpsPilot/internal/manager/data/oncall/store"
+	alertmodel "github.com/Zara1024/OpsPilot/internal/manager/model/alert"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/oncall"
 )
 
@@ -147,33 +146,101 @@ func (w *EscalationWorker) ProcessBatch(ctx context.Context) int {
 	return len(tasks)
 }
 
-func (w *EscalationWorker) processTask(ctx context.Context, task *model.EscalationTask, now time.Time) {
-	inc, err := w.store.GetAlertIncident(ctx, task.IncidentID)
+type openGroupContext struct {
+	openIncidents []*alertmodel.Incident
+	alertCount    int
+	title         string
+	detailBody    string
+}
+
+func (w *EscalationWorker) resolveOpenGroup(ctx context.Context, task *model.EscalationTask, now time.Time) (*openGroupContext, bool) {
+	ids := model.ParseMergedIncidentIDs(task)
+	incidents, err := w.store.GetAlertIncidentsByIDs(ctx, ids)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			task.Status = model.TaskStatusCancelled
-			task.LockedUntil = nil
-			task.LastError = "incident not found"
-			w.finishSave(ctx, task, model.TaskStatusCancelled)
-			return
-		}
 		task.LockedUntil = nil
 		task.LastError = truncateString(err.Error(), 500)
 		task.NextRunAt = now.Add(30 * time.Second)
 		if saveErr := w.store.SaveEscalationTask(ctx, task); saveErr != nil {
 			w.log.Warn("oncall save retry task after incident lookup error failed", slog.Uint64("task_id", task.ID), slog.Any("err", saveErr))
 		}
-		return
+		return nil, false
+	}
+	if len(incidents) == 0 {
+		task.Status = model.TaskStatusCancelled
+		task.LockedUntil = nil
+		task.LastError = "incident not found"
+		w.finishSave(ctx, task, model.TaskStatusCancelled)
+		return nil, false
 	}
 
-	if inc.Status != "open" {
+	var openList []*alertmodel.Incident
+	anyAcked := false
+	for _, inc := range incidents {
+		if inc == nil {
+			continue
+		}
+		if inc.Status == alertmodel.StatusOpen {
+			openList = append(openList, inc)
+		} else if inc.Status == alertmodel.StatusAcknowledged {
+			anyAcked = true
+		}
+	}
+	if len(openList) == 0 {
 		finalStatus := model.TaskStatusCancelled
-		if inc.Status == "acknowledged" {
+		if anyAcked {
 			finalStatus = model.TaskStatusAcked
 		}
 		task.Status = finalStatus
 		task.LockedUntil = nil
 		w.finishSave(ctx, task, finalStatus)
+		return nil, false
+	}
+
+	openIDs := make([]uint64, 0, len(openList))
+	for _, inc := range openList {
+		openIDs = append(openIDs, inc.ID)
+	}
+	task.IncidentID = openIDs[0]
+	task.AlertCount = len(openIDs)
+	task.MergedIncidentIDsJSON = model.EncodeMergedIncidentIDs(openIDs)
+
+	title := openList[0].Title
+	if title == "" {
+		title = task.Title
+	}
+	if title == "" {
+		title = fmt.Sprintf("Incident #%d", openList[0].ID)
+	}
+	var body string
+	if len(openList) > 1 {
+		title = fmt.Sprintf("[合并 %d 条告警] %s 等", len(openList), title)
+		var b strings.Builder
+		limit := len(openList)
+		if limit > 5 {
+			limit = 5
+		}
+		for i := 0; i < limit; i++ {
+			fmt.Fprintf(&b, "- INC-%04d: %s (%s)\n", openList[i].ID, openList[i].Title, openList[i].Severity)
+		}
+		if len(openList) > limit {
+			fmt.Fprintf(&b, "... 共 %d 条未关闭告警", len(openList))
+		}
+		body = strings.TrimSpace(b.String())
+	} else {
+		body = fmt.Sprintf("告警单号: INC-%04d | 级别: %s", openList[0].ID, openList[0].Severity)
+	}
+
+	return &openGroupContext{
+		openIncidents: openList,
+		alertCount:    len(openList),
+		title:         title,
+		detailBody:    body,
+	}, true
+}
+
+func (w *EscalationWorker) processTask(ctx context.Context, task *model.EscalationTask, now time.Time) {
+	grp, ok := w.resolveOpenGroup(ctx, task, now)
+	if !ok {
 		return
 	}
 
@@ -210,7 +277,7 @@ func (w *EscalationWorker) processTask(ctx context.Context, task *model.Escalati
 	isNight := isNightInSchedule(now, sched)
 
 	if policy.TargetType == "webhook" {
-		w.executeWebhookBroadcastStep(ctx, task, policies, idx, now, isNight)
+		w.executeWebhookBroadcastStep(ctx, task, grp, policies, idx, now, isNight)
 		return
 	}
 
@@ -223,6 +290,7 @@ func (w *EscalationWorker) processTask(ctx context.Context, task *model.Escalati
 		w.recordLog(ctx, &model.NotificationLog{
 			TaskID:         task.ID,
 			IncidentID:     task.IncidentID,
+			AlertCount:     grp.alertCount,
 			ScheduleID:     task.ScheduleID,
 			EscalationStep: task.CurrentStep,
 			Target:         policy.TargetType,
@@ -248,7 +316,7 @@ func (w *EscalationWorker) processTask(ctx context.Context, task *model.Escalati
 	}
 
 	rule := rules[int(task.LadderStep)-1]
-	transientErr := w.executeRuleStep(ctx, task, rule, targetUser, cfg, inc.Title, isNight, now)
+	transientErr := w.executeRuleStep(ctx, task, rule, targetUser, cfg, grp, isNight, now)
 	if transientErr != nil && task.AttemptCount < maxStepRetries {
 		task.AttemptCount++
 		task.LastError = truncateString(transientErr.Error(), 500)
@@ -261,7 +329,8 @@ func (w *EscalationWorker) processTask(ctx context.Context, task *model.Escalati
 		return
 	}
 
-	// Step either succeeded or exhausted/skipped permanently; advance ladder or team escalation.
+	nowCopy := now
+	task.LastDispatchedAt = &nowCopy
 	task.AttemptCount = 0
 	if transientErr != nil {
 		task.LastError = truncateString(transientErr.Error(), 500)
@@ -273,13 +342,14 @@ func (w *EscalationWorker) processTask(ctx context.Context, task *model.Escalati
 	w.scheduleNextRun(ctx, task, policies, idx, rules, now)
 }
 
-func (w *EscalationWorker) executeWebhookBroadcastStep(ctx context.Context, task *model.EscalationTask, policies []*model.EscalationPolicy, idx int, now time.Time, isNight bool) {
-	subject := fmt.Sprintf("[OpsPilot On-Call Step %d] %s", task.CurrentStep, task.Title)
-	body := fmt.Sprintf("Incident: INC-%04d | Severity: %s | Step: %d", task.IncidentID, task.Severity, task.CurrentStep)
+func (w *EscalationWorker) executeWebhookBroadcastStep(ctx context.Context, task *model.EscalationTask, grp *openGroupContext, policies []*model.EscalationPolicy, idx int, now time.Time, isNight bool) {
+	subject := fmt.Sprintf("[OpsPilot On-Call Step %d] %s", task.CurrentStep, grp.title)
+	body := fmt.Sprintf("%s\n升级步骤: %d", grp.detailBody, task.CurrentStep)
 	labels := map[string]string{
 		"incident_id": fmt.Sprintf("%d", task.IncidentID),
 		"severity":    task.Severity,
 		"rule":        task.RuleKey,
+		"alert_count": fmt.Sprintf("%d", grp.alertCount),
 	}
 
 	var provider string
@@ -300,6 +370,7 @@ func (w *EscalationWorker) executeWebhookBroadcastStep(ctx context.Context, task
 	w.recordLog(ctx, &model.NotificationLog{
 		TaskID:         task.ID,
 		IncidentID:     task.IncidentID,
+		AlertCount:     grp.alertCount,
 		ScheduleID:     task.ScheduleID,
 		EscalationStep: task.CurrentStep,
 		Target:         "webhook",
@@ -311,6 +382,8 @@ func (w *EscalationWorker) executeWebhookBroadcastStep(ctx context.Context, task
 		CreatedAt:      now,
 	})
 
+	nowCopy := now
+	task.LastDispatchedAt = &nowCopy
 	task.LockedUntil = nil
 	task.AttemptCount = 0
 	w.advanceAfterLadderComplete(ctx, task, policies, idx, now)
@@ -322,18 +395,12 @@ func (w *EscalationWorker) executeRuleStep(
 	rule *model.UserNotificationRule,
 	user *store.UserSummary,
 	cfg *voice.VoiceGatewayConfig,
-	incidentTitle string,
+	grp *openGroupContext,
 	isNight bool,
 	now time.Time,
 ) error {
 	userName := displayNameOrEmail(user)
-	title := task.Title
-	if title == "" {
-		title = incidentTitle
-	}
-	if title == "" {
-		title = fmt.Sprintf("Incident #%d", task.IncidentID)
-	}
+	title := grp.title
 
 	switch rule.Channel {
 	case "voice_call":
@@ -343,6 +410,7 @@ func (w *EscalationWorker) executeRuleStep(
 			w.recordLog(ctx, &model.NotificationLog{
 				TaskID:         task.ID,
 				IncidentID:     task.IncidentID,
+				AlertCount:     grp.alertCount,
 				ScheduleID:     task.ScheduleID,
 				EscalationStep: task.CurrentStep,
 				UserID:         user.ID,
@@ -362,6 +430,7 @@ func (w *EscalationWorker) executeRuleStep(
 			w.recordLog(ctx, &model.NotificationLog{
 				TaskID:         task.ID,
 				IncidentID:     task.IncidentID,
+				AlertCount:     grp.alertCount,
 				ScheduleID:     task.ScheduleID,
 				EscalationStep: task.CurrentStep,
 				UserID:         user.ID,
@@ -385,6 +454,30 @@ func (w *EscalationWorker) executeRuleStep(
 			Title:       title,
 			Severity:    task.Severity,
 		})
+		if res != nil && res.FallbackFrom != "" {
+			w.recordLog(ctx, &model.NotificationLog{
+				TaskID:         task.ID,
+				IncidentID:     task.IncidentID,
+				AlertCount:     grp.alertCount,
+				ScheduleID:     task.ScheduleID,
+				EscalationStep: task.CurrentStep,
+				UserID:         user.ID,
+				UserName:       userName,
+				Target:         maskPhone(user.Phone),
+				Channel:        "voice_call",
+				Provider:       res.FallbackFrom,
+				CallID:         callID,
+				Status:         model.NotifyStatusFailed,
+				Message:        truncateString(fmt.Sprintf("[容灾切换至 %s] %s", res.Provider, res.PrimaryError), 500),
+				IsNight:        isNight,
+				CreatedAt:      now,
+			})
+			outcome := "success"
+			if err != nil {
+				outcome = "failed"
+			}
+			w.metrics.incVoiceFailover(res.FallbackFrom, res.Provider, outcome)
+		}
 		if err != nil {
 			provider := cfg.Provider
 			if res != nil && res.Provider != "" {
@@ -397,6 +490,7 @@ func (w *EscalationWorker) executeRuleStep(
 			w.recordLog(ctx, &model.NotificationLog{
 				TaskID:         task.ID,
 				IncidentID:     task.IncidentID,
+				AlertCount:     grp.alertCount,
 				ScheduleID:     task.ScheduleID,
 				EscalationStep: task.CurrentStep,
 				UserID:         user.ID,
@@ -410,7 +504,7 @@ func (w *EscalationWorker) executeRuleStep(
 				IsNight:        isNight,
 				CreatedAt:      now,
 			})
-			if isPermanentVoiceConfigErr(msg) {
+			if isPermanentVoiceConfigErr(msg) && (res == nil || res.FallbackFrom == "") {
 				return nil
 			}
 			return err
@@ -440,6 +534,7 @@ func (w *EscalationWorker) executeRuleStep(
 		w.recordLog(ctx, &model.NotificationLog{
 			TaskID:         task.ID,
 			IncidentID:     task.IncidentID,
+			AlertCount:     grp.alertCount,
 			ScheduleID:     task.ScheduleID,
 			EscalationStep: task.CurrentStep,
 			UserID:         user.ID,
@@ -460,17 +555,19 @@ func (w *EscalationWorker) executeRuleStep(
 
 	case "im_dm", "im_group_at", "webhook":
 		subject := fmt.Sprintf("[OpsPilot On-Call] %s (%s)", title, strings.ToUpper(task.Severity))
-		body := fmt.Sprintf("告警单号: INC-%04d | 值班人: %s | 升级步骤: %d", task.IncidentID, userName, task.CurrentStep)
+		body := fmt.Sprintf("%s\n值班人: %s | 升级步骤: %d", grp.detailBody, userName, task.CurrentStep)
 		labels := map[string]string{
 			"incident_id": fmt.Sprintf("%d", task.IncidentID),
 			"severity":    task.Severity,
 			"rule":        task.RuleKey,
 			"assignee":    userName,
+			"alert_count": fmt.Sprintf("%d", grp.alertCount),
 		}
 		if w.deliverer == nil {
 			w.recordLog(ctx, &model.NotificationLog{
 				TaskID:         task.ID,
 				IncidentID:     task.IncidentID,
+				AlertCount:     grp.alertCount,
 				ScheduleID:     task.ScheduleID,
 				EscalationStep: task.CurrentStep,
 				UserID:         user.ID,
@@ -493,6 +590,7 @@ func (w *EscalationWorker) executeRuleStep(
 			w.recordLog(ctx, &model.NotificationLog{
 				TaskID:         task.ID,
 				IncidentID:     task.IncidentID,
+				AlertCount:     grp.alertCount,
 				ScheduleID:     task.ScheduleID,
 				EscalationStep: task.CurrentStep,
 				UserID:         user.ID,
@@ -513,6 +611,7 @@ func (w *EscalationWorker) executeRuleStep(
 		w.recordLog(ctx, &model.NotificationLog{
 			TaskID:         task.ID,
 			IncidentID:     task.IncidentID,
+			AlertCount:     grp.alertCount,
 			ScheduleID:     task.ScheduleID,
 			EscalationStep: task.CurrentStep,
 			UserID:         user.ID,
@@ -532,6 +631,7 @@ func (w *EscalationWorker) executeRuleStep(
 		w.recordLog(ctx, &model.NotificationLog{
 			TaskID:         task.ID,
 			IncidentID:     task.IncidentID,
+			AlertCount:     grp.alertCount,
 			ScheduleID:     task.ScheduleID,
 			EscalationStep: task.CurrentStep,
 			UserID:         user.ID,

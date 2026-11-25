@@ -7,11 +7,13 @@ import {
   TrendingDown,
   RefreshCw,
   CheckSquare,
+  Bell,
 } from 'lucide-react';
 import {
   Button,
   Card,
   Chip,
+  EmptyState,
   Label,
   Textarea,
 } from '@/components/ui';
@@ -19,10 +21,13 @@ import { useDialogs } from '@/components/ui/useDialogs';
 import { useI18n } from '@/i18n/locale';
 import {
   getCurrentHandoff,
+  listHandoffLogs,
   ackHandoff,
+  sendHandoffReminderNow,
   getBurnoutAnalytics,
   getNoisyAlerts,
   type CurrentHandoffStatus,
+  type HandoffLogItem,
   type BurnoutAnalytics,
   type NoisyAlertItem,
   type OnCallSchedule,
@@ -37,25 +42,30 @@ export function HandoffAnalyticsTab({ schedules: _schedules }: HandoffAnalyticsT
   const { alertAction, dialog } = useDialogs();
 
   const [handoff, setHandoff] = useState<CurrentHandoffStatus | null>(null);
+  const [handoffLogs, setHandoffLogs] = useState<HandoffLogItem[]>([]);
   const [analytics, setAnalytics] = useState<BurnoutAnalytics | null>(null);
   const [noisyAlerts, setNoisyAlerts] = useState<NoisyAlertItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Handoff signing
+  // Handoff signing & reminder
   const [handoffNotes, setHandoffNotes] = useState('');
   const [signingHandoff, setSigningHandoff] = useState(false);
   const [signSuccess, setSignSuccess] = useState(false);
+  const [remindingNow, setRemindingNow] = useState(false);
+  const [remindFeedback, setRemindFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [hRes, aRes, nRes] = await Promise.all([
+      const [hRes, lRes, aRes, nRes] = await Promise.all([
         getCurrentHandoff().catch(() => null),
+        listHandoffLogs(undefined, 20).catch(() => ({ items: [], total: 0 })),
         getBurnoutAnalytics().catch(() => null),
         getNoisyAlerts().catch(() => ({ items: [] })),
       ]);
       setHandoff(hRes);
       if (hRes?.notes) setHandoffNotes(hRes.notes);
+      setHandoffLogs(lRes?.items || []);
       setAnalytics(aRes);
       setNoisyAlerts(nRes?.items || []);
     } catch (e) {
@@ -79,6 +89,10 @@ export function HandoffAnalyticsTab({ schedules: _schedules }: HandoffAnalyticsT
         notes: handoffNotes.trim(),
       });
       setHandoff(res);
+      const logsRes = await listHandoffLogs(undefined, 20).catch(() => null);
+      if (logsRes?.items) {
+        setHandoffLogs(logsRes.items);
+      }
       setSignSuccess(true);
       setTimeout(() => setSignSuccess(false), 4000);
     } catch (e: unknown) {
@@ -86,6 +100,42 @@ export function HandoffAnalyticsTab({ schedules: _schedules }: HandoffAnalyticsT
       await alertAction(e instanceof Error ? e.message : tr('交接确认失败', 'Failed to sign handoff'));
     } finally {
       setSigningHandoff(false);
+    }
+  };
+
+  const handleRemindNow = async () => {
+    if (!handoff || remindingNow) return;
+    setRemindingNow(true);
+    setRemindFeedback(null);
+    try {
+      const res = await sendHandoffReminderNow(handoff.schedule_id);
+      const logsRes = await listHandoffLogs(undefined, 20).catch(() => null);
+      if (logsRes?.items) {
+        setHandoffLogs(logsRes.items);
+      }
+      if (res.ok) {
+        setRemindFeedback({
+          ok: true,
+          text: tr(
+            `接班提醒已通过 ${res.channel_type || 'IM'} 发送给 ${handoff.incoming_user_name || '接班人'}`,
+            `Handoff reminder sent via ${res.channel_type || 'IM'} to ${handoff.incoming_user_name || 'incoming engineer'}`
+          ),
+        });
+      } else {
+        setRemindFeedback({
+          ok: false,
+          text:
+            res.error_message ||
+            tr('接班提醒投递失败，请检查通知通道配置', 'Failed to deliver handoff reminder'),
+        });
+      }
+    } catch (e: unknown) {
+      setRemindFeedback({
+        ok: false,
+        text: e instanceof Error ? e.message : tr('发送接班提醒失败', 'Failed to send handoff reminder'),
+      });
+    } finally {
+      setRemindingNow(false);
     }
   };
 
@@ -218,16 +268,46 @@ export function HandoffAnalyticsTab({ schedules: _schedules }: HandoffAnalyticsT
                   />
                 </div>
 
-                <Button
-                  size="sm"
-                  variant="primary"
-                  onClick={handleSignHandoff}
-                  disabled={signingHandoff}
-                  className="w-full"
-                >
-                  <CheckSquare size={14} className="mr-1.5" />
-                  {signingHandoff ? tr('签署中...', 'Signing...') : tr('确认签署交接备忘录', 'Sign Handoff')}
-                </Button>
+                <div className="space-y-2">
+                  {signSuccess && (
+                    <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-700 dark:text-emerald-300">
+                      {tr('交接班备忘录已签署归档。', 'Handoff notes signed and archived.')}
+                    </div>
+                  )}
+                  {remindFeedback && (
+                    <div
+                      className={`rounded-md border px-2.5 py-1.5 text-xs ${
+                        remindFeedback.ok
+                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                          : 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                      }`}
+                    >
+                      {remindFeedback.text}
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      onClick={handleSignHandoff}
+                      disabled={signingHandoff}
+                      className="flex-1 min-w-[140px]"
+                    >
+                      <CheckSquare size={14} className="mr-1.5" />
+                      {signingHandoff ? tr('签署中...', 'Signing...') : tr('确认签署交接备忘录', 'Sign Handoff')}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleRemindNow}
+                      disabled={remindingNow}
+                      className="flex-1 min-w-[140px]"
+                    >
+                      <Bell size={14} className="mr-1.5" />
+                      {remindingNow ? tr('发送中...', 'Sending...') : tr('立即发送接班提醒', 'Send Handoff Reminder Now')}
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
           ) : (
@@ -406,6 +486,117 @@ export function HandoffAnalyticsTab({ schedules: _schedules }: HandoffAnalyticsT
                       </td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      </section>
+
+      {/* 4. Shift Handoff & Pre-Shift Reminder Logs */}
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Bell className="text-indigo-500" size={18} />
+          <h2 className="text-base font-semibold text-text">
+            {tr('交接签收与接班提醒记录', 'Handoff Sign-Off & Reminder Logs')}
+          </h2>
+        </div>
+
+        <Card className="!p-0 overflow-hidden">
+          {handoffLogs.length === 0 ? (
+            <EmptyState
+              icon={Bell}
+              title={tr('暂无交接签收与提醒记录', 'No Handoff or Reminder Logs Yet')}
+              hint={tr(
+                '系统将在交班前自动发送班前提醒，也可在上方手动触发提醒或签署交接。',
+                'Pre-shift reminders run automatically before shift transitions, or you can trigger a reminder or sign off above.'
+              )}
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse text-text">
+                <thead>
+                  <tr className="border-b border-border bg-bg/50 text-text-muted font-semibold">
+                    <th className="py-2.5 px-4 whitespace-nowrap">{tr('时间', 'Time')}</th>
+                    <th className="py-2.5 px-4 whitespace-nowrap">{tr('排班与班次', 'Schedule & Shift')}</th>
+                    <th className="py-2.5 px-4 whitespace-nowrap">{tr('记录类型', 'Type')}</th>
+                    <th className="py-2.5 px-4 whitespace-nowrap">{tr('值班与交接人', 'Engineers')}</th>
+                    <th className="py-2.5 px-4 whitespace-nowrap">{tr('通道', 'Channel')}</th>
+                    <th className="py-2.5 px-4 whitespace-nowrap">{tr('状态', 'Status')}</th>
+                    <th className="py-2.5 px-4">{tr('交接摘要与详情', 'Summary')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {handoffLogs.map((item) => {
+                    const typeLabel =
+                      item.reminder_type === 'shift_handoff'
+                        ? tr('交接签署', 'Sign-Off')
+                        : item.reminder_type === 'manual_reminder'
+                        ? tr('手动接班提醒', 'Manual Reminder')
+                        : tr('班前自动提醒', 'Pre-Shift Reminder');
+                    const deliveryStatus = item.status || (item.ack_status === 'signed_off' ? 'sent' : 'pending');
+                    const statusTone =
+                      deliveryStatus === 'failed'
+                        ? 'danger'
+                        : deliveryStatus === 'sent'
+                        ? 'success'
+                        : 'warning';
+                    const statusLabel =
+                      item.ack_status === 'signed_off'
+                        ? tr('已签署', 'Signed Off')
+                        : deliveryStatus === 'failed'
+                        ? tr('投递失败', 'Failed')
+                        : deliveryStatus === 'sent'
+                        ? tr('已发送', 'Sent')
+                        : tr('待处理', 'Pending');
+
+                    return (
+                      <tr key={item.id} className="hover:bg-bg/40 transition-colors">
+                        <td className="py-2.5 px-4 font-mono text-text-muted whitespace-nowrap">
+                          {new Date(item.created_at).toLocaleString()}
+                        </td>
+                        <td className="py-2.5 px-4 whitespace-nowrap">
+                          <div className="font-medium text-text">
+                            {item.schedule_name || `#${item.schedule_id}`}
+                          </div>
+                          <div className="text-[11px] font-mono text-text-muted">
+                            {new Date(item.shift_start).toLocaleDateString()} ~{' '}
+                            {new Date(item.shift_end).toLocaleDateString()}
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-4 whitespace-nowrap">
+                          <Chip tone={item.reminder_type === 'shift_handoff' ? 'accent' : 'info'} dense>
+                            {typeLabel}
+                          </Chip>
+                        </td>
+                        <td className="py-2.5 px-4 whitespace-nowrap text-text">
+                          <div>{item.user_name || `User#${item.user_id}`}</div>
+                          {item.previous_user_name && (
+                            <div className="text-[11px] text-text-muted">
+                              {tr('交出人：', 'From: ')}
+                              {item.previous_user_name}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-4 font-mono text-text-muted whitespace-nowrap">
+                          {item.channel_type || '-'}
+                        </td>
+                        <td className="py-2.5 px-4 whitespace-nowrap">
+                          <Chip tone={statusTone} dense>
+                            {statusLabel}
+                          </Chip>
+                        </td>
+                        <td className="py-2.5 px-4 text-text min-w-[220px] max-w-md">
+                          <div className="break-words">{item.notes || '-'}</div>
+                          {item.error_message && (
+                            <div className="text-[11px] text-red-600 dark:text-red-400 mt-0.5 break-words">
+                              {item.error_message}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
