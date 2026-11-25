@@ -364,11 +364,16 @@ func (rt *Runtime) SendToWorker(ctx context.Context, workerID, message string) e
 	w.mu.Lock()
 	w.Status = WorkerStatusRunning
 	sessID := w.SessionID
+	parentSession := w.ParentSessionID
 	w.mu.Unlock()
 
-	// SendToWorker has no SpawnRequest; inherit locale from ctx
-	// (chat coordinator threads it via basetool.WithLocale).
-	result, err := rt.runWorker(ctx, agentDef, sessID, message, basetool.LocaleFromContext(ctx), nil, w.ID)
+	// A follow-up can arrive on a later turn. Use that turn's stream only
+	// when it belongs to the worker's parent chat.
+	var parentEmit Emit
+	if parentSession != "" && parentSession == basetool.SessionIDFromContext(ctx) {
+		parentEmit = EmitFromContext(ctx)
+	}
+	result, err := rt.runWorker(ctx, agentDef, sessID, message, basetool.LocaleFromContext(ctx), parentEmit, w.ID)
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -507,6 +512,7 @@ func (rt *Runtime) runWorker(ctx context.Context, agentDef *Agent, sessID, userT
 	}
 
 	cfg := rt.cfg.GraphCfg
+	cfg.Context = rt.contextWindow(ctx, basetool.LLMProviderFromContext(ctx), basetool.LLMModelFromContext(ctx))
 	if agentDef.MaxTurns > 0 {
 		cfg.MaxIterations = agentDef.MaxTurns
 	}
@@ -538,6 +544,7 @@ func (rt *Runtime) runWorker(ctx context.Context, agentDef *Agent, sessID, userT
 		// config (Audit + Metrics are session-id-aware via their own
 		// deps; we keep the worker's session id flowing into them too).
 		deps := rt.cfg.CallbackDeps
+		deps.BudgetChecker = nil
 		deps.Persistence.SessionID = sessID
 		deps.Persistence.Model = agentDef.Model
 		if deps.Persistence.Repo == nil {
