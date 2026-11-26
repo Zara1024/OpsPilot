@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.2.1 (2026-11-26)
+
+### 🌐 外部告警统一接入网关与心跳保活监控（Dead Man's Switch）
+- **7 种外部监控系统原生协议接入**：新增 `/api/v1/alerts/ingest/{provider}/{token}` 公开接入端点，原生支持 **Zabbix**（含 Trigger 问题/恢复映射与中文标签提取）、**华为云 CES / SMN**（含 `SubscriptionConfirmation` 自动识别与 `AlarmStatus` 归一化）、**Alertmanager**（兼容 Prometheus 告警组）、**阿里云云监控 CMS**、**腾讯云监控**、**Grafana Alerting** 与 **Generic Webhook**；
+- **安全鉴权与故障恢复闭环**：支持随机 Token 轮换、可选 HMAC-SHA256 防篡改验签与滑动窗口限流（HTTP 429），按指纹自动聚合或恢复存量 Incident，并与 On-Call 值班分派/升级链路无缝衔接；
+- **心跳保活监控（Dead Man's Switch）**：新增后台 `HeartbeatWorker` 巡检器，针对定时任务、备份脚本与 Prometheus Watchdog 提供独立心跳端点（`GET/POST /api/v1/alerts/heartbeat/{token}`），超时失联自动触发故障告警，恢复上报后自动闭环；
+- **集成接入中心控制台（`/alerts/integrations`）**：支持接入源管理、一键模拟 Payload 发送、示例脚本复制与告警/路由联动跳转。
+
+### 🔁 On-Call 升级链循环、语音智能重拨与企业微信交互闭环
+- **升级链有限循环提醒**：排班计划（`oncall_schedules`）支持配置 `0–5` 轮升级链循环及冷却间隔（`30–3600s`），末级未认领后重置至第 1 级重跑并标记 `[第 N 轮提醒]`，同步记录 `escalation/repeat` 审计流水；
+- **语音外呼无人接听重拨与拒接快进**：支持配置最大重拨次数（`0–3`）、重拨冷却间隔（`10–120s`）、拒接/关机/空号立即快进升级以及可选「已接听但未按键重拨」开关；引入末级 90s 回执宽限（`AwaitingVoiceGrace`）、重拨绕过 3 分钟全局冷却以及 DTMF 与挂断双回调幂等保护；
+- **企业微信交互卡片与自建应用加密回调**：企业微信群机器人升级为 `template_card`（`text_notice` 快捷动作按钮，无有效外链时自动降级 `markdown`）；新增企微自建应用 SHA-1 验签与 AES-256-CBC 加解密端点（`GET/POST /api/v1/oncall/chatops/callback/wecom`）及控制台脱敏配置。
+
 ## v1.2.0 (2026-11-26)
 
 ### 🚨 生产级 On-Call 告警升级状态机与多云语音容灾
