@@ -63,15 +63,15 @@
 
 **AMD64**
 ```bash
-wget https://github.com/Zara1024/OpsPilot/releases/download/v1.1.10/opspilot-v1.1.10-linux-amd64.tar.xz
-tar -xf opspilot-v1.1.10-linux-amd64.tar.xz && cd opspilot-v1.1.10-linux-amd64
+wget https://github.com/Zara1024/OpsPilot/releases/download/v1.2.0/opspilot-v1.2.0-linux-amd64.tar.xz
+tar -xf opspilot-v1.2.0-linux-amd64.tar.xz && cd opspilot-v1.2.0-linux-amd64
 sudo ./install.sh
 ```
 
 **ARM64**
 ```bash
-wget https://github.com/Zara1024/OpsPilot/releases/download/v1.1.10/opspilot-v1.1.10-linux-arm64.tar.xz
-tar -xf opspilot-v1.1.10-linux-arm64.tar.xz && cd opspilot-v1.1.10-linux-arm64
+wget https://github.com/Zara1024/OpsPilot/releases/download/v1.2.0/opspilot-v1.2.0-linux-arm64.tar.xz
+tar -xf opspilot-v1.2.0-linux-arm64.tar.xz && cd opspilot-v1.2.0-linux-arm64
 sudo ./install.sh
 ```
 
