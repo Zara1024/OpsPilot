@@ -43,12 +43,17 @@ import {
   listSchedules,
   listPendingOverrides,
   listEscalationPolicies,
+  listMaintenanceWindows,
   type GapSlot,
   type LiveOnCallStatus,
   type OnCallSchedule,
   type ShiftSlot,
   type EscalationPolicy,
+  type MaintenanceWindowItem,
 } from '@/api/oncall';
+const HolidayCalendarModal = lazy(() =>
+  import('./oncall/HolidayCalendarModal').then((m) => ({ default: m.HolidayCalendarModal })),
+);
 const RouteTreeTab = lazy(() =>
   import('./oncall/RouteTreeTab').then((m) => ({ default: m.RouteTreeTab })),
 );
@@ -159,6 +164,7 @@ export default function OnCallPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [pendingCount, setPendingCount] = useState<number>(0);
   const [escalationPolicies, setEscalationPolicies] = useState<EscalationPolicy[]>([]);
+  const [runningMaintenance, setRunningMaintenance] = useState<MaintenanceWindowItem[]>([]);
 
   // UI state
   const [loading, setLoading] = useState(true);
@@ -173,6 +179,7 @@ export default function OnCallPage() {
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [scheduleModalMode, setScheduleModalMode] = useState<'create' | 'edit'>('create');
   const [secondaryModalOpen, setSecondaryModalOpen] = useState(false);
+  const [holidayModalOpen, setHolidayModalOpen] = useState(false);
 
   const [overrideModalOpen, setOverrideModalOpen] = useState(false);
   const [overrideShift, setOverrideShift] = useState<ShiftSlot | null>(null);
@@ -203,17 +210,19 @@ export default function OnCallPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [schedRes, userRes, overridesRes, policiesRes] = await Promise.all([
+      const [schedRes, userRes, overridesRes, policiesRes, mwRes] = await Promise.all([
         listSchedules(),
         listUsers().catch(() => ({ items: [], total: 0 })),
         listPendingOverrides().catch(() => ({ items: [], total: 0 })),
         listEscalationPolicies().catch(() => ({ items: [], total: 0 })),
+        listMaintenanceWindows('running').catch(() => ({ items: [], total: 0 })),
       ]);
       setSchedules(schedRes.items || []);
       setUsers(userRes.items || []);
       const pendingItems = (overridesRes.items || []).filter((i) => i.status === 'pending');
       setPendingCount(pendingItems.length);
       setEscalationPolicies(policiesRes.items || []);
+      setRunningMaintenance(mwRes.items || []);
 
       if (schedRes.items && schedRes.items.length > 0) {
         setSelectedScheduleId((prev) => prev ?? schedRes.items[0].id);
@@ -440,10 +449,18 @@ export default function OnCallPage() {
           )}
           actions={
             currentTab === 'board' ? (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button size="sm" variant="primary" onClick={handleOpenCreateSchedule}>
                   <Plus size={14} className="mr-1.5" />
                   {tr('新建排班计划', 'New Schedule')}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setHolidayModalOpen(true)}
+                >
+                  <CalendarDays size={14} className="mr-1.5" />
+                  {tr('节假日日历', 'Holiday Calendar')}
                 </Button>
                 <Button
                   size="sm"
@@ -781,6 +798,32 @@ export default function OnCallPage() {
         </div>
       </div>
 
+      {/* Active Maintenance Window Banner */}
+      {runningMaintenance.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-800 dark:text-amber-200">
+          <div className="flex items-center gap-2.5 text-xs min-w-0">
+            <ShieldCheck size={16} className="shrink-0 text-amber-600 dark:text-amber-400" />
+            <div className="min-w-0">
+              <span className="font-semibold">
+                {tr('当前正处于计划内维护窗口：', 'Active Maintenance Window: ')}
+              </span>
+              {runningMaintenance.map((mw) => (
+                <span key={mw.id} className="mr-2">
+                  {mw.name} (
+                  {mw.action === 'suppress_all'
+                    ? tr('全量抑制', 'Suppress All')
+                    : tr('静默语音', 'Mute Voice')}
+                  )
+                </span>
+              ))}
+            </div>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => handleTabChange('routes')}>
+            {tr('管理维护窗口', 'Manage Windows')}
+          </Button>
+        </div>
+      )}
+
       {/* Schedule Gap Alert Banner (if any gaps detected) */}
       {gaps.length > 0 && (
         <div className="flex items-center gap-3 rounded-lg border border-red-500/30 bg-red-50 dark:bg-red-950/20 px-4 py-3 text-red-700 dark:text-red-300">
@@ -872,6 +915,8 @@ export default function OnCallPage() {
                   return gStart <= dayEnd && gEnd >= dayStart;
                 });
 
+                const holidayMeta = dayShifts.find((s) => s.day_tag);
+
                 return (
                   <div
                     key={idx}
@@ -881,15 +926,26 @@ export default function OnCallPage() {
                       isToday && 'bg-indigo-50/20 dark:bg-indigo-950/10'
                     )}
                   >
-                    <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center justify-between mb-1.5 gap-1">
                       <span
                         className={cn(
-                          'text-xs font-medium inline-flex h-5 w-5 items-center justify-center rounded-full',
+                          'text-xs font-medium inline-flex h-5 w-5 items-center justify-center rounded-full shrink-0',
                           isToday && 'bg-indigo-600 text-white font-bold'
                         )}
                       >
                         {day.getDate()}
                       </span>
+                      {holidayMeta?.day_tag && (
+                        <Chip
+                          tone={holidayMeta.day_tag === 'holiday' ? 'warning' : 'accent'}
+                          dense
+                          title={holidayMeta.day_label || holidayMeta.day_tag}
+                        >
+                          {holidayMeta.day_tag === 'holiday'
+                            ? holidayMeta.day_label || tr('节假日', 'Holiday')
+                            : holidayMeta.day_label || tr('补班', 'Workday')}
+                        </Chip>
+                      )}
                     </div>
 
                     {/* Shifts Pills */}
@@ -1249,6 +1305,14 @@ export default function OnCallPage() {
           </div>
         )}
       </Modal>
+
+      <Suspense fallback={null}>
+        <HolidayCalendarModal
+          open={holidayModalOpen}
+          onClose={() => setHolidayModalOpen(false)}
+          onUpdated={fetchCalendar}
+        />
+      </Suspense>
     </Tabs>
   );
 }

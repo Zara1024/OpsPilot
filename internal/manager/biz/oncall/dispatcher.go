@@ -236,17 +236,41 @@ func (d *Dispatcher) DispatchFiredSync(ctx context.Context, incidentID uint64, r
 		return
 	}
 
-	var routeID uint64
-	if matchRes.MatchedRoute != nil {
-		routeID = matchRes.MatchedRoute.ID
-	}
-
-	now := time.Now()
+	now := time.Now().UTC()
 	if d.now != nil {
-		now = d.now()
+		now = d.now().UTC()
 	}
 	if firedAt.IsZero() {
 		firedAt = now
+	}
+
+	if mw, mwErr := MatchMaintenanceWindow(ctx, d.store, d.routeMatcher, matchRes.ScheduleID, matchLabels, now); mwErr != nil {
+		d.log.Warn("oncall maintenance window match failed", slog.Uint64("incident_id", incidentID), slog.Any("err", mwErr))
+	} else if mw != nil && mw.Action == model.MaintenanceActionSuppressAll {
+		if incErr := d.store.IncrementMaintenanceSuppressed(ctx, mw.ID); incErr != nil {
+			d.log.Warn("oncall increment maintenance suppressed failed", slog.Uint64("mw_id", mw.ID), slog.Any("err", incErr))
+		}
+		if logErr := d.store.CreateNotificationLog(ctx, &model.NotificationLog{
+			IncidentID: incidentID,
+			AlertCount: 1,
+			ScheduleID: matchRes.ScheduleID,
+			Channel:    "maintenance",
+			Provider:   "maintenance_window",
+			Status:     model.NotifyStatusSuppressed,
+			Target:     mw.Name,
+			Message:    fmt.Sprintf("维护窗口「%s」(#%d) 生效中，已抑制告警派发", mw.Name, mw.ID),
+			CreatedAt:  now,
+		}); logErr != nil {
+			d.log.Warn("oncall log maintenance suppression failed", slog.Uint64("incident_id", incidentID), slog.Any("err", logErr))
+		}
+		d.metrics.incNotification("maintenance", "maintenance_window", model.NotifyStatusSuppressed)
+		d.metrics.incEscalation("maintenance_suppressed")
+		return
+	}
+
+	var routeID uint64
+	if matchRes.MatchedRoute != nil {
+		routeID = matchRes.MatchedRoute.ID
 	}
 	urgency := mapSeverityToUrgency(severity)
 	groupKey, waitDur, intervalDur := buildGroupKey(matchRes, ruleKey, urgency, matchLabels)

@@ -23,6 +23,7 @@ vi.mock('@/api/oncall', async () => {
     getVoiceConfig: vi.fn(),
     updateVoiceConfig: vi.fn(),
     testVoiceCall: vi.fn(),
+    rotateVoiceCallbackToken: vi.fn(),
   };
 });
 
@@ -192,5 +193,41 @@ describe('VoiceGatewayTab', () => {
       await screen.findByText('主通道（aliyun）外呼异常，已自动切换至备援通道（tencent）'),
     ).toBeInTheDocument();
     expect(screen.getByText(/aliyun upstream 500/)).toBeInTheDocument();
+  });
+
+  it('rotates voice webhook callback token after confirmation and updates URLs', async () => {
+    const user = userEvent.setup();
+    vi.mocked(oncallApi.getVoiceConfig).mockResolvedValue({
+      provider: 'aliyun',
+      dispatch_enabled: true,
+      aliyun_secret_configured: true,
+      callback_urls: {
+        aliyun: 'https://opspilot.test/api/v1/oncall/voice/callback/aliyun?token=oldtok',
+      },
+    });
+    vi.mocked(oncallApi.rotateVoiceCallbackToken).mockResolvedValue({
+      ok: true,
+      config: {
+        provider: 'aliyun',
+        dispatch_enabled: true,
+        aliyun_secret_configured: true,
+        callback_urls: {
+          aliyun: 'https://opspilot.test/api/v1/oncall/voice/callback/aliyun?token=newtok999',
+        },
+      },
+    });
+
+    render(<VoiceGatewayTab />);
+
+    expect(await screen.findByDisplayValue('https://opspilot.test/api/v1/oncall/voice/callback/aliyun?token=oldtok')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '一键轮换回调 Token' }));
+    await user.click(await screen.findByRole('button', { name: '确认' }));
+
+    await waitFor(() => {
+      expect(oncallApi.rotateVoiceCallbackToken).toHaveBeenCalledTimes(1);
+    });
+    expect(await screen.findByDisplayValue('https://opspilot.test/api/v1/oncall/voice/callback/aliyun?token=newtok999')).toBeInTheDocument();
+    expect(screen.getByText(/语音回调 Token 已轮换生效/)).toBeInTheDocument();
   });
 });

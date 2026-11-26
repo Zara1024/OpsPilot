@@ -844,6 +844,7 @@ export function EscalationChatOpsTab({ schedules, users: propUsers = [] }: Escal
                 { value: 'webhook', label: tr('Webhook 广播', 'Webhook') },
                 { value: 'sms', label: tr('短信', 'SMS') },
                 { value: 'email', label: tr('邮件', 'Email') },
+                { value: 'maintenance', label: tr('维护抑制', 'Maintenance') },
               ]}
               className="w-36 text-xs"
             />
@@ -886,7 +887,7 @@ export function EscalationChatOpsTab({ schedules, users: propUsers = [] }: Escal
                     const tone =
                       item.status === 'failed'
                         ? 'danger'
-                        : item.status === 'throttled'
+                        : item.status === 'throttled' || item.status === 'suppressed'
                         ? 'warning'
                         : item.status === 'calling'
                         ? 'accent'
@@ -900,6 +901,8 @@ export function EscalationChatOpsTab({ schedules, users: propUsers = [] }: Escal
                         ? tr('呼叫中', 'Calling')
                         : item.status === 'sent'
                         ? tr('已发送', 'Sent')
+                        : item.status === 'suppressed'
+                        ? tr('维护抑制', 'Suppressed')
                         : item.status === 'throttled'
                         ? tr('频控限流', 'Throttled')
                         : tr('发送失败', 'Failed');

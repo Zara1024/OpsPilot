@@ -29,6 +29,8 @@ type ShiftSlot struct {
 	OriginalUserID   *uint64   `json:"original_user_id,omitempty"`
 	OriginalUserName string    `json:"original_user_name,omitempty"`
 	Reason           string    `json:"reason,omitempty"`
+	DayTag           string    `json:"day_tag,omitempty"`   // "holiday" | "makeup_workday"
+	DayLabel         string    `json:"day_label,omitempty"` // Statutory holiday / makeup workday name
 }
 
 type LiveOnCallStatus struct {
@@ -67,9 +69,19 @@ func (s *Scheduler) ComputeScheduleShifts(ctx context.Context, scheduleID uint64
 		return nil, fmt.Errorf("list overrides: %w", err)
 	}
 
+	loc := loadScheduleLocation(sched.Timezone)
+	localStart := windowStart.In(loc).AddDate(0, 0, -1)
+	localEnd := windowEnd.In(loc).AddDate(0, 0, 1)
+	years := make([]int, 0, 3)
+	for yr := localStart.Year(); yr <= localEnd.Year(); yr++ {
+		years = append(years, yr)
+	}
+	dbCalDays, _ := s.store.ListCalendarDaysInRange(ctx, model.CalendarRegionCN, localStart.Format("2006-01-02"), localEnd.Format("2006-01-02"))
+	calMap := BuildCNCalendarMap(dbCalDays, years...)
+
 	var allShifts []*ShiftSlot
 	for _, rot := range rotations {
-		shifts := s.computeBaseRotationShifts(sched, rot, windowStart, windowEnd)
+		shifts := s.computeBaseRotationShifts(sched, rot, windowStart, windowEnd, calMap)
 		// Apply overrides
 		shifts = s.applyOverrides(rot, shifts, overrides)
 		allShifts = append(allShifts, shifts...)
@@ -118,7 +130,16 @@ func (s *Scheduler) ComputeScheduleShifts(ctx context.Context, scheduleID uint64
 	return allShifts, nil
 }
 
-func (s *Scheduler) computeBaseRotationShifts(sched *model.Schedule, rot *model.Rotation, start, end time.Time) []*ShiftSlot {
+func loadScheduleLocation(tz string) *time.Location {
+	if tz != "" {
+		if loc, err := time.LoadLocation(tz); err == nil && loc != nil {
+			return loc
+		}
+	}
+	return time.FixedZone("CST", 8*3600)
+}
+
+func (s *Scheduler) computeBaseRotationShifts(sched *model.Schedule, rot *model.Rotation, start, end time.Time, calMap map[string]*model.CalendarDay) []*ShiftSlot {
 	var userIDs []uint64
 	if err := json.Unmarshal([]byte(rot.UsersJSON), &userIDs); err != nil || len(userIDs) == 0 {
 		return nil
@@ -130,15 +151,12 @@ func (s *Scheduler) computeBaseRotationShifts(sched *model.Schedule, rot *model.
 	}
 	shiftDuration := time.Duration(shiftLenSec) * time.Second
 
+	loc := loadScheduleLocation(sched.Timezone)
 	anchor := rot.EffectiveFrom
 	if anchor.IsZero() {
 		anchor = sched.CreatedAt
 	}
 	if sched.HandoffTime != "" {
-		loc, err := time.LoadLocation(sched.Timezone)
-		if err != nil || loc == nil {
-			loc = time.FixedZone("CST", 8*3600)
-		}
 		anchorInLoc := anchor.In(loc)
 		var hh, mm, ss int
 		if _, scanErr := fmt.Sscanf(sched.HandoffTime, "%d:%d:%d", &hh, &mm, &ss); scanErr == nil {
@@ -167,32 +185,42 @@ func (s *Scheduler) computeBaseRotationShifts(sched *model.Schedule, rot *model.
 		uIdx := ((i % numUsers) + numUsers) % numUsers
 		uid := userIDs[uIdx]
 
-		// Time restriction check
-		if rot.TimeRestrictionType == model.TimeRestrictionWeekday {
-			weekday := shiftStart.Weekday()
+		localStart := shiftStart.In(loc)
+		localDate := localStart.Format("2006-01-02")
+		isWorkday, dayTag, dayLabel := ResolveDayKind(localDate, localStart.Weekday(), calMap)
+
+		// Time restriction & CN statutory holiday/workday check
+		switch rot.TimeRestrictionType {
+		case model.TimeRestrictionWeekday:
+			weekday := localStart.Weekday()
 			if weekday == time.Saturday || weekday == time.Sunday {
 				continue
 			}
-		} else if rot.TimeRestrictionType == model.TimeRestrictionTimeOfDay && rot.RestrictionStartTime != "" && rot.RestrictionEndTime != "" {
-			loc, _ := time.LoadLocation(sched.Timezone)
-			if loc == nil {
-				loc = time.FixedZone("CST", 8*3600)
+		case model.TimeRestrictionWorkdayCN:
+			if !isWorkday {
+				continue
 			}
-			var sh, sm, ss, eh, em, es int
-			_, err1 := fmt.Sscanf(rot.RestrictionStartTime, "%d:%d:%d", &sh, &sm, &ss)
-			_, err2 := fmt.Sscanf(rot.RestrictionEndTime, "%d:%d:%d", &eh, &em, &es)
-			if err1 == nil && err2 == nil {
-				localStart := shiftStart.In(loc)
-				dayStart := time.Date(localStart.Year(), localStart.Month(), localStart.Day(), sh, sm, ss, 0, loc)
-				var dayEnd time.Time
-				if eh > sh || (eh == sh && em > sm) {
-					dayEnd = time.Date(localStart.Year(), localStart.Month(), localStart.Day(), eh, em, es, 0, loc)
-				} else {
-					// Overnight shift (e.g. 21:00 to 09:00 next day)
-					dayEnd = time.Date(localStart.Year(), localStart.Month(), localStart.Day()+1, eh, em, es, 0, loc)
+		case model.TimeRestrictionHolidayCN:
+			if isWorkday {
+				continue
+			}
+		case model.TimeRestrictionTimeOfDay:
+			if rot.RestrictionStartTime != "" && rot.RestrictionEndTime != "" {
+				var sh, sm, ss, eh, em, es int
+				_, err1 := fmt.Sscanf(rot.RestrictionStartTime, "%d:%d:%d", &sh, &sm, &ss)
+				_, err2 := fmt.Sscanf(rot.RestrictionEndTime, "%d:%d:%d", &eh, &em, &es)
+				if err1 == nil && err2 == nil {
+					dayStart := time.Date(localStart.Year(), localStart.Month(), localStart.Day(), sh, sm, ss, 0, loc)
+					var dayEnd time.Time
+					if eh > sh || (eh == sh && em > sm) {
+						dayEnd = time.Date(localStart.Year(), localStart.Month(), localStart.Day(), eh, em, es, 0, loc)
+					} else {
+						// Overnight shift (e.g. 21:00 to 09:00 next day)
+						dayEnd = time.Date(localStart.Year(), localStart.Month(), localStart.Day()+1, eh, em, es, 0, loc)
+					}
+					shiftStart = dayStart.UTC()
+					shiftEnd = dayEnd.UTC()
 				}
-				shiftStart = dayStart.UTC()
-				shiftEnd = dayEnd.UTC()
 			}
 		}
 
@@ -207,6 +235,8 @@ func (s *Scheduler) computeBaseRotationShifts(sched *model.Schedule, rot *model.
 			EndTime:      shiftEnd,
 			BaseEndTime:  shiftEnd,
 			IsOverride:   false,
+			DayTag:       dayTag,
+			DayLabel:     dayLabel,
 		})
 	}
 

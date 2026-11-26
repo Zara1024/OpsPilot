@@ -124,6 +124,27 @@ func (h *Handler) updateChannelConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// @Summary Rotate the ChatOps callback and quick-action signing token
+// @Router /api/v1/oncall/channels/callback-token/rotate [post]
+// @Success 200 {object} map[string]any
+func (h *Handler) rotateChannelCallbackToken(w http.ResponseWriter, r *http.Request) {
+	c, ok := requireAdmin(w, r)
+	if !ok {
+		return
+	}
+
+	cfg, err := h.store.RotateChatOpsCallbackToken(r.Context(), c.UserID)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	slog.Info("oncall chatops callback token rotated", slog.Uint64("admin_id", c.UserID))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":     true,
+		"config": h.sanitizeChannelConfig(r, cfg, true),
+	})
+}
+
 // @Summary Send a real SMS connectivity test via configured On-Call SMS gateway
 // @Router /api/v1/oncall/channels/test-sms [post]
 // @Success 200 {object} channels.SMSResult

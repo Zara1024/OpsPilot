@@ -211,6 +211,25 @@ func (s *Store) EnsureChatOpsCallbackToken(ctx context.Context) (string, error) 
 	return cfg.ChatOpsCallbackToken, nil
 }
 
+// RotateChatOpsCallbackToken generates a brand-new ChatOps callback/signing token and persists it encrypted while preserving other secrets.
+func (s *Store) RotateChatOpsCallbackToken(ctx context.Context, updatedBy uint64) (*channels.ChannelGatewayConfig, error) {
+	cfg, err := s.GetChannelConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		cfg = DefaultChannelGatewayConfig()
+	}
+	cfg.ChatOpsCallbackToken = generateVoiceWebhookToken()
+	if updatedBy > 0 {
+		cfg.UpdatedBy = updatedBy
+	}
+	if err := s.UpdateChannelConfig(ctx, cfg); err != nil {
+		return nil, fmt.Errorf("rotate chatops callback token: %w", err)
+	}
+	return cfg, nil
+}
+
 // GetWarRoomByIncident fetches the persisted incident war room, if one exists.
 func (s *Store) GetWarRoomByIncident(ctx context.Context, incidentID uint64) (*model.WarRoom, error) {
 	if incidentID == 0 {

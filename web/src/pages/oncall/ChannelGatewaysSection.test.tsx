@@ -24,6 +24,7 @@ vi.mock('@/api/oncall', async () => {
     updateChannelConfig: vi.fn(),
     testSMSChannel: vi.fn(),
     testEmailChannel: vi.fn(),
+    rotateChannelCallbackToken: vi.fn(),
   };
 });
 
@@ -165,5 +166,50 @@ describe('ChannelGatewaysSection', () => {
     expect(screen.queryByRole('button', { name: '保存多通道配置' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '发送测试短信' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '发送测试邮件' })).toBeDisabled();
+  });
+
+  it('rotates chatops callback token after confirmation and refreshes signed URLs', async () => {
+    const user = userEvent.setup();
+    vi.mocked(oncallApi.getChannelConfig).mockResolvedValue({
+      sms_enabled: false,
+      sms_provider: '',
+      email_enabled: false,
+      smtp_port: 465,
+      smtp_tls_mode: 'ssl',
+      smtp_timeout_seconds: 10,
+      war_room_provider: '',
+      callback_urls: {
+        feishu: 'https://opspilot.test/api/v1/oncall/chatops/callback/feishu?token=oldchat',
+        dingtalk: 'https://opspilot.test/api/v1/oncall/chatops/callback/dingtalk?token=oldchat',
+      },
+    });
+    vi.mocked(oncallApi.rotateChannelCallbackToken).mockResolvedValue({
+      ok: true,
+      config: {
+        sms_enabled: false,
+        sms_provider: '',
+        email_enabled: false,
+        smtp_port: 465,
+        smtp_tls_mode: 'ssl',
+        smtp_timeout_seconds: 10,
+        war_room_provider: '',
+        callback_urls: {
+          feishu: 'https://opspilot.test/api/v1/oncall/chatops/callback/feishu?token=newchat888',
+          dingtalk: 'https://opspilot.test/api/v1/oncall/chatops/callback/dingtalk?token=newchat888',
+        },
+      },
+    });
+
+    render(<ChannelGatewaysSection />);
+
+    expect(await screen.findByDisplayValue('https://opspilot.test/api/v1/oncall/chatops/callback/feishu?token=oldchat')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '一键轮换回调 Token' }));
+    await user.click(await screen.findByRole('button', { name: '确认' }));
+
+    await waitFor(() => {
+      expect(oncallApi.rotateChannelCallbackToken).toHaveBeenCalledTimes(1);
+    });
+    expect(await screen.findByDisplayValue('https://opspilot.test/api/v1/oncall/chatops/callback/feishu?token=newchat888')).toBeInTheDocument();
   });
 });

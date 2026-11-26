@@ -8,6 +8,7 @@ import {
   RefreshCw,
   CheckSquare,
   Bell,
+  Download,
 } from 'lucide-react';
 import {
   Button,
@@ -15,6 +16,7 @@ import {
   Chip,
   EmptyState,
   Label,
+  Select,
   Textarea,
 } from '@/components/ui';
 import { useDialogs } from '@/components/ui/useDialogs';
@@ -26,6 +28,7 @@ import {
   sendHandoffReminderNow,
   getBurnoutAnalytics,
   getNoisyAlerts,
+  exportBurnoutAnalytics,
   type CurrentHandoffStatus,
   type HandoffLogItem,
   type BurnoutAnalytics,
@@ -37,15 +40,18 @@ interface HandoffAnalyticsTabProps {
   schedules: OnCallSchedule[];
 }
 
-export function HandoffAnalyticsTab({ schedules: _schedules }: HandoffAnalyticsTabProps) {
+export function HandoffAnalyticsTab({ schedules }: HandoffAnalyticsTabProps) {
   const { tr } = useI18n();
   const { alertAction, dialog } = useDialogs();
 
+  const [selectedScheduleId, setSelectedScheduleId] = useState<number>(0);
+  const [timeRange, setTimeRange] = useState<'7d' | '14d' | '30d' | '90d'>('7d');
   const [handoff, setHandoff] = useState<CurrentHandoffStatus | null>(null);
   const [handoffLogs, setHandoffLogs] = useState<HandoffLogItem[]>([]);
   const [analytics, setAnalytics] = useState<BurnoutAnalytics | null>(null);
   const [noisyAlerts, setNoisyAlerts] = useState<NoisyAlertItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exportingFmt, setExportingFmt] = useState<'csv' | 'json' | null>(null);
 
   // Handoff signing & reminder
   const [handoffNotes, setHandoffNotes] = useState('');
@@ -56,12 +62,13 @@ export function HandoffAnalyticsTab({ schedules: _schedules }: HandoffAnalyticsT
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    const schedArg = selectedScheduleId > 0 ? selectedScheduleId : undefined;
     try {
       const [hRes, lRes, aRes, nRes] = await Promise.all([
-        getCurrentHandoff().catch(() => null),
-        listHandoffLogs(undefined, 20).catch(() => ({ items: [], total: 0 })),
-        getBurnoutAnalytics().catch(() => null),
-        getNoisyAlerts().catch(() => ({ items: [] })),
+        getCurrentHandoff(schedArg).catch(() => null),
+        listHandoffLogs(schedArg, 20).catch(() => ({ items: [], total: 0 })),
+        getBurnoutAnalytics(schedArg, timeRange).catch(() => null),
+        getNoisyAlerts(schedArg, timeRange).catch(() => ({ items: [] })),
       ]);
       setHandoff(hRes);
       if (hRes?.notes) setHandoffNotes(hRes.notes);
@@ -73,10 +80,10 @@ export function HandoffAnalyticsTab({ schedules: _schedules }: HandoffAnalyticsT
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedScheduleId, timeRange]);
 
   useEffect(() => {
-    fetchData();
+    void fetchData();
   }, [fetchData]);
 
   const handleSignHandoff = async () => {
@@ -89,7 +96,7 @@ export function HandoffAnalyticsTab({ schedules: _schedules }: HandoffAnalyticsT
         notes: handoffNotes.trim(),
       });
       setHandoff(res);
-      const logsRes = await listHandoffLogs(undefined, 20).catch(() => null);
+      const logsRes = await listHandoffLogs(selectedScheduleId > 0 ? selectedScheduleId : undefined, 20).catch(() => null);
       if (logsRes?.items) {
         setHandoffLogs(logsRes.items);
       }
@@ -109,7 +116,7 @@ export function HandoffAnalyticsTab({ schedules: _schedules }: HandoffAnalyticsT
     setRemindFeedback(null);
     try {
       const res = await sendHandoffReminderNow(handoff.schedule_id);
-      const logsRes = await listHandoffLogs(undefined, 20).catch(() => null);
+      const logsRes = await listHandoffLogs(selectedScheduleId > 0 ? selectedScheduleId : undefined, 20).catch(() => null);
       if (logsRes?.items) {
         setHandoffLogs(logsRes.items);
       }
@@ -138,6 +145,34 @@ export function HandoffAnalyticsTab({ schedules: _schedules }: HandoffAnalyticsT
       setRemindingNow(false);
     }
   };
+
+  const handleExport = async (format: 'csv' | 'json') => {
+    if (exportingFmt) return;
+    setExportingFmt(format);
+    try {
+      await exportBurnoutAnalytics({
+        scheduleId: selectedScheduleId > 0 ? selectedScheduleId : undefined,
+        timeRange,
+        format,
+      });
+    } catch (e: unknown) {
+      await alertAction(e instanceof Error ? e.message : tr('导出报表失败', 'Failed to export report'));
+    } finally {
+      setExportingFmt(null);
+    }
+  };
+
+  const maxTrendVal = Math.max(
+    1,
+    ...(analytics?.trends || []).map((t) => Math.max(t.incident_count || 0, t.night_count || 0)),
+  );
+
+  const mttaRatingLabel =
+    analytics?.mtta_rating === 'poor' || analytics?.mtta_rating === 'critical'
+      ? tr('待优化 (>15m)', 'Needs Attention')
+      : analytics?.mtta_rating === 'moderate' || analytics?.mtta_rating === 'warning'
+      ? tr('中等 (<15m)', 'Moderate')
+      : tr('优秀 (<5m)', 'Good');
 
   return (
     <div className="space-y-8">
@@ -318,63 +353,225 @@ export function HandoffAnalyticsTab({ schedules: _schedules }: HandoffAnalyticsT
         </Card>
       </section>
 
-      {/* 2. SRE Burnout Health Analytics */}
-      <section className="space-y-3">
-        <div className="flex items-center gap-2">
-          <HeartPulse className="text-emerald-500" size={18} />
-          <h2 className="text-base font-semibold text-text">
-            {tr('SRE 疲劳度健康大盘', 'SRE Burnout Health Analytics')}
-          </h2>
+      {/* 2. SRE Burnout Health & Fine-Grained SLA Analytics */}
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <HeartPulse className="text-emerald-500" size={18} />
+            <h2 className="text-base font-semibold text-text">
+              {tr('SRE 疲劳度与 MTTA/MTTR 响应报表', 'SRE Burnout & SLA Analytics')}
+            </h2>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {schedules.length > 0 && (
+              <Select
+                value={String(selectedScheduleId)}
+                onValueChange={(val) => setSelectedScheduleId(Number(val))}
+                aria-label={tr('筛选排班计划', 'Filter schedule')}
+                options={[
+                  { value: '0', label: tr('全部排班汇总', 'All Schedules') },
+                  ...schedules.map((s) => ({ value: String(s.id), label: s.name })),
+                ]}
+                className="w-40 text-xs"
+              />
+            )}
+            <Select
+              value={timeRange}
+              onValueChange={(val) => setTimeRange(val as '7d' | '14d' | '30d' | '90d')}
+              aria-label={tr('选择统计时间窗口', 'Select analytics time range')}
+              options={[
+                { value: '7d', label: tr('近 7 天', 'Last 7 Days') },
+                { value: '14d', label: tr('近 14 天', 'Last 14 Days') },
+                { value: '30d', label: tr('近 30 天', 'Last 30 Days') },
+                { value: '90d', label: tr('近 90 天', 'Last 90 Days') },
+              ]}
+              className="w-32 text-xs"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleExport('csv')}
+              disabled={exportingFmt !== null}
+            >
+              <Download size={13} className="mr-1.5" />
+              {exportingFmt === 'csv' ? tr('导出中...', 'Exporting...') : tr('导出 CSV', 'Export CSV')}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleExport('json')}
+              disabled={exportingFmt !== null}
+            >
+              <Download size={13} className="mr-1.5" />
+              {exportingFmt === 'json' ? tr('导出中...', 'Exporting...') : tr('导出 JSON', 'Export JSON')}
+            </Button>
+          </div>
         </div>
 
-        {/* 4 Stat Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {/* 4 Enhanced Stat Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="p-4">
             <span className="text-xs text-text-muted block">
-              {tr('MTTA 平均响应时长', 'MTTA (Response Time)')}
+              {tr('MTTA 平均响应时长', 'MTTA (Ack Latency)')}
             </span>
             <div className="text-2xl font-bold font-mono text-text mt-1">
-              {analytics?.mtta_seconds || 0}s
+              {analytics?.mtta_seconds ?? 0}s
             </div>
-            <div className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">
-              {tr('评级：优秀', 'Rating: Good')}
+            <div className="text-[11px] font-mono text-text-muted mt-1">
+              P50: {analytics?.mtta_p50_seconds ?? 0}s · P90: {analytics?.mtta_p90_seconds ?? 0}s · P95: {analytics?.mtta_p95_seconds ?? 0}s
+            </div>
+            <div className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-0.5">
+              {tr(`评级：${mttaRatingLabel}`, `Rating: ${mttaRatingLabel}`)}
             </div>
           </Card>
 
           <Card className="p-4">
             <span className="text-xs text-text-muted block">
-              {tr('夜间叫醒电话次数', 'Night Phone Calls')}
+              {tr('MTTR 平均修复时长', 'MTTR (Resolve Latency)')}
+            </span>
+            <div className="text-2xl font-bold font-mono text-text mt-1">
+              {analytics?.mttr_seconds ?? 0}s
+            </div>
+            <div className="text-[11px] font-mono text-text-muted mt-1">
+              P50: {analytics?.mttr_p50_seconds ?? 0}s · P90: {analytics?.mttr_p90_seconds ?? 0}s
+            </div>
+            <div className="text-[11px] text-indigo-600 dark:text-indigo-400 mt-0.5">
+              {tr(
+                `认领率 ${analytics?.ack_rate ?? 0}% · 恢复率 ${analytics?.resolve_rate ?? 0}%`,
+                `Ack ${analytics?.ack_rate ?? 0}% · Resolved ${analytics?.resolve_rate ?? 0}%`
+              )}
+            </div>
+          </Card>
+
+          <Card className="p-4">
+            <span className="text-xs text-text-muted block">
+              {tr('夜间叫醒与事件统计', 'Night Wakes & Incidents')}
             </span>
             <div className="text-2xl font-bold font-mono text-amber-600 dark:text-amber-400 mt-1">
-              {analytics?.night_call_count || 0}
+              {analytics?.night_call_count ?? 0}
             </div>
             <div className="text-[11px] text-text-muted mt-1">
-              {tr('近 14 天累计', 'Past 14 days')}
+              {tr(
+                `窗口事件 ${analytics?.total_incidents ?? 0} 起 · 待处理 ${analytics?.open_count ?? 0}`,
+                `${analytics?.total_incidents ?? 0} incidents · ${analytics?.open_count ?? 0} open`
+              )}
             </div>
           </Card>
 
           <Card className="p-4">
             <span className="text-xs text-text-muted block">
-              {tr('团队健康指数', 'Team Burnout Index')}
+              {tr('健康指数与真实降噪比', 'Health & Noise Reduction')}
             </span>
-            <div className="text-2xl font-bold font-mono text-indigo-600 dark:text-indigo-400 mt-1">
-              {analytics?.burnout_index || 90}/100
-            </div>
-            <div className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">
-              {tr('健康度良好', 'Healthy Status')}
-            </div>
-          </Card>
-
-          <Card className="p-4">
-            <span className="text-xs text-text-muted block">
-              {tr('告警风暴降噪比率', 'Noise Reduction Ratio')}
-            </span>
-            <div className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-1">
-              {analytics?.noise_reduction_ratio || 85}%
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="text-2xl font-bold font-mono text-indigo-600 dark:text-indigo-400">
+                {analytics?.burnout_index ?? 100}/100
+              </span>
+              <span className="text-sm font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                {analytics?.noise_reduction_ratio ?? 0}%
+              </span>
             </div>
             <div className="text-[11px] text-text-muted mt-1">
-              {tr('智能汇聚收敛率', 'Aggregation Rate')}
+              {tr(
+                `分组收敛 ${analytics?.merged_alerts_count ?? 0} 条 · 抑制/限流 ${analytics?.suppressed_alerts_count ?? 0} 次`,
+                `Merged ${analytics?.merged_alerts_count ?? 0} · Suppressed ${analytics?.suppressed_alerts_count ?? 0}`
+              )}
             </div>
+          </Card>
+        </div>
+
+        {/* Daily Trends & Severity SLA Breakdown */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card className="p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-text uppercase tracking-wider">
+                {tr('每日告警与夜间触达趋势', 'Daily Incident & Night Call Trend')}
+              </span>
+              <div className="flex items-center gap-3 text-[11px] text-text-muted">
+                <span className="inline-flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-sm bg-indigo-500" />
+                  {tr('告警事件', 'Incidents')}
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-sm bg-amber-500" />
+                  {tr('夜间叫醒', 'Night Wakes')}
+                </span>
+              </div>
+            </div>
+            {analytics?.trends && analytics.trends.length > 0 ? (
+              <div className="flex items-end gap-1.5 h-32 pt-4 border-b border-border overflow-x-auto pb-1">
+                {analytics.trends.slice(-14).map((pt) => {
+                  const incPct = Math.round(((pt.incident_count || 0) / maxTrendVal) * 100);
+                  const nightPct = Math.round(((pt.night_count || 0) / maxTrendVal) * 100);
+                  return (
+                    <div
+                      key={pt.date}
+                      className="flex-1 min-w-[24px] flex flex-col items-center justify-end h-full gap-1"
+                      title={`${pt.date}: ${pt.incident_count} incidents, ${pt.night_count} night wakes`}
+                    >
+                      <div className="w-full flex items-end justify-center gap-0.5 h-20">
+                        <div
+                          className="w-2.5 rounded-t bg-indigo-500/80 dark:bg-indigo-400/80 transition-all"
+                          style={{ height: `${Math.max(pt.incident_count > 0 ? 10 : 2, incPct)}%` }}
+                        />
+                        <div
+                          className="w-2.5 rounded-t bg-amber-500/80 dark:bg-amber-400/80 transition-all"
+                          style={{ height: `${Math.max(pt.night_count > 0 ? 10 : 0, nightPct)}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] font-mono text-text-muted">{pt.date}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="py-8 text-center text-xs text-text-muted">
+                {tr('所选窗口内暂无趋势记录', 'No trend data in selected window')}
+              </div>
+            )}
+          </Card>
+
+          <Card className="!p-0 overflow-hidden">
+            <div className="px-4 py-3 border-b border-border">
+              <span className="text-xs font-semibold text-text uppercase tracking-wider">
+                {tr('告警严重级别 SLA 明细', 'Severity SLA Breakdown')}
+              </span>
+            </div>
+            {analytics?.severity_breakdown && analytics.severity_breakdown.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse text-text">
+                  <thead>
+                    <tr className="border-b border-border bg-bg/50 text-text-muted font-semibold">
+                      <th className="py-2 px-4">{tr('严重级别', 'Severity')}</th>
+                      <th className="py-2 px-4">{tr('事件数', 'Count')}</th>
+                      <th className="py-2 px-4">{tr('平均 MTTA', 'Avg MTTA')}</th>
+                      <th className="py-2 px-4">{tr('平均 MTTR', 'Avg MTTR')}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {analytics.severity_breakdown.map((sb) => (
+                      <tr key={sb.severity} className="hover:bg-bg/40">
+                        <td className="py-2 px-4">
+                          <Chip
+                            tone={sb.severity === 'critical' || sb.severity === 'p0' || sb.severity === 'p1' ? 'danger' : 'warning'}
+                            dense
+                          >
+                            {sb.severity}
+                          </Chip>
+                        </td>
+                        <td className="py-2 px-4 font-mono">{sb.count}</td>
+                        <td className="py-2 px-4 font-mono">{sb.mtta_seconds}s</td>
+                        <td className="py-2 px-4 font-mono">{sb.mttr_seconds}s</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="py-10 text-center text-xs text-text-muted">
+                {tr('当前窗口暂无分级告警样本', 'No incident severity samples in window')}
+              </div>
+            )}
           </Card>
         </div>
 
@@ -387,12 +584,14 @@ export function HandoffAnalyticsTab({ schedules: _schedules }: HandoffAnalyticsT
               </span>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+              <table className="w-full text-left text-xs border-collapse text-text">
                 <thead>
                   <tr className="border-b border-border bg-bg/50 text-text-muted font-semibold">
                     <th className="py-2.5 px-4">{tr('工程师', 'Engineer')}</th>
-                    <th className="py-2.5 px-4">{tr('值班时长', 'On-Call Hours')}</th>
-                    <th className="py-2.5 px-4">{tr('处置告警', 'Incidents Handled')}</th>
+                    <th className="py-2.5 px-4">{tr('真实排班工时', 'On-Call Hours')}</th>
+                    <th className="py-2.5 px-4">{tr('认领处置', 'Acked')}</th>
+                    <th className="py-2.5 px-4">{tr('完成修复', 'Resolved')}</th>
+                    <th className="py-2.5 px-4">{tr('平均 MTTA', 'Avg MTTA')}</th>
                     <th className="py-2.5 px-4">{tr('夜间电话', 'Night Calls')}</th>
                     <th className="py-2.5 px-4">{tr('疲劳评分', 'Fatigue Score')}</th>
                     <th className="py-2.5 px-4">{tr('健康状态', 'Health Status')}</th>
@@ -404,6 +603,8 @@ export function HandoffAnalyticsTab({ schedules: _schedules }: HandoffAnalyticsT
                       <td className="py-2.5 px-4 font-semibold text-text">{eng.name}</td>
                       <td className="py-2.5 px-4 font-mono">{eng.on_call_hours}h</td>
                       <td className="py-2.5 px-4 font-mono">{eng.incidents_handled}</td>
+                      <td className="py-2.5 px-4 font-mono">{eng.resolved_count ?? 0}</td>
+                      <td className="py-2.5 px-4 font-mono">{eng.avg_mtta_seconds ?? 0}s</td>
                       <td className="py-2.5 px-4 font-mono text-amber-600 dark:text-amber-400">
                         {eng.night_calls}
                       </td>
@@ -449,17 +650,18 @@ export function HandoffAnalyticsTab({ schedules: _schedules }: HandoffAnalyticsT
         <Card className="!p-0 overflow-hidden">
           {noisyAlerts.length === 0 ? (
             <div className="py-6 text-center text-xs text-text-muted">
-              {tr('暂无高频噪音告警', 'No noisy alerts detected')}
+              {tr('所选窗口内暂无高频噪音告警', 'No noisy alerts detected in selected window')}
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+              <table className="w-full text-left text-xs border-collapse text-text">
                 <thead>
                   <tr className="border-b border-border bg-bg/50 text-text-muted font-semibold">
                     <th className="py-2.5 px-4">{tr('告警指纹/名称', 'Alert Name')}</th>
                     <th className="py-2.5 px-4">{tr('所属微服务', 'Service')}</th>
                     <th className="py-2.5 px-4">{tr('等级', 'Severity')}</th>
                     <th className="py-2.5 px-4">{tr('触发频次', 'Trigger Count')}</th>
+                    <th className="py-2.5 px-4">{tr('平均持续', 'Avg Duration')}</th>
                     <th className="py-2.5 px-4">{tr('抖动评分', 'Flapping Score')}</th>
                     <th className="py-2.5 px-4">{tr('治理建议', 'Recommended Action')}</th>
                   </tr>
@@ -473,13 +675,14 @@ export function HandoffAnalyticsTab({ schedules: _schedules }: HandoffAnalyticsT
                       </td>
                       <td className="py-2.5 px-4 font-medium text-text">{na.service}</td>
                       <td className="py-2.5 px-4">
-                        <Chip tone={na.severity === 'P0' || na.severity === 'P1' ? 'danger' : 'warning'} dense>
+                        <Chip tone={na.severity === 'P0' || na.severity === 'P1' || na.severity === 'critical' ? 'danger' : 'warning'} dense>
                           {na.severity}
                         </Chip>
                       </td>
                       <td className="py-2.5 px-4 font-mono font-bold text-amber-600 dark:text-amber-400">
                         {na.trigger_count} {tr('次', 'times')}
                       </td>
+                      <td className="py-2.5 px-4 font-mono">{na.avg_duration_sec}s</td>
                       <td className="py-2.5 px-4 font-mono">{na.flapping_score}</td>
                       <td className="py-2.5 px-4 text-text-muted max-w-sm truncate" title={na.recommended_action}>
                         {na.recommended_action}

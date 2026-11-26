@@ -22,6 +22,8 @@ const (
 	TimeRestrictionNone      = "none"
 	TimeRestrictionTimeOfDay = "time_of_day"
 	TimeRestrictionWeekday   = "weekday"
+	TimeRestrictionWorkdayCN = "workday_cn"
+	TimeRestrictionHolidayCN = "holiday_cn"
 )
 
 const (

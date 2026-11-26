@@ -43,6 +43,7 @@ type EscalationWorkerOpts struct {
 type EscalationWorker struct {
 	store          *store.Store
 	scheduler      *Scheduler
+	routeMatcher   *RouteMatcher
 	voiceGateway   *voice.VoiceGateway
 	channelGateway *channels.ChannelGateway
 	deliverer      MessageDeliverer
@@ -93,6 +94,7 @@ func NewEscalationWorker(opts EscalationWorkerOpts) *EscalationWorker {
 	return &EscalationWorker{
 		store:          opts.Store,
 		scheduler:      sched,
+		routeMatcher:   NewRouteMatcher(opts.Store),
 		voiceGateway:   vg,
 		channelGateway: cg,
 		deliverer:      opts.Deliverer,
@@ -267,6 +269,47 @@ func (w *EscalationWorker) processTask(ctx context.Context, task *model.Escalati
 		return
 	}
 
+	sched, _ := w.store.GetSchedule(ctx, task.ScheduleID)
+	isNight := isNightInSchedule(now, sched)
+
+	var suppressVoiceMW *model.MaintenanceWindow
+	if mw, mwErr := MatchMaintenanceWindow(ctx, w.store, w.routeMatcher, task.ScheduleID, w.incidentMatchLabels(grp.openIncidents[0], task), now); mwErr != nil {
+		w.log.Warn("oncall maintenance check failed during task processing", slog.Uint64("task_id", task.ID), slog.Any("err", mwErr))
+	} else if mw != nil {
+		if mw.Action == model.MaintenanceActionSuppressAll {
+			if incErr := w.store.IncrementMaintenanceSuppressed(ctx, mw.ID); incErr != nil {
+				w.log.Warn("increment maintenance suppressed failed", slog.Uint64("mw_id", mw.ID), slog.Any("err", incErr))
+			}
+			w.recordLog(ctx, &model.NotificationLog{
+				TaskID:         task.ID,
+				IncidentID:     task.IncidentID,
+				AlertCount:     grp.alertCount,
+				ScheduleID:     task.ScheduleID,
+				EscalationStep: task.CurrentStep,
+				Target:         mw.Name,
+				Channel:        "maintenance",
+				Provider:       "maintenance_window",
+				Status:         model.NotifyStatusSuppressed,
+				Message:        truncateString(fmt.Sprintf("维护窗口「%s」(#%d) 生效中，升级任务已延后至 %s", mw.Name, mw.ID, mw.EndsAt.Local().Format("15:04")), 500),
+				IsNight:        isNight,
+				CreatedAt:      now,
+			})
+			nextAt := mw.EndsAt.UTC()
+			if !nextAt.After(now) {
+				nextAt = now.Add(30 * time.Second)
+			}
+			task.NextRunAt = nextAt
+			task.LockedUntil = nil
+			if saveErr := w.store.SaveEscalationTask(ctx, task); saveErr != nil {
+				w.log.Warn("save delayed maintenance task failed", slog.Uint64("task_id", task.ID), slog.Any("err", saveErr))
+			}
+			return
+		}
+		if mw.Action == model.MaintenanceActionSuppressVoice {
+			suppressVoiceMW = mw
+		}
+	}
+
 	policies := w.loadPolicies(ctx, task.ScheduleID)
 	if task.StepStartedAt.IsZero() {
 		task.StepStartedAt = now
@@ -284,8 +327,6 @@ func (w *EscalationWorker) processTask(ctx context.Context, task *model.Escalati
 	}
 
 	policy := policies[idx]
-	sched, _ := w.store.GetSchedule(ctx, task.ScheduleID)
-	isNight := isNightInSchedule(now, sched)
 
 	var targetUser *store.UserSummary
 	var resolveErr error
@@ -335,7 +376,7 @@ func (w *EscalationWorker) processTask(ctx context.Context, task *model.Escalati
 	}
 
 	rule := rules[int(task.LadderStep)-1]
-	transientErr := w.executeRuleStep(ctx, task, rule, targetUser, cfg, grp, isNight, now)
+	transientErr := w.executeRuleStep(ctx, task, rule, targetUser, cfg, grp, isNight, now, suppressVoiceMW)
 	if transientErr != nil && task.AttemptCount < maxStepRetries {
 		task.AttemptCount++
 		task.LastError = truncateString(transientErr.Error(), 500)
@@ -418,12 +459,36 @@ func (w *EscalationWorker) executeRuleStep(
 	grp *openGroupContext,
 	isNight bool,
 	now time.Time,
+	suppressVoiceMW *model.MaintenanceWindow,
 ) error {
 	userName := displayNameOrEmail(user)
 	title := grp.title
 
 	switch rule.Channel {
 	case "voice_call":
+		if suppressVoiceMW != nil {
+			if incErr := w.store.IncrementMaintenanceSuppressed(ctx, suppressVoiceMW.ID); incErr != nil {
+				w.log.Warn("increment maintenance voice suppressed failed", slog.Uint64("mw_id", suppressVoiceMW.ID), slog.Any("err", incErr))
+			}
+			w.recordLog(ctx, &model.NotificationLog{
+				TaskID:         task.ID,
+				IncidentID:     task.IncidentID,
+				AlertCount:     grp.alertCount,
+				ScheduleID:     task.ScheduleID,
+				EscalationStep: task.CurrentStep,
+				UserID:         user.ID,
+				UserName:       userName,
+				Target:         maskPhone(user.Phone),
+				Channel:        "voice_call",
+				Provider:       "maintenance_window",
+				Status:         model.NotifyStatusSuppressed,
+				Message:        truncateString(fmt.Sprintf("维护窗口「%s」(#%d) 生效中，已静默本次语音外呼", suppressVoiceMW.Name, suppressVoiceMW.ID), 500),
+				IsNight:        isNight,
+				CreatedAt:      now,
+			})
+			return nil
+		}
+
 		cooldownSince := now.Add(-w.voiceCooldown)
 		throttled, tErr := w.store.HasRecentVoiceCall(ctx, user.ID, cooldownSince)
 		if tErr == nil && throttled {
@@ -1100,4 +1165,30 @@ func truncateString(s string, max int) string {
 		return s
 	}
 	return string(r[:max])
+}
+
+func (w *EscalationWorker) incidentMatchLabels(inc *alertmodel.Incident, task *model.EscalationTask) map[string]string {
+	out := make(map[string]string)
+	if inc != nil {
+		if parsed, err := inc.Labels(); err == nil {
+			for k, v := range parsed {
+				out[k] = v
+			}
+		}
+		if inc.Severity != "" && out["severity"] == "" {
+			out["severity"] = inc.Severity
+		}
+		if inc.Rule != "" && out["rule"] == "" {
+			out["rule"] = inc.Rule
+		}
+	}
+	if task != nil {
+		if task.Severity != "" && out["severity"] == "" {
+			out["severity"] = task.Severity
+		}
+		if task.RuleKey != "" && out["rule"] == "" {
+			out["rule"] = task.RuleKey
+		}
+	}
+	return out
 }

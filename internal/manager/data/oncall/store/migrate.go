@@ -22,5 +22,7 @@ func Migrate(db *gorm.DB) error {
 		&model.WarRoom{},
 		&model.EscalationTask{},
 		&model.NotificationLog{},
+		&model.CalendarDay{},
+		&model.MaintenanceWindow{},
 	)
 }

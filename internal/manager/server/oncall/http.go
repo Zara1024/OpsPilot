@@ -82,7 +82,7 @@ func NewHandlerWithDeps(s *store.Store, deps HandlerDeps) *Handler {
 		routeMatcher:     bizoncall.NewRouteMatcher(s),
 		escalationEngine: ee,
 		handoffService:   bizoncall.NewHandoffService(s, sched),
-		burnoutAnalyzer:  bizoncall.NewBurnoutAnalyzer(s),
+		burnoutAnalyzer:  bizoncall.NewBurnoutAnalyzer(s, sched),
 		voiceGateway:     vg,
 		channelGateway:   cg,
 		deliverer:        deps.Deliverer,
@@ -146,15 +146,28 @@ func (h *Handler) Register(r chi.Router) {
 	r.Post("/v1/oncall/handoff/remind-now", h.remindHandoffNow)
 	r.Get("/v1/oncall/analytics/burnout", h.getBurnoutAnalytics)
 	r.Get("/v1/oncall/analytics/noisy-alerts", h.getNoisyAlerts)
+	r.Get("/v1/oncall/analytics/export", h.exportBurnoutAnalytics)
+
+	// Phase 5 (P2): Statutory Holidays & Scheduled Maintenance Windows
+	r.Get("/v1/oncall/calendar/days", h.listCalendarDays)
+	r.Put("/v1/oncall/calendar/days", h.upsertCalendarDay)
+	r.Post("/v1/oncall/calendar/days/sync-cn", h.syncCNCalendarDays)
+	r.Delete("/v1/oncall/calendar/days/{id}", h.deleteCalendarDay)
+	r.Get("/v1/oncall/maintenance-windows", h.listMaintenanceWindows)
+	r.Post("/v1/oncall/maintenance-windows", h.createMaintenanceWindow)
+	r.Post("/v1/oncall/maintenance-windows/{id}/cancel", h.cancelMaintenanceWindow)
+	r.Delete("/v1/oncall/maintenance-windows/{id}", h.deleteMaintenanceWindow)
 
 	// Voice & Multi-Channel Gateways (SMS, SMTP Email, ChatOps & War Room)
 	r.Get("/v1/oncall/voice/config", h.getVoiceConfig)
 	r.Put("/v1/oncall/voice/config", h.updateVoiceConfig)
 	r.Post("/v1/oncall/voice/test-call", h.testVoiceCall)
+	r.Post("/v1/oncall/voice/callback-token/rotate", h.rotateVoiceCallbackToken)
 	r.Get("/v1/oncall/channels/config", h.getChannelConfig)
 	r.Put("/v1/oncall/channels/config", h.updateChannelConfig)
 	r.Post("/v1/oncall/channels/test-sms", h.testSMSChannel)
 	r.Post("/v1/oncall/channels/test-email", h.testEmailChannel)
+	r.Post("/v1/oncall/channels/callback-token/rotate", h.rotateChannelCallbackToken)
 
 	// Notification Delivery Logs & Escalation State Tasks
 	r.Get("/v1/oncall/notifications/logs", h.listNotificationLogs)

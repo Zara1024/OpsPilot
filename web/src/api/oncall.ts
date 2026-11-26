@@ -1,4 +1,12 @@
+import { getToken } from '@/store/auth';
 import { request } from './client';
+
+export type RotationTimeRestrictionType =
+  | 'none'
+  | 'time_of_day'
+  | 'weekday'
+  | 'workday_cn'
+  | 'holiday_cn';
 
 export interface OnCallRotation {
   id?: number;
@@ -10,7 +18,7 @@ export interface OnCallRotation {
   users?: number[];
   users_json?: string;
   effective_from: string;
-  time_restriction_type: 'none' | 'time_of_day' | 'weekday';
+  time_restriction_type: RotationTimeRestrictionType;
   restriction_start_time?: string;
   restriction_end_time?: string;
 }
@@ -37,7 +45,7 @@ export interface SetSecondaryRotationInput {
   shift_length_seconds?: number;
   users: number[];
   effective_from?: string;
-  time_restriction_type?: 'none' | 'time_of_day' | 'weekday';
+  time_restriction_type?: RotationTimeRestrictionType;
   restriction_start_time?: string;
   restriction_end_time?: string;
 }
@@ -74,6 +82,8 @@ export interface ShiftSlot {
   original_user_id?: number;
   original_user_name?: string;
   reason?: string;
+  day_tag?: 'holiday' | 'makeup_workday' | string;
+  day_label?: string;
 }
 
 export interface GapSlot {
@@ -472,6 +482,8 @@ export interface EngineerLoad {
   email: string;
   on_call_hours: number;
   incidents_handled: number;
+  resolved_count?: number;
+  avg_mtta_seconds?: number;
   night_calls: number;
   fatigue_score: number; // 0-100
   health_status: 'healthy' | 'moderate' | 'overloaded';
@@ -483,13 +495,39 @@ export interface TrendPoint {
   night_count: number;
 }
 
-export interface BurnoutAnalytics {
+export interface SeveritySummary {
+  severity: string;
+  count: number;
   mtta_seconds: number;
-  mtta_rating: 'good' | 'warning' | 'critical';
+  mttr_seconds: number;
+}
+
+export interface BurnoutAnalytics {
+  time_range?: string;
+  window_start?: string;
+  window_end?: string;
+  mtta_seconds: number;
+  mtta_p50_seconds?: number;
+  mtta_p90_seconds?: number;
+  mtta_p95_seconds?: number;
+  mtta_rating: 'good' | 'moderate' | 'poor' | 'warning' | 'critical';
+  mttr_seconds?: number;
+  mttr_p50_seconds?: number;
+  mttr_p90_seconds?: number;
+  mttr_p95_seconds?: number;
+  mttr_rating?: 'good' | 'moderate' | 'poor' | 'warning' | 'critical';
   night_call_count: number;
   total_incidents: number;
+  acknowledged_count?: number;
+  resolved_count?: number;
+  open_count?: number;
+  ack_rate?: number;
+  resolve_rate?: number;
   burnout_index: number; // 0-100
+  merged_alerts_count?: number;
+  suppressed_alerts_count?: number;
   noise_reduction_ratio: number;
+  severity_breakdown?: SeveritySummary[];
   engineer_loads: EngineerLoad[];
   trends: TrendPoint[];
 }
@@ -551,9 +589,13 @@ export async function getBurnoutAnalytics(
 }
 
 export async function getNoisyAlerts(
-  scheduleId?: number
+  scheduleId?: number,
+  timeRange?: string
 ): Promise<{ items: NoisyAlertItem[]; total: number }> {
-  const q = scheduleId ? `?schedule_id=${scheduleId}` : '';
+  const p = new URLSearchParams();
+  if (scheduleId) p.set('schedule_id', String(scheduleId));
+  if (timeRange) p.set('time_range', timeRange);
+  const q = p.toString() ? `?${p.toString()}` : '';
   return request('GET', `/oncall/analytics/noisy-alerts${q}`);
 }
 
@@ -780,4 +822,143 @@ export async function listEscalationTasks(
 ): Promise<{ items: OnCallEscalationTask[]; total: number }> {
   const q = status && status !== 'all' ? `?status=${encodeURIComponent(status)}` : '';
   return request('GET', `/oncall/escalations/tasks${q}`);
+}
+
+// ==========================================
+// Phase 5 (P2): Statutory Holidays, Maintenance Windows, Export & Token Rotation
+// ==========================================
+
+export interface CalendarDayItem {
+  id?: number;
+  date: string;
+  region: string;
+  day_type: 'holiday' | 'workday';
+  name: string;
+  source: 'builtin' | 'custom';
+  created_by?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export async function listCalendarDays(
+  year?: number,
+  region = 'CN'
+): Promise<{ year: number; region: string; years: number[]; items: CalendarDayItem[]; total: number }> {
+  const p = new URLSearchParams();
+  if (year) p.set('year', String(year));
+  if (region) p.set('region', region);
+  return request('GET', `/oncall/calendar/days?${p.toString()}`);
+}
+
+export async function upsertCalendarDay(data: {
+  date: string;
+  day_type: 'holiday' | 'workday';
+  name: string;
+  region?: string;
+}): Promise<{ ok: boolean; item: CalendarDayItem }> {
+  return request('PUT', '/oncall/calendar/days', data);
+}
+
+export async function syncCNCalendarDays(year: number): Promise<{
+  ok: boolean;
+  year: number;
+  synced_count: number;
+}> {
+  return request('POST', '/oncall/calendar/days/sync-cn', { year });
+}
+
+export async function deleteCalendarDay(id: number): Promise<{ ok: boolean }> {
+  return request('DELETE', `/oncall/calendar/days/${id}`);
+}
+
+export interface MaintenanceWindowItem {
+  id: number;
+  name: string;
+  description: string;
+  schedule_id: number;
+  schedule_name: string;
+  matcher_json: string;
+  matchers?: LabelMatcher[];
+  action: 'suppress_all' | 'suppress_voice';
+  starts_at: string;
+  ends_at: string;
+  status: 'active' | 'cancelled';
+  runtime_status: 'running' | 'scheduled' | 'expired' | 'cancelled' | 'unknown';
+  suppressed_count: number;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listMaintenanceWindows(
+  status?: string
+): Promise<{ items: MaintenanceWindowItem[]; total: number }> {
+  const q = status && status !== 'all' ? `?status=${encodeURIComponent(status)}` : '';
+  return request('GET', `/oncall/maintenance-windows${q}`);
+}
+
+export async function createMaintenanceWindow(data: {
+  name: string;
+  description?: string;
+  schedule_id: number;
+  matchers?: LabelMatcher[];
+  action: 'suppress_all' | 'suppress_voice';
+  starts_at: string;
+  ends_at: string;
+}): Promise<MaintenanceWindowItem> {
+  return request('POST', '/oncall/maintenance-windows', data);
+}
+
+export async function cancelMaintenanceWindow(id: number): Promise<{
+  ok: boolean;
+  item: MaintenanceWindowItem;
+}> {
+  return request('POST', `/oncall/maintenance-windows/${id}/cancel`, {});
+}
+
+export async function deleteMaintenanceWindow(id: number): Promise<{ ok: boolean }> {
+  return request('DELETE', `/oncall/maintenance-windows/${id}`);
+}
+
+export async function exportBurnoutAnalytics(params: {
+  scheduleId?: number;
+  timeRange?: string;
+  format: 'csv' | 'json';
+}): Promise<void> {
+  const p = new URLSearchParams();
+  if (params.scheduleId) p.set('schedule_id', String(params.scheduleId));
+  if (params.timeRange) p.set('time_range', params.timeRange);
+  p.set('format', params.format);
+
+  const token = getToken();
+  const res = await fetch(`/api/v1/oncall/analytics/export?${p.toString()}`, {
+    method: 'GET',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const blob = await res.blob();
+  const dlUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = dlUrl;
+  a.download = `opspilot-oncall-report-${params.timeRange || '30d'}.${params.format}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(dlUrl);
+}
+
+export async function rotateVoiceCallbackToken(): Promise<{
+  ok: boolean;
+  config: VoiceGatewayConfig;
+}> {
+  return request('POST', '/oncall/voice/callback-token/rotate', {});
+}
+
+export async function rotateChannelCallbackToken(): Promise<{
+  ok: boolean;
+  config: ChannelGatewayConfig;
+}> {
+  return request('POST', '/oncall/channels/callback-token/rotate', {});
 }

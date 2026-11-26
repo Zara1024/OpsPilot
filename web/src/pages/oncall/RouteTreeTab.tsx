@@ -34,6 +34,7 @@ import {
   type LabelMatcher,
   type RouteMatchResult,
 } from '@/api/oncall';
+import { MaintenanceWindowsSection } from './MaintenanceWindowsSection';
 
 interface RouteTreeTabProps {
   schedules: OnCallSchedule[];
@@ -491,6 +492,9 @@ export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProp
           </div>
         )}
       </Card>
+
+      {/* P2 Maintenance Windows Section */}
+      <MaintenanceWindowsSection schedules={schedules} />
 
       {/* Create / Edit Modal */}
       <Modal

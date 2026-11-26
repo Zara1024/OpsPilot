@@ -14,6 +14,7 @@ vi.mock('@/api/oncall', async () => {
     sendHandoffReminderNow: vi.fn(),
     getBurnoutAnalytics: vi.fn(),
     getNoisyAlerts: vi.fn(),
+    exportBurnoutAnalytics: vi.fn(),
   };
 });
 
@@ -105,5 +106,57 @@ describe('HandoffAnalyticsTab', () => {
     render(<HandoffAnalyticsTab schedules={[]} />);
 
     expect(await screen.findByText('暂无交接签收与提醒记录')).toBeInTheDocument();
+  });
+
+  it('triggers CSV and JSON analytics exports with active window parameters', async () => {
+    const user = userEvent.setup();
+    vi.mocked(oncallApi.listHandoffLogs).mockResolvedValue({ items: [], total: 0 });
+    vi.mocked(oncallApi.getBurnoutAnalytics).mockResolvedValue({
+      time_range: '7d',
+      mtta_seconds: 42.5,
+      mtta_p50_seconds: 35,
+      mtta_p90_seconds: 90,
+      mtta_p95_seconds: 120,
+      mtta_rating: 'good',
+      mttr_seconds: 320,
+      mttr_p50_seconds: 280,
+      mttr_p90_seconds: 600,
+      night_call_count: 2,
+      total_incidents: 5,
+      open_count: 1,
+      ack_rate: 80,
+      resolve_rate: 80,
+      burnout_index: 78,
+      merged_alerts_count: 3,
+      suppressed_alerts_count: 2,
+      noise_reduction_ratio: 50,
+      severity_breakdown: [
+        { severity: 'critical', count: 3, mtta_seconds: 30, mttr_seconds: 240 },
+      ],
+      engineer_loads: [],
+      trends: [{ date: '11-26', incident_count: 5, night_count: 2 }],
+    });
+
+    render(<HandoffAnalyticsTab schedules={[]} />);
+
+    expect(await screen.findByText(/P50: 35s · P90: 90s/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '导出 CSV' }));
+    await waitFor(() => {
+      expect(oncallApi.exportBurnoutAnalytics).toHaveBeenCalledWith({
+        scheduleId: undefined,
+        timeRange: '7d',
+        format: 'csv',
+      });
+    });
+
+    await user.click(screen.getByRole('button', { name: '导出 JSON' }));
+    await waitFor(() => {
+      expect(oncallApi.exportBurnoutAnalytics).toHaveBeenCalledWith({
+        scheduleId: undefined,
+        timeRange: '7d',
+        format: 'json',
+      });
+    });
   });
 });

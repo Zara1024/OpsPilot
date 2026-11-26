@@ -49,7 +49,9 @@ export function SecondaryRotationModal({
   const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
   const [userSearch, setUserSearch] = useState('');
   const [effectiveFrom, setEffectiveFrom] = useState('');
-  const [timeRestrictionType, setTimeRestrictionType] = useState<'none' | 'time_of_day' | 'weekday'>('none');
+  const [timeRestrictionType, setTimeRestrictionType] = useState<
+    'none' | 'time_of_day' | 'weekday' | 'workday_cn' | 'holiday_cn'
+  >('none');
   const [restrictionStartTime, setRestrictionStartTime] = useState('09:00:00');
   const [restrictionEndTime, setRestrictionEndTime] = useState('21:00:00');
 
@@ -314,10 +316,16 @@ export function SecondaryRotationModal({
             </Label>
             <Select
               value={timeRestrictionType}
-              onValueChange={(val) => setTimeRestrictionType(val as 'none' | 'time_of_day' | 'weekday')}
+              onValueChange={(val) =>
+                setTimeRestrictionType(
+                  val as 'none' | 'time_of_day' | 'weekday' | 'workday_cn' | 'holiday_cn'
+                )
+              }
               options={[
                 { value: 'none', label: tr('全天 24 小时随行待命', '24/7 Always On-Call') },
-                { value: 'weekday', label: tr('仅工作日待命 (周一至周五)', 'Weekdays Only (Mon-Fri)') },
+                { value: 'workday_cn', label: tr('中国法定工作日（含调休补班）', 'CN Statutory Workdays (incl. Makeup)') },
+                { value: 'holiday_cn', label: tr('中国法定节假日与周末', 'CN Statutory Holidays & Weekends') },
+                { value: 'weekday', label: tr('仅常规工作日 (周一至周五)', 'Weekdays Only (Mon-Fri)') },
                 { value: 'time_of_day', label: tr('限定时间窗口 (如日间支持)', 'Time Window (e.g. Daytime)') },
               ]}
               className="w-full text-xs"

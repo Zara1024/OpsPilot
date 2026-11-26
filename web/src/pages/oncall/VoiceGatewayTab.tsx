@@ -7,6 +7,7 @@ import {
   Copy,
   Check,
   ShieldAlert,
+  RotateCw,
 } from 'lucide-react';
 import {
   Button,
@@ -24,6 +25,7 @@ import {
   getVoiceConfig,
   updateVoiceConfig,
   testVoiceCall,
+  rotateVoiceCallbackToken,
   type VoiceGatewayConfig,
   type VoiceCallResult,
 } from '@/api/oncall';
@@ -31,7 +33,7 @@ import {
 export function VoiceGatewayTab() {
   const { tr } = useI18n();
   const { isAdmin } = usePermissions();
-  const { alertAction, dialog } = useDialogs();
+  const { alertAction, confirmAction, dialog } = useDialogs();
 
   const [config, setConfig] = useState<VoiceGatewayConfig>({
     provider: 'mock',
@@ -55,6 +57,8 @@ export function VoiceGatewayTab() {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [rotatingToken, setRotatingToken] = useState(false);
+  const [rotateSuccess, setRotateSuccess] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -324,6 +328,31 @@ export function VoiceGatewayTab() {
     }
   };
 
+  const handleRotateToken = async () => {
+    if (!isAdmin || rotatingToken) return;
+    const confirmed = await confirmAction(
+      tr(
+        '确认轮换语音回调 Token 吗？生成新地址后，原回调 URL 将立即失效，请同步更新云厂商后台配置。',
+        'Rotate the voice webhook token? Existing callback URLs will stop working immediately.'
+      ),
+    );
+    if (!confirmed) return;
+    setRotatingToken(true);
+    setRotateSuccess(false);
+    try {
+      const res = await rotateVoiceCallbackToken();
+      if (res?.config) {
+        setConfig((prev) => ({ ...prev, ...res.config }));
+      }
+      setRotateSuccess(true);
+      setTimeout(() => setRotateSuccess(false), 5000);
+    } catch (e: unknown) {
+      await alertAction(e instanceof Error ? e.message : tr('轮换回调 Token 失败', 'Failed to rotate callback token'));
+    } finally {
+      setRotatingToken(false);
+    }
+  };
+
   const renderCallStatusChip = (status: VoiceCallResult['status']) => {
     switch (status) {
       case 'failed':
@@ -516,9 +545,26 @@ export function VoiceGatewayTab() {
 
             {isAdmin && config.callback_urls && Object.keys(config.callback_urls).length > 0 && (
               <div className="space-y-2.5 pt-3 border-t border-border">
-                <div className="font-semibold text-text">
-                  {tr('语音状态与 DTMF 按键回执地址', 'Signed Status & DTMF Callback URLs')}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-semibold text-text">
+                    {tr('语音状态与 DTMF 按键回执地址', 'Signed Status & DTMF Callback URLs')}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="dangerGhost"
+                    type="button"
+                    onClick={handleRotateToken}
+                    disabled={rotatingToken}
+                  >
+                    <RotateCw size={12} className={`mr-1 ${rotatingToken ? 'animate-spin' : ''}`} />
+                    {rotatingToken ? tr('轮换中...', 'Rotating...') : tr('一键轮换回调 Token', 'Rotate Callback Token')}
+                  </Button>
                 </div>
+                {rotateSuccess && (
+                  <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-2 text-xs text-emerald-700 dark:text-emerald-300">
+                    {tr('语音回调 Token 已轮换生效，请将下方新地址同步至阿里云/腾讯云控制台。', 'Voice callback token rotated. Update your cloud provider webhook URLs.')}
+                  </div>
+                )}
                 {config.callback_urls.aliyun && (
                   <div className="space-y-1">
                     <Label className="text-xs text-text-muted">

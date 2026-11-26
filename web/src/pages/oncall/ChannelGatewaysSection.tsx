@@ -9,6 +9,7 @@ import {
   Check,
   Send,
   ShieldAlert,
+  RotateCw,
 } from 'lucide-react';
 import {
   Button,
@@ -27,6 +28,7 @@ import {
   updateChannelConfig,
   testSMSChannel,
   testEmailChannel,
+  rotateChannelCallbackToken,
   type ChannelGatewayConfig,
   type TestSMSResult,
   type TestEmailResult,
@@ -67,7 +69,9 @@ function SecretField({ label, value, configured, disabled, onChange }: SecretFie
 export function ChannelGatewaysSection() {
   const { tr } = useI18n();
   const { isAdmin } = usePermissions();
-  const { alertAction, dialog } = useDialogs();
+  const { alertAction, confirmAction, dialog } = useDialogs();
+  const [rotatingToken, setRotatingToken] = useState(false);
+  const [rotateSuccess, setRotateSuccess] = useState(false);
 
   const [config, setConfig] = useState<ChannelGatewayConfig>({
     sms_enabled: false,
@@ -663,6 +667,48 @@ export function ChannelGatewaysSection() {
 
             {isAdmin && config.callback_urls && Object.keys(config.callback_urls).length > 0 && (
               <div className="space-y-2 pt-2 border-t border-border">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-text">
+                    {tr('签名回调接入地址', 'Signed Callback URLs')}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="dangerGhost"
+                    type="button"
+                    disabled={rotatingToken}
+                    onClick={async () => {
+                      const confirmed = await confirmAction(
+                        tr(
+                          '确认轮换 ChatOps 回调与快捷操作签名 Token 吗？旧卡片快捷按钮及机器人回调地址将立即失效。',
+                          'Rotate ChatOps callback & quick-action signing token? Existing callback URLs and signed card links will expire immediately.'
+                        ),
+                      );
+                      if (!confirmed) return;
+                      setRotatingToken(true);
+                      setRotateSuccess(false);
+                      try {
+                        const res = await rotateChannelCallbackToken();
+                        if (res?.config) {
+                          setConfig((prev) => ({ ...prev, ...res.config }));
+                        }
+                        setRotateSuccess(true);
+                        setTimeout(() => setRotateSuccess(false), 5000);
+                      } catch (e: unknown) {
+                        await alertAction(e instanceof Error ? e.message : tr('轮换失败', 'Failed to rotate token'));
+                      } finally {
+                        setRotatingToken(false);
+                      }
+                    }}
+                  >
+                    <RotateCw size={12} className={`mr-1 ${rotatingToken ? 'animate-spin' : ''}`} />
+                    {rotatingToken ? tr('轮换中...', 'Rotating...') : tr('一键轮换回调 Token', 'Rotate Callback Token')}
+                  </Button>
+                </div>
+                {rotateSuccess && (
+                  <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-2 text-xs text-emerald-700 dark:text-emerald-300">
+                    {tr('ChatOps 回调 Token 已轮换生效，请复制最新地址更新至飞书/钉钉开放平台。', 'Callback token rotated. Update your Feishu/DingTalk app settings with the new URLs.')}
+                  </div>
+                )}
                 {config.callback_urls.feishu && (
                   <div className="space-y-1">
                     <Label className="text-xs text-text-muted">{tr('飞书卡片回调地址', 'Feishu Card Callback URL')}</Label>

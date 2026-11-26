@@ -19,6 +19,7 @@ const (
 	NotifyStatusAnswered      = "answered"
 	NotifyStatusDTMFConfirmed = "dtmf_confirmed"
 	NotifyStatusThrottled     = "throttled"
+	NotifyStatusSuppressed    = "suppressed"
 	NotifyStatusFailed        = "failed"
 )
 

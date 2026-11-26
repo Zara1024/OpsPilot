@@ -211,6 +211,25 @@ func (s *Store) EnsureVoiceWebhookToken(ctx context.Context) (string, error) {
 	return cfg.WebhookToken, nil
 }
 
+// RotateVoiceWebhookToken generates a brand-new webhook callback token and persists it encrypted while preserving other secrets.
+func (s *Store) RotateVoiceWebhookToken(ctx context.Context, updatedBy uint64) (*voice.VoiceGatewayConfig, error) {
+	cfg, err := s.GetVoiceConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		cfg = DefaultVoiceGatewayConfig()
+	}
+	cfg.WebhookToken = generateVoiceWebhookToken()
+	if updatedBy > 0 {
+		cfg.UpdatedBy = updatedBy
+	}
+	if err := s.UpdateVoiceConfig(ctx, cfg); err != nil {
+		return nil, fmt.Errorf("rotate voice webhook token: %w", err)
+	}
+	return cfg, nil
+}
+
 func generateVoiceWebhookToken() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {

@@ -71,6 +71,11 @@ export function ScheduleEditModal({
   const [primaryCadence, setPrimaryCadence] = useState<'daily' | 'weekly'>('daily');
   const [primaryUserIds, setPrimaryUserIds] = useState<number[]>([]);
   const [primarySearch, setPrimarySearch] = useState('');
+  const [primaryTimeRestriction, setPrimaryTimeRestriction] = useState<
+    'none' | 'time_of_day' | 'weekday' | 'workday_cn' | 'holiday_cn'
+  >('none');
+  const [primaryStartTime, setPrimaryStartTime] = useState('09:00:00');
+  const [primaryEndTime, setPrimaryEndTime] = useState('21:00:00');
 
   // Tier 2 (Secondary)
   const [enableSecondary, setEnableSecondary] = useState(false);
@@ -78,7 +83,9 @@ export function ScheduleEditModal({
   const [secondaryCadence, setSecondaryCadence] = useState<'daily' | 'weekly'>('weekly');
   const [secondaryUserIds, setSecondaryUserIds] = useState<number[]>([]);
   const [secondarySearch, setSecondarySearch] = useState('');
-  const [secondaryTimeRestriction, setSecondaryTimeRestriction] = useState<'none' | 'time_of_day' | 'weekday'>('none');
+  const [secondaryTimeRestriction, setSecondaryTimeRestriction] = useState<
+    'none' | 'time_of_day' | 'weekday' | 'workday_cn' | 'holiday_cn'
+  >('none');
   const [secondaryStartTime, setSecondaryStartTime] = useState('09:00:00');
   const [secondaryEndTime, setSecondaryEndTime] = useState('21:00:00');
 
@@ -110,10 +117,16 @@ export function ScheduleEditModal({
         setPrimaryName(t1.name || defaultPrimaryName);
         setPrimaryCadence((t1.rotation_type as 'daily' | 'weekly') || 'daily');
         setPrimaryUserIds(getRotationUserIds(t1));
+        setPrimaryTimeRestriction(t1.time_restriction_type || 'none');
+        setPrimaryStartTime(t1.restriction_start_time || '09:00:00');
+        setPrimaryEndTime(t1.restriction_end_time || '21:00:00');
       } else {
         setPrimaryName(defaultPrimaryName);
         setPrimaryCadence('daily');
         setPrimaryUserIds([]);
+        setPrimaryTimeRestriction('none');
+        setPrimaryStartTime('09:00:00');
+        setPrimaryEndTime('21:00:00');
       }
 
       const t2 = initialSchedule.rotations?.find((r) => r.tier === 2);
@@ -147,6 +160,9 @@ export function ScheduleEditModal({
       setPrimaryName(defaultPrimaryName);
       setPrimaryCadence('daily');
       setPrimaryUserIds([]);
+      setPrimaryTimeRestriction('none');
+      setPrimaryStartTime('09:00:00');
+      setPrimaryEndTime('21:00:00');
 
       setEnableSecondary(false);
       setSecondaryName(defaultSecondaryName);
@@ -225,7 +241,11 @@ export function ScheduleEditModal({
           shift_length_seconds: primaryShiftLen,
           users: primaryUserIds,
           effective_from: new Date().toISOString(),
-          time_restriction_type: 'none',
+          time_restriction_type: primaryTimeRestriction,
+          restriction_start_time:
+            primaryTimeRestriction === 'time_of_day' ? primaryStartTime : '',
+          restriction_end_time:
+            primaryTimeRestriction === 'time_of_day' ? primaryEndTime : '',
         },
       ];
 
@@ -565,6 +585,48 @@ export function ScheduleEditModal({
               </div>
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label className="text-xs mb-1 block">{tr('时段与节假日规则', 'Time & Holiday Rule')}</Label>
+                <Select
+                  value={primaryTimeRestriction}
+                  onValueChange={(val) =>
+                    setPrimaryTimeRestriction(
+                      val as 'none' | 'time_of_day' | 'weekday' | 'workday_cn' | 'holiday_cn'
+                    )
+                  }
+                  options={[
+                    { value: 'none', label: tr('全天 24 小时随行待命', '24/7 Always On-Call') },
+                    { value: 'workday_cn', label: tr('中国法定工作日（含调休补班）', 'CN Statutory Workdays (incl. Makeup)') },
+                    { value: 'holiday_cn', label: tr('中国法定节假日与周末', 'CN Statutory Holidays & Weekends') },
+                    { value: 'weekday', label: tr('仅常规工作日 (周一至周五)', 'Weekdays Only (Mon-Fri)') },
+                    { value: 'time_of_day', label: tr('限定时间窗口 (如日间)', 'Time Window') },
+                  ]}
+                  className="w-full text-xs"
+                />
+              </div>
+              {primaryTimeRestriction === 'time_of_day' && (
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <Label className="text-xs mb-1 block">{tr('开始', 'Start')}</Label>
+                    <Input
+                      value={primaryStartTime}
+                      onChange={(e) => setPrimaryStartTime(e.target.value)}
+                      className="w-full text-xs"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <Label className="text-xs mb-1 block">{tr('结束', 'End')}</Label>
+                    <Input
+                      value={primaryEndTime}
+                      onChange={(e) => setPrimaryEndTime(e.target.value)}
+                      className="w-full text-xs"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Selected Users */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
@@ -735,10 +797,16 @@ export function ScheduleEditModal({
                     <Label className="text-xs mb-1 block">{tr('时段限制', 'Time Restriction')}</Label>
                     <Select
                       value={secondaryTimeRestriction}
-                      onValueChange={(val) => setSecondaryTimeRestriction(val as 'none' | 'time_of_day' | 'weekday')}
+                      onValueChange={(val) =>
+                        setSecondaryTimeRestriction(
+                          val as 'none' | 'time_of_day' | 'weekday' | 'workday_cn' | 'holiday_cn'
+                        )
+                      }
                       options={[
                         { value: 'none', label: tr('全天 24 小时随行待命', '24/7 Always On-Call') },
-                        { value: 'weekday', label: tr('仅工作日待命 (周一至周五)', 'Weekdays Only') },
+                        { value: 'workday_cn', label: tr('中国法定工作日（含调休补班）', 'CN Statutory Workdays (incl. Makeup)') },
+                        { value: 'holiday_cn', label: tr('中国法定节假日与周末', 'CN Statutory Holidays & Weekends') },
+                        { value: 'weekday', label: tr('仅常规工作日 (周一至周五)', 'Weekdays Only (Mon-Fri)') },
                         { value: 'time_of_day', label: tr('限定时间窗口 (如日间)', 'Time Window') },
                       ]}
                       className="w-full text-xs"

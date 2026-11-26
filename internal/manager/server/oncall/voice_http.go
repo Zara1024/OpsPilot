@@ -117,6 +117,27 @@ func (h *Handler) updateVoiceConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// @Summary Rotate the signed webhook callback token for On-Call voice callbacks
+// @Router /api/v1/oncall/voice/callback-token/rotate [post]
+// @Success 200 {object} map[string]any
+func (h *Handler) rotateVoiceCallbackToken(w http.ResponseWriter, r *http.Request) {
+	c, ok := requireAdmin(w, r)
+	if !ok {
+		return
+	}
+
+	cfg, err := h.store.RotateVoiceWebhookToken(r.Context(), c.UserID)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	slog.Info("oncall voice callback token rotated", slog.Uint64("admin_id", c.UserID))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":     true,
+		"config": h.sanitizeVoiceConfig(r, cfg, true),
+	})
+}
+
 // @Summary Trigger an On-Call test voice call
 // @Router /api/v1/oncall/voice/test-call [post]
 // @Success 200 {object} voice.CallResult
