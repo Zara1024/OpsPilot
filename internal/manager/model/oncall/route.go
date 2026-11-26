@@ -13,7 +13,7 @@ type Route struct {
 	Priority             int       `gorm:"column:priority;not null;default:0;index:idx_route_priority,priority:1" json:"priority"`
 	ScheduleID           uint64    `gorm:"column:schedule_id;not null" json:"schedule_id"`
 	EscalationPolicyID   uint64    `gorm:"column:escalation_policy_id;not null;default:0" json:"escalation_policy_id"`
-	GroupByJSON          string    `gorm:"column:group_by_json;type:text;not null;default:''" json:"group_by_json"`
+	GroupByJSON          string    `gorm:"column:group_by_json;size:512;not null;default:''" json:"group_by_json"`
 	GroupWaitSeconds     int       `gorm:"column:group_wait_seconds;not null;default:30" json:"group_wait_seconds"`
 	GroupIntervalSeconds int       `gorm:"column:group_interval_seconds;not null;default:300" json:"group_interval_seconds"`
 	Enabled              bool      `gorm:"column:enabled;not null;default:true;index:idx_route_priority,priority:2" json:"enabled"`

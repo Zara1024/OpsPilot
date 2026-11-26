@@ -16,7 +16,7 @@ type MaintenanceWindow struct {
 	Name            string     `gorm:"column:name;size:128;not null" json:"name"`
 	Description     string     `gorm:"column:description;size:255;not null;default:''" json:"description"`
 	ScheduleID      uint64     `gorm:"column:schedule_id;not null;default:0;index:idx_oncall_mw_sched" json:"schedule_id"`
-	MatcherJSON     string     `gorm:"column:matcher_json;type:text;not null;default:'[]'" json:"matcher_json"`
+	MatcherJSON     string     `gorm:"column:matcher_json;type:text" json:"matcher_json"`
 	Action          string     `gorm:"column:action;size:24;not null;default:'suppress_all'" json:"action"`
 	StartsAt        time.Time  `gorm:"column:starts_at;not null;index:idx_oncall_mw_time,priority:1" json:"starts_at"`
 	EndsAt          time.Time  `gorm:"column:ends_at;not null;index:idx_oncall_mw_time,priority:2" json:"ends_at"`
