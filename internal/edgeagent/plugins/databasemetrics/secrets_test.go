@@ -149,7 +149,7 @@ func TestBuildManagedSecretPreservingPasswordForPostgresSkipVerify(t *testing.T)
 	if err != nil {
 		t.Fatalf("buildManagedSecretPreservingPasswordInBase() error = %v", err)
 	}
-	if !strings.Contains(got, "postgresql://ongrid:old-secret@127.0.0.1:15432/metrics_test") {
+	if !strings.Contains(got, "postgresql://opspilot:old-secret@127.0.0.1:15432/metrics_test") {
 		t.Fatalf("secret = %q, want preserved password", got)
 	}
 	if !strings.Contains(got, "sslmode=require") {

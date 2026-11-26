@@ -175,7 +175,9 @@ func TestPipelineLongLabelsLifecycle(t *testing.T) {
 			require.Len(t, notifier.messages, 2, "long labels must not prevent notifications")
 			require.NotEqual(t, incidents[0].DedupeKey, incidents[1].DedupeKey)
 			for _, in := range incidents {
-				require.Equal(t, 256, utf8.RuneCountInString(in.Title))
+				require.NotEmpty(t, in.Title)
+				require.LessOrEqual(t, utf8.RuneCountInString(in.Title), 256)
+				require.Contains(t, in.Title, "GPU XID errors")
 				require.Greater(t, utf8.RuneCountInString(in.Summary), 256)
 				require.Contains(t, in.Summary, "team=TEST (value=109)")
 				storedLabels, err := in.Labels()

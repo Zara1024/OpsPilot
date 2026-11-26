@@ -82,10 +82,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Test
         # Keep DOM-heavy suites from competing for CPU within their test timeouts.
         run: >-
-          npm test -- --run --no-file-parallelism
+          npm test -- --run --no-file-parallelism --testTimeout=15000
           src/api/apm.test.ts
           src/components/apm
           src/pages/Apm
@@ -98,6 +101,11 @@ jobs:
           src/components/icons/Provider.test.tsx
           src/pages/kubernetes/edgeAttachments.test.ts
           src/pages/kubernetes/registryCommands.test.ts
+          src/pages/AlertIntegrations.test.tsx
+          src/pages/Alerts.header.test.tsx
+          src/pages/OnCallPage.test.tsx
+          src/pages/oncall
+          src/components/alerts/InvestigationEvidence.test.tsx
 
       - name: Build
         run: npm run build
@@ -137,3 +145,74 @@ jobs:
 
       - name: Lint and render Kubernetes chart
         run: make test-k8s-chart
+
+  mysql-integration:
+    name: MySQL 8.0 migrations + store tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      - name: MySQL 8.0 schema migrations & store tests
+        env:
+          OPSPILOT_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/?parseTime=true&charset=utf8mb4&loc=UTC"
+          OPSPILOT_MCP_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/?parseTime=true&charset=utf8mb4&loc=UTC"
+        run: |
+          go test -race -count=1 -v -run TestMySQLFullSchemaMigrations ./cmd/opspilot
+          go test -race -count=1 \
+            ./internal/manager/data/aiops/store \
+            ./internal/manager/data/alert/store \
+            ./internal/manager/data/device/store \
+            ./internal/manager/data/k8s/store \
+            ./internal/manager/data/oncall/store \
+            ./internal/manager/biz/externalmcp
+
+  security-scan:
+    name: security scan (govulncheck + npm audit)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Go vulnerability scan (govulncheck)
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+      - name: Frontend dependency audit (high+)
+        working-directory: web
+        run: npm ci && npm audit --omit=dev --audit-level=high

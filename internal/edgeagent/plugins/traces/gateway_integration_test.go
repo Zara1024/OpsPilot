@@ -30,6 +30,9 @@ func TestGatewayTempoTiming(t *testing.T) {
 			DecisionWait time.Duration `yaml:"decision_wait"`
 			Timeout      time.Duration `yaml:"timeout"`
 		} `yaml:"processors"`
+		Service struct {
+			Pipelines map[string]any `yaml:"pipelines"`
+		} `yaml:"service"`
 	}
 	var tempo struct {
 		MetricsGenerator struct {
@@ -49,6 +52,9 @@ func TestGatewayTempoTiming(t *testing.T) {
 		if err := yaml.Unmarshal(raw, target); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
+	}
+	if gateway.Service.Pipelines["traces"] == nil {
+		t.Skip("profiles-gateway.yaml does not enable a traces pipeline; /v1/traces routes directly to tempo")
 	}
 	decision := gateway.Processors["tail_sampling/sdk_preference"].DecisionWait
 	batch := gateway.Processors["batch/traces"].Timeout

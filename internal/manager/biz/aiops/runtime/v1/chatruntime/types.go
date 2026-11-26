@@ -15,6 +15,8 @@ package chatruntime
 import (
 	"encoding/json"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // ToolClass categorizes a tool's blast radius. Policies filter tools by
@@ -132,6 +134,41 @@ type OngridExt struct {
 	MinOngridVersion string `yaml:"min_ongrid_version" json:"min_ongrid_version"`
 }
 
+func (e OngridExt) isEmpty() bool {
+	return e.Scope == "" &&
+		e.EdgeRuntime == "" &&
+		len(e.EdgeCapabilities) == 0 &&
+		e.Activation.Mode == "" &&
+		len(e.Activation.Keywords) == 0 &&
+		e.MinOngridVersion == ""
+}
+
+// UnmarshalYAML decodes metadata.opspilot / metadata.ongrid extensions,
+// supporting both canonical min_opspilot_version and legacy min_ongrid_version.
+func (e *OngridExt) UnmarshalYAML(value *yaml.Node) error {
+	var raw struct {
+		Scope              string           `yaml:"scope"`
+		EdgeRuntime        string           `yaml:"edge_runtime"`
+		EdgeCapabilities   []map[string]any `yaml:"edge_capabilities"`
+		Activation         Activation       `yaml:"activation"`
+		MinOngridVersion   string           `yaml:"min_ongrid_version"`
+		MinOpsPilotVersion string           `yaml:"min_opspilot_version"`
+	}
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	e.Scope = raw.Scope
+	e.EdgeRuntime = raw.EdgeRuntime
+	e.EdgeCapabilities = raw.EdgeCapabilities
+	e.Activation = raw.Activation
+	if raw.MinOpsPilotVersion != "" {
+		e.MinOngridVersion = raw.MinOpsPilotVersion
+	} else {
+		e.MinOngridVersion = raw.MinOngridVersion
+	}
+	return nil
+}
+
 // SkillMetadata is the `metadata` frontmatter subtree common to both
 // openclaw and claude-code SKILL.md files plus the ongrid extension.
 type SkillMetadata struct {
@@ -143,6 +180,28 @@ type SkillMetadata struct {
 
 	// Ongrid is the ongrid-private extension subtree.
 	Ongrid OngridExt `yaml:"opspilot" json:"opspilot"`
+}
+
+// UnmarshalYAML decodes SkillMetadata while accepting both canonical "opspilot"
+// and legacy "ongrid" extension keys.
+func (m *SkillMetadata) UnmarshalYAML(value *yaml.Node) error {
+	var raw struct {
+		OS       []string  `yaml:"os"`
+		Requires Requires  `yaml:"requires"`
+		OpsPilot OngridExt `yaml:"opspilot"`
+		Ongrid   OngridExt `yaml:"ongrid"`
+	}
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	m.OS = raw.OS
+	m.Requires = raw.Requires
+	if !raw.OpsPilot.isEmpty() {
+		m.Ongrid = raw.OpsPilot
+	} else {
+		m.Ongrid = raw.Ongrid
+	}
+	return nil
 }
 
 // ToolDecl is a single tool declared by a skill. PR-2 stores the

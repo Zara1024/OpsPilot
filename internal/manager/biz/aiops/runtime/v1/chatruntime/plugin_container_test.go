@@ -1,6 +1,7 @@
 package chatruntime
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -264,7 +265,32 @@ func TestLoadPluginContainer_OpenclawRecursive_RelativeSkills(t *testing.T) {
 }
 
 func TestLoadPluginContainer_PathTraversal_Rejected(t *testing.T) {
-	res, err := LoadPluginContainer(fixturePack("path_traversal"))
+	tmp := t.TempDir()
+	outsideDir := filepath.Join(tmp, "outside")
+	if err := os.MkdirAll(outsideDir, 0o755); err != nil {
+		t.Fatalf("mkdir outside: %v", err)
+	}
+	outsideSkill := "---\nname: pwned\ndescription: Escaped skill.\n---\n\n# Pwned\n"
+	if err := os.WriteFile(filepath.Join(outsideDir, "SKILL.md"), []byte(outsideSkill), 0o600); err != nil {
+		t.Fatalf("write outside SKILL.md: %v", err)
+	}
+
+	packDir := filepath.Join(tmp, "pack")
+	if err := os.MkdirAll(filepath.Join(packDir, ".claude-plugin"), 0o755); err != nil {
+		t.Fatalf("mkdir plugin manifest dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(packDir, "skills"), 0o755); err != nil {
+		t.Fatalf("mkdir skills dir: %v", err)
+	}
+	manifest := `{"id":"path-traversal","name":"Path Traversal","version":"0.1.0","description":"Test"}`
+	if err := os.WriteFile(filepath.Join(packDir, ".claude-plugin", "plugin.json"), []byte(manifest), 0o600); err != nil {
+		t.Fatalf("write plugin.json: %v", err)
+	}
+	if err := os.Symlink(outsideDir, filepath.Join(packDir, "skills", "pwned")); err != nil {
+		t.Skipf("symlink creation unavailable: %v", err)
+	}
+
+	res, err := LoadPluginContainer(packDir)
 	if err != nil {
 		t.Fatalf("LoadPluginContainer: %v", err)
 	}

@@ -21,7 +21,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/gosnmp/gosnmp v1.41.0
 	github.com/itchyny/gojq v0.12.17
-	github.com/larksuite/oapi-sdk-go/v3 v3.5.4
+	github.com/larksuite/oapi-sdk-go/v3 v3.14.0
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/mattn/go-runewidth v0.0.15
 	github.com/modelcontextprotocol/go-sdk v1.8.0
