@@ -3,7 +3,7 @@ import { Button, Label, Textarea, PageHeader, EmptyStateCard } from '@/component
 import { Hint } from '@/components/ui/Tooltip';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, ListTodo, RefreshCw, Siren, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ListTodo, RefreshCw, Siren, Webhook, X } from 'lucide-react';
 import { Modal } from '@/components/Modal';
 import { cn } from '@/lib/cn';
 import { relativeTime } from '@/lib/format';
@@ -172,7 +172,13 @@ export default function AlertsPage() {
                   `全局 ${globalOpen} 未确认 · 当前筛选 ${total} 条 · 本页 Critical ${counts.critical}`,
                   `${globalOpen} open globally · ${total} in current filter · ${counts.critical} critical on this page`,
                 )}
-          actions={<div className="flex gap-2">
+          actions={<div className="flex flex-wrap items-center gap-2">
+              <Link
+                to="/alerts/integrations"
+                className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+              >
+                <Webhook size={12} /> {tr('外部接入', 'Integrations')}
+              </Link>
               <Link
                 to="/alerts/rules"
                 className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
@@ -367,7 +373,7 @@ function IncidentRow({
           ? (deviceNames[incident.target_id]
               ? `${deviceNames[incident.target_id]} · #${incident.target_id}`
               : tr(`设备 ${incident.target_id}`, `Device ${incident.target_id}`))
-          : '—'}
+          : (incident.target_name || '—')}
       </td>
       <td className="whitespace-nowrap px-4 py-2.5">
         <StatusBadge status={incident.status} />

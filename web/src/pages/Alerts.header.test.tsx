@@ -16,6 +16,7 @@ it('keeps alert filters and actions inside the shared page header', async () => 
   expect(within(header).getByRole('heading', { name: '告警' })).toBeInTheDocument();
   expect(within(header).getByText('状态')).toBeInTheDocument();
   expect(within(header).getByText('级别')).toBeInTheDocument();
+  expect(within(header).getByRole('link', { name: '外部接入' })).toHaveAttribute('href', '/alerts/integrations');
   expect(within(header).getByRole('link', { name: '规则配置' })).toHaveAttribute('href', '/alerts/rules');
   expect(within(header).getByRole('button', { name: '刷新' })).toBeInTheDocument();
 });

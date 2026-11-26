@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { RouteTreeTab } from './RouteTreeTab';
 import * as oncallApi from '@/api/oncall';
@@ -54,7 +55,11 @@ it('uses accessible useDialogs confirmation instead of window.confirm when delet
   const user = userEvent.setup();
   const confirmSpy = vi.spyOn(window, 'confirm').mockImplementation(() => true);
 
-  render(<RouteTreeTab schedules={[schedule]} escalationPolicies={[]} />);
+  render(
+    <MemoryRouter>
+      <RouteTreeTab schedules={[schedule]} escalationPolicies={[]} />
+    </MemoryRouter>,
+  );
   await screen.findByText('Payment P1 Route');
 
   await user.click(screen.getByRole('button', { name: 'Delete' }));

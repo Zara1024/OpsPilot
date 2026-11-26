@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	bizalert "github.com/Zara1024/OpsPilot/internal/manager/biz/alert"
 	"github.com/Zara1024/OpsPilot/internal/manager/biz/alert/investigator"
 	bizaudit "github.com/Zara1024/OpsPilot/internal/manager/biz/audit"
 	alertmodel "github.com/Zara1024/OpsPilot/internal/manager/model/alert"
@@ -108,6 +109,7 @@ type Handler struct {
 	incidents             IncidentService
 	channels              ChannelService
 	rules                 RuleService
+	ingestSvc             *bizalert.IngestService
 	investigations        InvestigationReader
 	investigationsTrigger InvestigationTrigger
 	evidenceReader        investigator.EvidenceReader
@@ -153,6 +155,12 @@ func (h *Handler) WithInvestigationTrigger(t InvestigationTrigger) *Handler {
 	return h
 }
 
+// WithIngest wires the external alert ingest and heartbeat dead-man's switch service.
+func (h *Handler) WithIngest(s *bizalert.IngestService) *Handler {
+	h.ingestSvc = s
+	return h
+}
+
 func (h *Handler) Register(r chi.Router) {
 	r.Get("/v1/alerts/incidents", h.listIncidents)
 	r.Get("/v1/alerts/incidents/{id}", h.getIncident)
@@ -181,6 +189,7 @@ func (h *Handler) Register(r chi.Router) {
 		r.Post("/v1/alert-rules/{id}/enabled", h.setRuleEnabled)
 		r.Delete("/v1/alert-rules/{id}", h.deleteRule)
 	}
+	h.registerIngestProtected(r)
 }
 
 func (h *Handler) WithEvidenceReader(reader investigator.EvidenceReader) *Handler {
@@ -1004,6 +1013,8 @@ func errCode(err error) int {
 		return http.StatusNotImplemented
 	case errors.Is(err, errs.ErrInvalid):
 		return http.StatusBadRequest
+	case errors.Is(err, bizalert.ErrRateLimited):
+		return http.StatusTooManyRequests
 	default:
 		return http.StatusInternalServerError
 	}
@@ -1065,6 +1076,8 @@ func errSlug(err error) string {
 		return "not-wired-yet"
 	case errors.Is(err, errs.ErrInvalid):
 		return "invalid-argument"
+	case errors.Is(err, bizalert.ErrRateLimited):
+		return "rate-limited"
 	default:
 		return "internal"
 	}

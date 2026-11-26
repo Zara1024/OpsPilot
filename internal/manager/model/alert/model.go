@@ -51,11 +51,14 @@ const (
 const (
 	RuleSourceBuiltin           = "ongrid_builtin"
 	RuleSourcePrometheus        = "prometheus_external"
+	RuleSourceExternalWebhook   = "external_webhook"
+	RuleSourceHeartbeat         = "heartbeat"
 	RuleJoinModeAll             = "all"
 	RuleJoinModeAny             = "any"
 	RuleScopeHost               = "host"
 	RuleScopeGlobal             = "global"
 	RuleScopeMonitoringPipeline = "monitoring_pipeline"
+	RuleScopeExternal           = "external"
 )
 
 // RuleKind discriminates how the evaluator interprets a rule's spec. Each

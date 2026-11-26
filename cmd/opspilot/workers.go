@@ -131,6 +131,9 @@ func runWorkers(rootCtx context.Context, cfg *config.Config, log *slog.Logger, n
 			Log:         log.With(slog.String("comp", "alert-retry")),
 		})
 		eg.Go(func() error { return retryWorker.Loop(egCtx) })
+		if alerts != nil && alerts.heartbeatWorker != nil {
+			eg.Go(func() error { return alerts.heartbeatWorker.Loop(egCtx) })
+		}
 	}
 
 	if oncall != nil && oncall.worker != nil {

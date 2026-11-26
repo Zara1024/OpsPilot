@@ -23,6 +23,8 @@ func Migrate(db *gorm.DB) error {
 		&model.Channel{},
 		&model.Delivery{},
 		&model.InvestigationReport{},
+		&model.IngestSource{},
+		&model.Heartbeat{},
 	); err != nil {
 		return err
 	}

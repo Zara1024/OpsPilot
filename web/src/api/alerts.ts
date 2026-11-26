@@ -561,3 +561,152 @@ export type AlertRuntimeInfo = {
 export function getAlertRuntimeInfo() {
   return request<AlertRuntimeInfo>('GET', '/alerts/runtime-info');
 }
+
+// ---- External Alert Ingest & Heartbeats (Dead Man's Switch) ----
+
+export type IngestProvider =
+  | 'alertmanager'
+  | 'grafana'
+  | 'aliyun_cms'
+  | 'tencent_cm'
+  | 'huawei_ces'
+  | 'zabbix'
+  | 'generic_webhook';
+
+export type IngestSource = {
+  id: number;
+  name: string;
+  description: string;
+  provider: IngestProvider;
+  webhook_url: string;
+  token?: string;
+  signing_secret_configured: boolean;
+  default_severity: 'critical' | 'warning' | 'info' | string;
+  default_labels: Record<string, string>;
+  auto_resolve: boolean;
+  enabled: boolean;
+  rate_limit_per_min: number;
+  received_count: number;
+  error_count: number;
+  last_received_at?: string | null;
+  last_status: string;
+  last_error: string;
+  last_payload_preview?: string;
+  subscribe_url?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type IngestSourceInput = {
+  name: string;
+  description?: string;
+  provider: IngestProvider;
+  signing_secret?: string;
+  clear_signing_secret?: boolean;
+  default_severity: string;
+  default_labels: Record<string, string>;
+  auto_resolve: boolean;
+  enabled: boolean;
+  rate_limit_per_min: number;
+};
+
+export type IngestTestResult = {
+  source_id: number;
+  provider: string;
+  status: string;
+  fired_count: number;
+  resolved_count: number;
+  ignored_count: number;
+  incident_ids?: number[];
+  subscribe_url?: string;
+  message: string;
+};
+
+export type HeartbeatState = 'waiting' | 'healthy' | 'alerting' | 'paused';
+
+export type Heartbeat = {
+  id: number;
+  name: string;
+  description: string;
+  ping_url: string;
+  token?: string;
+  interval_seconds: number;
+  grace_seconds: number;
+  severity: 'critical' | 'warning' | 'info' | string;
+  labels: Record<string, string>;
+  enabled: boolean;
+  state: HeartbeatState;
+  last_ping_at?: string | null;
+  last_ping_ip: string;
+  last_ping_message: string;
+  alerting_since?: string | null;
+  incident_id?: number | null;
+  ping_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type HeartbeatInput = {
+  name: string;
+  description?: string;
+  interval_seconds: number;
+  grace_seconds: number;
+  severity: string;
+  labels: Record<string, string>;
+  enabled: boolean;
+};
+
+export type HeartbeatPingResult = {
+  heartbeat: Heartbeat;
+  previous_state: string;
+  auto_resolved: boolean;
+  message: string;
+};
+
+export function listIngestSources() {
+  return request<{ items: IngestSource[]; total: number }>('GET', '/alerts/ingest-sources');
+}
+
+export function createIngestSource(input: IngestSourceInput) {
+  return request<IngestSource>('POST', '/alerts/ingest-sources', input);
+}
+
+export function updateIngestSource(id: number, input: Partial<IngestSourceInput>) {
+  return request<IngestSource>('PUT', `/alerts/ingest-sources/${id}`, input);
+}
+
+export function deleteIngestSource(id: number) {
+  return request<{ deleted: boolean; id: number }>('DELETE', `/alerts/ingest-sources/${id}`);
+}
+
+export function rotateIngestSourceToken(id: number) {
+  return request<IngestSource>('POST', `/alerts/ingest-sources/${id}/rotate-token`);
+}
+
+export function testIngestSource(id: number, action: 'fire' | 'resolve' = 'fire') {
+  return request<IngestTestResult>('POST', `/alerts/ingest-sources/${id}/test`, { action });
+}
+
+export function listHeartbeats() {
+  return request<{ items: Heartbeat[]; total: number }>('GET', '/alerts/heartbeats');
+}
+
+export function createHeartbeat(input: HeartbeatInput) {
+  return request<Heartbeat>('POST', '/alerts/heartbeats', input);
+}
+
+export function updateHeartbeat(id: number, input: Partial<HeartbeatInput>) {
+  return request<Heartbeat>('PUT', `/alerts/heartbeats/${id}`, input);
+}
+
+export function deleteHeartbeat(id: number) {
+  return request<{ deleted: boolean; id: number }>('DELETE', `/alerts/heartbeats/${id}`);
+}
+
+export function rotateHeartbeatToken(id: number) {
+  return request<Heartbeat>('POST', `/alerts/heartbeats/${id}/rotate-token`);
+}
+
+export function manualPingHeartbeat(id: number, message?: string) {
+  return request<HeartbeatPingResult>('POST', `/alerts/heartbeats/${id}/ping`, message ? { message } : {});
+}

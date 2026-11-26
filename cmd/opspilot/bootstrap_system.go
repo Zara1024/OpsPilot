@@ -19,11 +19,14 @@ type systemModule struct {
 	knowledgeHandler     *managerserverknowledge.Handler
 }
 
-func bootstrapSystem(cfg *config.Config, storage *storageModule, iam *iamModule, settings *settingsModule, models *modelsModule, telemetry *telemetryModule, aiops *aiopsModule, knowledge *knowledgeModule, automation *automationModule) *systemModule {
+func bootstrapSystem(cfg *config.Config, storage *storageModule, iam *iamModule, settings *settingsModule, models *modelsModule, telemetry *telemetryModule, aiops *aiopsModule, knowledge *knowledgeModule, automation *automationModule, alerts *alertsModule) *systemModule {
 	alertHandler := managerserveralert.NewHandler(aiops.alertSvc, aiops.alertSvc, aiops.alertSvc).
 		WithInvestigations(manageralertdata.NewInvestigationRepo(storage.db)).
 		WithEvidenceReader(aiops.aiopsRepo).
 		WithRuntime(cfg.Alert.EvaluatorInterval, cfg.Alert.Cooldown)
+	if alerts != nil && alerts.ingestSvc != nil {
+		alertHandler.WithIngest(alerts.ingestSvc)
+	}
 	if automation.rcaInvConcrete != nil {
 		alertHandler.WithInvestigationTrigger(automation.rcaInvConcrete)
 	}

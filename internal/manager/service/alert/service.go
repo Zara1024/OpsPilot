@@ -811,9 +811,23 @@ func toServiceIncident(r *model.Incident) *Incident {
 				if did := strings.TrimSpace(labels["device_id"]); did != "" {
 					out.TargetType = "edge"
 					out.TargetID = did
+				} else if target := strings.TrimSpace(labels["target"]); target != "" {
+					out.TargetType = r.ScopeType
+					out.TargetName = target
+				} else if host := strings.TrimSpace(labels["host"]); host != "" {
+					out.TargetType = r.ScopeType
+					out.TargetName = host
+				} else if svc := strings.TrimSpace(labels["service"]); svc != "" {
+					out.TargetType = r.ScopeType
+					out.TargetName = svc
 				}
 			}
 		}
+	}
+	if r.DeviceID == nil && out.TargetName == "" && strings.TrimSpace(r.Scope) != "" &&
+		r.Scope != model.RuleScopeGlobal && r.Scope != model.RuleScopeMonitoringPipeline && r.Scope != model.RuleScopeExternal {
+		out.TargetType = r.ScopeType
+		out.TargetName = r.Scope
 	}
 	return out
 }

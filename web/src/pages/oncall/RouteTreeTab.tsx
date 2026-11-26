@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import {
   GitFork,
   Plus,
@@ -7,6 +8,7 @@ import {
   Edit2,
   AlertCircle,
   RefreshCw,
+  Webhook,
 } from 'lucide-react';
 import {
   Button,
@@ -277,7 +279,17 @@ export function RouteTreeTab({ schedules, escalationPolicies }: RouteTreeTabProp
           </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2 ml-auto">
+        <div className="flex flex-wrap shrink-0 items-center gap-2 ml-auto">
+          <Link
+            to="/alerts/integrations"
+            data-slot="button"
+            data-variant="outline"
+            data-size="sm"
+            className="og-button inline-flex items-center gap-1.5 no-underline"
+          >
+            <Webhook size={14} className="text-indigo-500" />
+            {tr('外部告警接入', 'Alert Integrations')}
+          </Link>
           <Button
             size="sm"
             variant="outline"

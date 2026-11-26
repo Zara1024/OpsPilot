@@ -100,7 +100,7 @@ func run() (runErr error) {
 	knowledge := bootstrapKnowledge(rootCtx, cfg, log, storage, settings, telemetry, aiops)
 	runtime := bootstrapRuntime(rootCtx, cfg, log, reg, tracing, models, devices, telemetry, tunnel, aiops, settings)
 	automation := bootstrapAutomation(rootCtx, cfg, log, reg, notifyRouter, &cleanup, storage, settings, models, alerts, telemetry, aiops, runtime)
-	system := bootstrapSystem(cfg, storage, iam, settings, models, telemetry, aiops, knowledge, automation)
+	system := bootstrapSystem(cfg, storage, iam, settings, models, telemetry, aiops, knowledge, automation, alerts)
 	extensions := bootstrapExtensions(rootCtx, cfg, log, reg, notifyRouter, storage, settings, devices, alerts, tunnel, aiops, runtime, automation, iam)
 	imbridge := bootstrapIMBridge(rootCtx, cfg, log, storage, models, devices, alerts, telemetry, aiops, runtime, extensions, reg)
 	external, err := bootstrapExternalMCP(cfg, log, reg, storage, settings, devices, tunnel, aiops, extensions)

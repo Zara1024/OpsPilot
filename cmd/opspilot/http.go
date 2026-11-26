@@ -160,6 +160,9 @@ func buildHTTPServers(cfg *config.Config, log *slog.Logger, reg *prometheus.Regi
 		// (GET /api/pages/{id} in the protected group); only an explicit share
 		// exposes a page off-platform, mirroring the report /r/{token} model.
 		pagesHandler.RegisterPublic(api)
+		if system.alertHandler != nil {
+			system.alertHandler.RegisterPublic(api)
+		}
 		if oncall != nil && oncall.handler != nil {
 			oncall.handler.RegisterPublic(api)
 		}

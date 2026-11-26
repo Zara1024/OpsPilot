@@ -27,6 +27,7 @@ const KubernetesClusterDetailPage = lazy(() =>
 );
 const AlertsPage = lazy(() => import('@/pages/Alerts'));
 const AlertRulesPage = lazy(() => import('@/pages/AlertRules'));
+const AlertIntegrationsPage = lazy(() => import('@/pages/AlertIntegrations'));
 const IncidentDetailPage = lazy(() => import('@/pages/IncidentDetail'));
 const OnCallPage = lazy(() => import('@/pages/OnCallPage'));
 const ReportDetailPage = lazy(() => import('@/pages/ReportDetail'));
@@ -158,6 +159,7 @@ export default function App() {
         <Route path="/kubernetes/:clusterId" element={<KubernetesClusterDetailPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/alerts/rules" element={<AlertRulesPage />} />
+        <Route path="/alerts/integrations" element={<AlertIntegrationsPage />} />
         <Route path="/alerts/incidents/:id" element={<IncidentDetailPage />} />
         <Route path="/oncall" element={<OnCallPage />} />
         {/* 报告 folded into 产物's 报告 tab; schedules became 任务. Old links redirect. */}

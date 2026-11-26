@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"log/slog"
+	"strings"
+	"time"
 
 	managerbizalert "github.com/Zara1024/OpsPilot/internal/manager/biz/alert"
 	managerbizmetric "github.com/Zara1024/OpsPilot/internal/manager/biz/metric"
@@ -19,6 +21,9 @@ type alertsModule struct {
 	alertResolver   *managerbizalert.DBChannelResolver
 	alertInhibitor  *managerbizalert.BuiltinInhibitor
 	metricIngestSvc *managerbizalert.NoopHostMetricIngester
+	ingestRepo      *manageralertdata.IngestRepo
+	ingestSvc       *managerbizalert.IngestService
+	heartbeatWorker *managerbizalert.HeartbeatWorker
 }
 
 func bootstrapAlerts(rootCtx context.Context, cfg *config.Config, log *slog.Logger, storage *storageModule) *alertsModule {
@@ -81,6 +86,11 @@ func bootstrapAlerts(rootCtx context.Context, cfg *config.Config, log *slog.Logg
 	// metricHandler := managerservermetric.NewHandler(metricSvc)
 	_ = managersvcmetric.New
 
+	publicURL := strings.TrimRight(strings.TrimSpace(cfg.PublicURL), "/")
+	ingestRepo := manageralertdata.NewIngestRepo(storage.db)
+	ingestSvc := managerbizalert.NewIngestService(ingestRepo, alertUC, publicURL, log.With(slog.String("comp", "alert-ingest")))
+	heartbeatWorker := managerbizalert.NewHeartbeatWorker(ingestRepo, alertUC, 15*time.Second, log.With(slog.String("comp", "alert-heartbeat")))
+
 	return &alertsModule{
 		alertRepo:       alertRepo,
 		alertUC:         alertUC,
@@ -88,5 +98,8 @@ func bootstrapAlerts(rootCtx context.Context, cfg *config.Config, log *slog.Logg
 		alertResolver:   alertResolver,
 		alertInhibitor:  alertInhibitor,
 		metricIngestSvc: metricIngestSvc,
+		ingestRepo:      ingestRepo,
+		ingestSvc:       ingestSvc,
+		heartbeatWorker: heartbeatWorker,
 	}
 }
