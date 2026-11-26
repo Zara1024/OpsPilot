@@ -230,4 +230,54 @@ describe('VoiceGatewayTab', () => {
     expect(await screen.findByDisplayValue('https://opspilot.test/api/v1/oncall/voice/callback/aliyun?token=newtok999')).toBeInTheDocument();
     expect(screen.getByText(/语音回调 Token 已轮换生效/)).toBeInTheDocument();
   });
+
+  it('preserves explicit zero/false redial settings and saves toggled no-DTMF redial policy', async () => {
+    const user = userEvent.setup();
+    vi.mocked(oncallApi.getVoiceConfig).mockResolvedValue({
+      provider: 'aliyun',
+      dispatch_enabled: true,
+      voice_redial_max_attempts: 0,
+      voice_redial_delay_seconds: 15,
+      voice_fast_escalate_on_reject: false,
+      voice_redial_on_no_dtmf: false,
+      aliyun_secret_configured: true,
+    });
+    vi.mocked(oncallApi.updateVoiceConfig).mockResolvedValue({
+      ok: true,
+      config: {
+        provider: 'aliyun',
+        dispatch_enabled: true,
+        voice_redial_max_attempts: 0,
+        voice_redial_delay_seconds: 15,
+        voice_fast_escalate_on_reject: false,
+        voice_redial_on_no_dtmf: true,
+        aliyun_secret_configured: true,
+      },
+    });
+
+    render(<VoiceGatewayTab />);
+
+    const maxInput = (await screen.findByLabelText('无人接听最大重拨次数')) as HTMLInputElement;
+    const delayInput = screen.getByLabelText('重拨冷却间隔') as HTMLInputElement;
+    const fastEscSwitch = screen.getByRole('switch', { name: '拒接 / 关机 / 空号立即快进升级' });
+    const noDtmfSwitch = screen.getByRole('switch', { name: '已接听但未按键时也触发自动重拨' });
+
+    expect(maxInput.value).toBe('0');
+    expect(delayInput.value).toBe('15');
+    expect(fastEscSwitch).toHaveAttribute('aria-checked', 'false');
+    expect(noDtmfSwitch).toHaveAttribute('aria-checked', 'false');
+
+    await user.click(noDtmfSwitch);
+    await user.click(screen.getByRole('button', { name: '保存网关配置' }));
+
+    await waitFor(() => {
+      expect(oncallApi.updateVoiceConfig).toHaveBeenCalledTimes(1);
+    });
+    expect(vi.mocked(oncallApi.updateVoiceConfig).mock.calls[0][0]).toMatchObject({
+      voice_redial_max_attempts: 0,
+      voice_redial_delay_seconds: 15,
+      voice_fast_escalate_on_reject: false,
+      voice_redial_on_no_dtmf: true,
+    });
+  });
 });

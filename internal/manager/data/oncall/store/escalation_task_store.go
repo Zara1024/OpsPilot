@@ -269,15 +269,18 @@ func (s *Store) TriggerImmediateEscalationByIncident(ctx context.Context, incide
 		res := tx.Model(&model.EscalationTask{}).
 			Where("id = ? AND status = ?", target.ID, model.TaskStatusPending).
 			Updates(map[string]any{
-				"current_step":       target.CurrentStep + 1,
-				"ladder_step":        uint8(1),
-				"pinned_assignee_id": uint64(0),
-				"assignee_user_id":   uint64(0),
-				"step_started_at":    now,
-				"next_run_at":        now,
-				"locked_until":       nil,
-				"attempt_count":      0,
-				"updated_at":         now,
+				"current_step":         target.CurrentStep + 1,
+				"ladder_step":          uint8(1),
+				"pinned_assignee_id":   uint64(0),
+				"assignee_user_id":     uint64(0),
+				"voice_redial_count":   uint8(0),
+				"last_voice_call_id":   "",
+				"awaiting_voice_grace": false,
+				"step_started_at":      now,
+				"next_run_at":          now,
+				"locked_until":         nil,
+				"attempt_count":        0,
+				"updated_at":           now,
 			})
 		if res.Error != nil {
 			return fmt.Errorf("advance escalation task: %w", res.Error)
@@ -286,6 +289,122 @@ func (s *Store) TriggerImmediateEscalationByIncident(ctx context.Context, incide
 		return nil
 	})
 	return updated, err
+}
+
+// ScheduleVoiceRedialByCall atomically schedules an automatic voice redial on the same step/user for an unanswered call.
+func (s *Store) ScheduleVoiceRedialByCall(ctx context.Context, taskID uint64, callID string, maxRedials int, nextRunAt time.Time) (int, bool, error) {
+	if taskID == 0 || callID == "" || maxRedials <= 0 {
+		return 0, false, nil
+	}
+	now := time.Now().UTC()
+	if nextRunAt.IsZero() {
+		nextRunAt = now.Add(20 * time.Second)
+	} else {
+		nextRunAt = nextRunAt.UTC()
+	}
+
+	var attempt int
+	var scheduled bool
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task model.EscalationTask
+		findErr := tx.Where("id = ? AND status = ? AND last_voice_call_id = ?", taskID, model.TaskStatusPending, callID).
+			First(&task).Error
+		if errors.Is(findErr, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if findErr != nil {
+			return fmt.Errorf("find task %d for voice redial: %w", taskID, findErr)
+		}
+		if int(task.VoiceRedialCount) >= maxRedials || task.LastVoiceStep == 0 || task.LastVoiceLadderStep == 0 {
+			return nil
+		}
+
+		nextCount := task.VoiceRedialCount + 1
+		res := tx.Model(&model.EscalationTask{}).
+			Where("id = ? AND status = ? AND last_voice_call_id = ? AND voice_redial_count = ?",
+				task.ID, model.TaskStatusPending, callID, task.VoiceRedialCount).
+			Updates(map[string]any{
+				"current_step":         task.LastVoiceStep,
+				"ladder_step":          task.LastVoiceLadderStep,
+				"pinned_assignee_id":   task.LastVoiceUserID,
+				"voice_redial_count":   nextCount,
+				"awaiting_voice_grace": false,
+				"next_run_at":          nextRunAt,
+				"locked_until":         nil,
+				"attempt_count":        0,
+				"updated_at":           now,
+			})
+		if res.Error != nil {
+			return fmt.Errorf("schedule voice redial for task %d: %w", task.ID, res.Error)
+		}
+		if res.RowsAffected == 1 {
+			attempt = int(nextCount)
+			scheduled = true
+		}
+		return nil
+	})
+	return attempt, scheduled, err
+}
+
+// FastEscalateVoiceCall atomically advances a task to failedStep+1 and clears last_voice_call_id so duplicate callbacks never double-escalate.
+func (s *Store) FastEscalateVoiceCall(ctx context.Context, taskID uint64, callID string, failedStep uint8, now time.Time) (uint8, bool, error) {
+	if taskID == 0 || callID == "" {
+		return 0, false, nil
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
+
+	var nextStep uint8
+	var advanced bool
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task model.EscalationTask
+		findErr := tx.Where("id = ? AND status = ? AND last_voice_call_id = ?", taskID, model.TaskStatusPending, callID).
+			First(&task).Error
+		if errors.Is(findErr, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if findErr != nil {
+			return fmt.Errorf("find task %d for fast escalate: %w", taskID, findErr)
+		}
+
+		baseStep := failedStep
+		if baseStep == 0 {
+			baseStep = task.LastVoiceStep
+		}
+		if baseStep == 0 {
+			baseStep = task.CurrentStep
+		}
+		targetStep := baseStep + 1
+
+		res := tx.Model(&model.EscalationTask{}).
+			Where("id = ? AND status = ? AND last_voice_call_id = ?", task.ID, model.TaskStatusPending, callID).
+			Updates(map[string]any{
+				"current_step":         targetStep,
+				"ladder_step":          uint8(1),
+				"pinned_assignee_id":   uint64(0),
+				"assignee_user_id":     uint64(0),
+				"voice_redial_count":   uint8(0),
+				"last_voice_call_id":   "",
+				"awaiting_voice_grace": false,
+				"step_started_at":      now,
+				"next_run_at":          now,
+				"locked_until":         nil,
+				"attempt_count":        0,
+				"updated_at":           now,
+			})
+		if res.Error != nil {
+			return fmt.Errorf("fast escalate task %d: %w", task.ID, res.Error)
+		}
+		if res.RowsAffected == 1 {
+			nextStep = targetStep
+			advanced = true
+		}
+		return nil
+	})
+	return nextStep, advanced, err
 }
 
 // ClaimDueEscalationTasks optimistically leases due pending tasks for safe concurrent/multi-replica processing.

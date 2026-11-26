@@ -3,6 +3,7 @@ package oncall
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"html"
 	"io"
@@ -378,4 +379,171 @@ func quickActionLabelCN(action string) string {
 	default:
 		return action
 	}
+}
+
+// weComChatOpsVerify validates WeCom CorpApp URL signature and decrypts echostr on GET callback setup.
+// @Summary Verify WeCom CorpApp callback URL signature and decrypt echostr
+// @Router /api/v1/oncall/chatops/callback/wecom [get]
+// @Success 200 {string} string "Decrypted echostr"
+func (h *Handler) weComChatOpsVerify(w http.ResponseWriter, r *http.Request) {
+	cfg, cfgErr := h.store.GetChannelConfig(r.Context())
+	if cfgErr != nil || cfg == nil {
+		http.Error(w, "channel config unavailable", http.StatusInternalServerError)
+		return
+	}
+	q := r.URL.Query()
+	msgSig := q.Get("msg_signature")
+	ts := q.Get("timestamp")
+	nonce := q.Get("nonce")
+	echoStr := q.Get("echostr")
+
+	if err := bizoncall.VerifyWeComSignature(cfg.WeComToken, ts, nonce, echoStr, msgSig); err != nil {
+		http.Error(w, "unauthorized wecom url verification", http.StatusUnauthorized)
+		return
+	}
+	plainEcho, err := bizoncall.DecryptWeComMessage(cfg.WeComEncodingAESKey, echoStr, cfg.WeComCorpID)
+	if err != nil {
+		http.Error(w, "failed to decrypt wecom echostr", http.StatusUnauthorized)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	// HTTP 200 响应头已发送，客户端断开等写入错误无法再改写状态码
+	_, _ = w.Write(plainEcho)
+}
+
+// weComChatOpsCallback handles encrypted CorpApp XML callbacks and signed JSON webhook actions for WeCom.
+// @Summary Receive WeCom CorpApp or interactive card callback
+// @Router /api/v1/oncall/chatops/callback/wecom [post]
+// @Success 200 {object} map[string]any
+func (h *Handler) weComChatOpsCallback(w http.ResponseWriter, r *http.Request) {
+	rawBody, err := io.ReadAll(io.LimitReader(r.Body, 128*1024))
+	if err != nil {
+		writeErr(w, fmt.Errorf("%w: read wecom body", errs.ErrInvalid))
+		return
+	}
+
+	cfg, cfgErr := h.store.GetChannelConfig(r.Context())
+	if cfgErr != nil || cfg == nil {
+		http.Error(w, "channel config unavailable", http.StatusInternalServerError)
+		return
+	}
+
+	q := r.URL.Query()
+	queryToken := strings.TrimSpace(q.Get("token"))
+	queryTokenValid := cfg.ChatOpsCallbackToken != "" && subtle.ConstantTimeCompare([]byte(queryToken), []byte(cfg.ChatOpsCallbackToken)) == 1
+
+	var action, incID, actor string
+	trimmed := strings.TrimSpace(string(rawBody))
+	if strings.HasPrefix(trimmed, "<") {
+		var outer struct {
+			Encrypt string `xml:"Encrypt"`
+		}
+		if xmlErr := xml.Unmarshal(rawBody, &outer); xmlErr != nil || strings.TrimSpace(outer.Encrypt) == "" {
+			http.Error(w, "invalid wecom xml envelope", http.StatusBadRequest)
+			return
+		}
+		msgSig := q.Get("msg_signature")
+		ts := q.Get("timestamp")
+		nonce := q.Get("nonce")
+		if sigErr := bizoncall.VerifyWeComSignature(cfg.WeComToken, ts, nonce, outer.Encrypt, msgSig); sigErr != nil {
+			http.Error(w, "unauthorized wecom signature", http.StatusUnauthorized)
+			return
+		}
+		decrypted, decErr := bizoncall.DecryptWeComMessage(cfg.WeComEncodingAESKey, outer.Encrypt, cfg.WeComCorpID)
+		if decErr != nil {
+			http.Error(w, "failed to decrypt wecom callback", http.StatusUnauthorized)
+			return
+		}
+		var xmlEvent struct {
+			FromUserName string `xml:"FromUserName"`
+			Event        string `xml:"Event"`
+			EventKey     string `xml:"EventKey"`
+			TaskID       string `xml:"TaskId"`
+		}
+		if xmlErr := xml.Unmarshal(decrypted, &xmlEvent); xmlErr != nil {
+			writeErr(w, fmt.Errorf("%w: invalid decrypted wecom xml", errs.ErrInvalid))
+			return
+		}
+		actor = strings.TrimSpace(xmlEvent.FromUserName)
+		action, incID = parseWeComActionKey(xmlEvent.EventKey, xmlEvent.TaskID)
+	} else {
+		if !queryTokenValid {
+			http.Error(w, "unauthorized wecom callback", http.StatusUnauthorized)
+			return
+		}
+		var payload map[string]any
+		if jsonErr := json.Unmarshal(rawBody, &payload); jsonErr != nil {
+			writeErr(w, fmt.Errorf("%w: invalid wecom json", errs.ErrInvalid))
+			return
+		}
+		action, incID, actor = extractCardActionFields(payload)
+		if (action == "" || incID == "") && payload != nil {
+			ek, _ := payload["EventKey"].(string)
+			tk, _ := payload["TaskId"].(string)
+			a2, i2 := parseWeComActionKey(ek, tk)
+			if action == "" {
+				action = a2
+			}
+			if incID == "" {
+				incID = i2
+			}
+		}
+	}
+
+	if action == "" || incID == "" {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"errcode": 0,
+			"errmsg":  "ignored",
+		})
+		return
+	}
+
+	note := "Via WeCom Card"
+	if actor != "" {
+		note = fmt.Sprintf("Via WeCom Card (%s)", actor)
+	}
+	res, handleErr := h.escalationEngine.HandleAction(r.Context(), bizoncall.ChatOpsActionRequest{
+		Action:     action,
+		IncidentID: incID,
+		Note:       note,
+	})
+	if handleErr != nil {
+		slog.Warn("wecom chatops action failed", slog.String("action", action), slog.String("incident_id", incID), slog.Any("err", handleErr))
+		writeJSON(w, http.StatusOK, map[string]any{
+			"errcode": 1,
+			"errmsg":  handleErr.Error(),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"errcode": 0,
+		"errmsg":  "ok",
+		"result":  res,
+	})
+}
+
+func parseWeComActionKey(eventKey, taskID string) (action, incID string) {
+	raw := strings.TrimSpace(eventKey)
+	if raw == "" {
+		raw = strings.TrimSpace(taskID)
+	}
+	if raw == "" {
+		return "", ""
+	}
+	// Support "ack:17", "silence:17", "escalate:17", "ack_17", or EventKey="ack" + TaskId="17".
+	for _, sep := range []string{":", "_", "|"} {
+		if idx := strings.Index(raw, sep); idx > 0 {
+			act := strings.ToLower(strings.TrimSpace(raw[:idx]))
+			idPart := strings.TrimSpace(raw[idx+1:])
+			if act != "" && idPart != "" {
+				return act, idPart
+			}
+		}
+	}
+	if tid := strings.TrimSpace(taskID); tid != "" && tid != raw {
+		return strings.ToLower(raw), tid
+	}
+	return "", ""
 }

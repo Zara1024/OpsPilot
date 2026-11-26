@@ -59,6 +59,8 @@ export interface OnCallSchedule {
   handoff_time: string;
   reminder_advance_hours: number;
   require_swap_approval: boolean;
+  escalation_repeat_count?: number;
+  escalation_repeat_interval_seconds?: number;
   enabled: boolean;
   created_by: number;
   created_at: string;
@@ -133,6 +135,8 @@ export async function createSchedule(data: {
   handoff_time?: string;
   reminder_advance_hours?: number;
   require_swap_approval?: boolean;
+  escalation_repeat_count?: number;
+  escalation_repeat_interval_seconds?: number;
   enabled?: boolean;
   rotations?: OnCallRotation[];
 }): Promise<OnCallSchedule> {
@@ -608,6 +612,10 @@ export interface VoiceGatewayConfig {
   fallback_provider?: '' | 'aliyun' | 'tencent';
   failover_timeout_seconds?: number;
   dispatch_enabled?: boolean;
+  voice_redial_max_attempts?: number;
+  voice_redial_delay_seconds?: number;
+  voice_fast_escalate_on_reject?: boolean;
+  voice_redial_on_no_dtmf?: boolean;
   aliyun_access_key_id?: string;
   aliyun_access_key_secret?: string;
   aliyun_secret_configured?: boolean;
@@ -640,7 +648,7 @@ export interface VoiceCallResult {
   provider: string;
   fallback_from?: string;
   primary_error?: string;
-  status: 'calling' | 'answered' | 'dtmf_confirmed' | 'throttled' | 'failed';
+  status: 'calling' | 'answered' | 'dtmf_confirmed' | 'throttled' | 'rejected' | 'no_answer' | 'unreachable' | 'failed';
   out_call_id?: string;
   phone_number: string;
   tts_content: string;
@@ -760,6 +768,11 @@ export interface ChannelGatewayConfig {
   feishu_encrypt_configured?: boolean;
   dingtalk_app_secret?: string;
   dingtalk_secret_configured?: boolean;
+  wecom_corp_id?: string;
+  wecom_token?: string;
+  wecom_token_configured?: boolean;
+  wecom_encoding_aes_key?: string;
+  wecom_aes_key_configured?: boolean;
 
   war_room_provider: '' | 'feishu' | 'webhook';
   feishu_app_id?: string;

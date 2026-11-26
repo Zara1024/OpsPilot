@@ -42,6 +42,8 @@ func channelSecretSlots(cfg *channels.ChannelGatewayConfig) []struct {
 		{"feishu_verification_token", &cfg.FeishuVerificationToken},
 		{"feishu_encrypt_key", &cfg.FeishuEncryptKey},
 		{"dingtalk_app_secret", &cfg.DingTalkAppSecret},
+		{"wecom_token", &cfg.WeComToken},
+		{"wecom_encoding_aes_key", &cfg.WeComEncodingAESKey},
 		{"feishu_app_secret", &cfg.FeishuAppSecret},
 		{"war_room_webhook_secret", &cfg.WarRoomWebhookSecret},
 	}
@@ -79,6 +81,8 @@ func applyChannelConfigDefaults(cfg *channels.ChannelGatewayConfig) {
 	cfg.FeishuVerificationConfigured = cfg.FeishuVerificationToken != ""
 	cfg.FeishuEncryptConfigured = cfg.FeishuEncryptKey != ""
 	cfg.DingTalkSecretConfigured = cfg.DingTalkAppSecret != ""
+	cfg.WeComTokenConfigured = cfg.WeComToken != ""
+	cfg.WeComAESKeyConfigured = cfg.WeComEncodingAESKey != ""
 	cfg.FeishuAppSecretConfigured = cfg.FeishuAppSecret != ""
 	cfg.WarRoomWebhookSecretConfigured = cfg.WarRoomWebhookSecret != ""
 	cfg.CallbackURLs = nil
@@ -153,6 +157,8 @@ func (s *Store) UpdateChannelConfig(ctx context.Context, cfg *channels.ChannelGa
 		toStore.FeishuVerificationConfigured = false
 		toStore.FeishuEncryptConfigured = false
 		toStore.DingTalkSecretConfigured = false
+		toStore.WeComTokenConfigured = false
+		toStore.WeComAESKeyConfigured = false
 		toStore.FeishuAppSecretConfigured = false
 		toStore.WarRoomWebhookSecretConfigured = false
 		toStore.CallbackURLs = nil

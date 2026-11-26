@@ -40,6 +40,10 @@ export function VoiceGatewayTab() {
     fallback_provider: '',
     failover_timeout_seconds: 8,
     dispatch_enabled: true,
+    voice_redial_max_attempts: 1,
+    voice_redial_delay_seconds: 20,
+    voice_fast_escalate_on_reject: true,
+    voice_redial_on_no_dtmf: false,
     aliyun_access_key_id: '',
     aliyun_access_key_secret: '',
     aliyun_secret_configured: false,
@@ -83,6 +87,10 @@ export function VoiceGatewayTab() {
           fallback_provider: res.fallback_provider ?? '',
           failover_timeout_seconds: res.failover_timeout_seconds ?? 8,
           dispatch_enabled: res.dispatch_enabled ?? true,
+          voice_redial_max_attempts: res.voice_redial_max_attempts ?? 1,
+          voice_redial_delay_seconds: res.voice_redial_delay_seconds ?? 20,
+          voice_fast_escalate_on_reject: res.voice_fast_escalate_on_reject ?? true,
+          voice_redial_on_no_dtmf: res.voice_redial_on_no_dtmf ?? false,
           aliyun_access_key_secret: '',
           tencent_secret_key: '',
         }));
@@ -103,10 +111,25 @@ export function VoiceGatewayTab() {
     setSaving(true);
     setSaveSuccess(false);
     try {
+      const rawAttempts = config.voice_redial_max_attempts;
+      const safeRedialMax =
+        rawAttempts == null || !Number.isFinite(Number(rawAttempts))
+          ? 1
+          : Math.min(3, Math.max(0, Math.floor(Number(rawAttempts))));
+      const rawDelay = config.voice_redial_delay_seconds;
+      const safeRedialDelay =
+        rawDelay == null || !Number.isFinite(Number(rawDelay)) || Number(rawDelay) <= 0
+          ? 20
+          : Math.min(120, Math.max(10, Math.floor(Number(rawDelay))));
+
       const payload: VoiceGatewayConfig = {
         ...config,
         fallback_provider: config.provider === 'mock' ? '' : (config.fallback_provider || ''),
         failover_timeout_seconds: Math.min(30, Math.max(3, Number(config.failover_timeout_seconds) || 8)),
+        voice_redial_max_attempts: safeRedialMax,
+        voice_redial_delay_seconds: safeRedialDelay,
+        voice_fast_escalate_on_reject: config.voice_fast_escalate_on_reject ?? true,
+        voice_redial_on_no_dtmf: config.voice_redial_on_no_dtmf ?? false,
       };
       const res = await updateVoiceConfig(payload);
       if (res?.config) {
@@ -115,6 +138,10 @@ export function VoiceGatewayTab() {
           ...res.config,
           fallback_provider: res.config.fallback_provider ?? '',
           failover_timeout_seconds: res.config.failover_timeout_seconds ?? 8,
+          voice_redial_max_attempts: res.config.voice_redial_max_attempts ?? safeRedialMax,
+          voice_redial_delay_seconds: res.config.voice_redial_delay_seconds ?? safeRedialDelay,
+          voice_fast_escalate_on_reject: res.config.voice_fast_escalate_on_reject ?? true,
+          voice_redial_on_no_dtmf: res.config.voice_redial_on_no_dtmf ?? false,
           aliyun_access_key_secret: '',
           tencent_secret_key: '',
         }));
@@ -357,6 +384,12 @@ export function VoiceGatewayTab() {
     switch (status) {
       case 'failed':
         return <Chip tone="danger" dense>{tr('呼叫失败', 'Failed')}</Chip>;
+      case 'rejected':
+        return <Chip tone="danger" dense>{tr('被叫拒接', 'Rejected')}</Chip>;
+      case 'unreachable':
+        return <Chip tone="danger" dense>{tr('不可达/关机', 'Unreachable')}</Chip>;
+      case 'no_answer':
+        return <Chip tone="warning" dense>{tr('无人接听', 'No Answer')}</Chip>;
       case 'calling':
         return <Chip tone="accent" dense>{tr('已发起呼叫', 'Calling')}</Chip>;
       case 'throttled':
@@ -542,6 +575,105 @@ export function VoiceGatewayTab() {
             {config.provider === 'tencent' &&
               config.fallback_provider === 'aliyun' &&
               renderAliyunFields(tr('备援通道：阿里云语音参数', 'Backup: Aliyun Settings'))}
+
+            {/* Redial & Fast-Escalate Policy */}
+            <div className="space-y-3 pt-3 border-t border-border">
+              <div className="font-semibold text-text">
+                {tr('语音回执重拨与快进升级策略', 'Voice Redial & Fast-Escalate Policy')}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">
+                    {tr('无人接听最大重拨次数 (0-3)', 'Max Auto-Redials on No Answer (0–3)')}
+                  </Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={3}
+                    value={config.voice_redial_max_attempts ?? 1}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const v = Number(raw);
+                      setConfig({
+                        ...config,
+                        voice_redial_max_attempts:
+                          raw === '' || !Number.isFinite(v) ? 0 : Math.min(3, Math.max(0, Math.floor(v))),
+                      });
+                    }}
+                    disabled={!isAdmin}
+                    aria-label={tr('无人接听最大重拨次数', 'Max auto-redials on no answer')}
+                    className="mt-1 text-xs font-mono"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">
+                    {tr('重拨冷却间隔 (10-120秒)', 'Redial Delay (10–120s)')}
+                  </Label>
+                  <Input
+                    type="number"
+                    min={10}
+                    max={120}
+                    value={config.voice_redial_delay_seconds ?? 20}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setConfig({
+                        ...config,
+                        voice_redial_delay_seconds: Number.isFinite(v) ? v : 20,
+                      });
+                    }}
+                    disabled={!isAdmin || (config.voice_redial_max_attempts ?? 1) === 0}
+                    aria-label={tr('重拨冷却间隔', 'Redial delay seconds')}
+                    className="mt-1 text-xs font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2 rounded-lg border border-border bg-bg/40 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-medium text-text">
+                      {tr('拒接 / 关机 / 空号立即快进升级', 'Fast-Escalate on Reject or Unreachable')}
+                    </div>
+                    <div className="text-[11px] text-text-muted mt-0.5">
+                      {tr(
+                        '收到被叫拒接、挂断或停机空号回执时跳过剩余等待时间，立即唤醒下一升级梯队。',
+                        'Immediately advance to the next escalation step when carriers report rejected or unreachable calls.'
+                      )}
+                    </div>
+                  </div>
+                  <Switch
+                    checked={config.voice_fast_escalate_on_reject ?? true}
+                    onCheckedChange={(checked) =>
+                      setConfig({ ...config, voice_fast_escalate_on_reject: checked })
+                    }
+                    disabled={!isAdmin}
+                    aria-label={tr('拒接 / 关机 / 空号立即快进升级', 'Fast-Escalate on Reject or Unreachable')}
+                  />
+                </div>
+
+                <div className="border-t border-border pt-2 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-medium text-text">
+                      {tr('已接听但未按键时也触发自动重拨', 'Auto-Redial When Answered Without DTMF')}
+                    </div>
+                    <div className="text-[11px] text-text-muted mt-0.5">
+                      {tr(
+                        '默认关闭（仅等待正常升级计时）；开启后，若值班人接听后未按 1 或 2 即挂断也将按重拨策略补呼。',
+                        'Off by default; when enabled, answered calls with no DTMF input also follow the automatic redial budget.'
+                      )}
+                    </div>
+                  </div>
+                  <Switch
+                    checked={config.voice_redial_on_no_dtmf ?? false}
+                    onCheckedChange={(checked) =>
+                      setConfig({ ...config, voice_redial_on_no_dtmf: checked })
+                    }
+                    disabled={!isAdmin}
+                    aria-label={tr('已接听但未按键时也触发自动重拨', 'Auto-Redial When Answered Without DTMF')}
+                  />
+                </div>
+              </div>
+            </div>
 
             {isAdmin && config.callback_urls && Object.keys(config.callback_urls).length > 0 && (
               <div className="space-y-2.5 pt-3 border-t border-border">

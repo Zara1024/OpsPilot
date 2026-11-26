@@ -32,6 +32,10 @@ func NewStore(db *gorm.DB) *Store {
 
 func (s *Store) CreateSchedule(ctx context.Context, sched *model.Schedule) error {
 	wantZeroReminder := sched.ReminderAdvanceHours == 0
+	wantZeroRepeat := sched.EscalationRepeatCount == 0
+	if sched.EscalationRepeatIntervalSeconds == 0 {
+		sched.EscalationRepeatIntervalSeconds = 300
+	}
 	wantDisabled := !sched.Enabled
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -42,6 +46,10 @@ func (s *Store) CreateSchedule(ctx context.Context, sched *model.Schedule) error
 		if wantZeroReminder {
 			zeroUpdates["reminder_advance_hours"] = 0
 			sched.ReminderAdvanceHours = 0
+		}
+		if wantZeroRepeat {
+			zeroUpdates["escalation_repeat_count"] = 0
+			sched.EscalationRepeatCount = 0
 		}
 		if wantDisabled {
 			zeroUpdates["enabled"] = false

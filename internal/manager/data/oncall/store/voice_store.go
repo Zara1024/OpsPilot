@@ -19,12 +19,16 @@ import (
 // DefaultVoiceGatewayConfig returns the safe baseline voice gateway configuration.
 func DefaultVoiceGatewayConfig() *voice.VoiceGatewayConfig {
 	return &voice.VoiceGatewayConfig{
-		Provider:               "mock",
-		FallbackProvider:       "",
-		FailoverTimeoutSeconds: 8,
-		DispatchEnabled:        true,
-		AliyunRegion:           "cn-hangzhou",
-		TencentRegion:          "ap-guangzhou",
+		Provider:                  "mock",
+		FallbackProvider:          "",
+		FailoverTimeoutSeconds:    8,
+		DispatchEnabled:           true,
+		VoiceRedialMaxAttempts:    1,
+		VoiceRedialDelaySeconds:   20,
+		VoiceFastEscalateOnReject: true,
+		VoiceRedialOnNoDTMF:       false,
+		AliyunRegion:              "cn-hangzhou",
+		TencentRegion:             "ap-guangzhou",
 	}
 }
 
@@ -83,6 +87,8 @@ func (s *Store) GetVoiceConfig(ctx context.Context) (*voice.VoiceGatewayConfig, 
 
 	cfg.DispatchEnabled = rec.DispatchEnabled
 	cfg.FailoverTimeoutSeconds = voice.NormalizeFailoverTimeoutSeconds(cfg.FailoverTimeoutSeconds)
+	cfg.VoiceRedialMaxAttempts = voice.NormalizeVoiceRedialMaxAttempts(cfg.VoiceRedialMaxAttempts)
+	cfg.VoiceRedialDelaySeconds = voice.NormalizeVoiceRedialDelaySeconds(cfg.VoiceRedialDelaySeconds)
 	cfg.UpdatedBy = rec.UpdatedBy
 	cfg.UpdatedAt = rec.UpdatedAt
 	cfg.AliyunSecretConfigured = cfg.AliyunAccessKeySecret != ""
@@ -127,6 +133,9 @@ func (s *Store) UpdateVoiceConfig(ctx context.Context, cfg *voice.VoiceGatewayCo
 		if cfg.TencentRegion == "" {
 			cfg.TencentRegion = "ap-guangzhou"
 		}
+		cfg.FailoverTimeoutSeconds = voice.NormalizeFailoverTimeoutSeconds(cfg.FailoverTimeoutSeconds)
+		cfg.VoiceRedialMaxAttempts = voice.NormalizeVoiceRedialMaxAttempts(cfg.VoiceRedialMaxAttempts)
+		cfg.VoiceRedialDelaySeconds = voice.NormalizeVoiceRedialDelaySeconds(cfg.VoiceRedialDelaySeconds)
 		now := time.Now()
 		cfg.UpdatedAt = now
 		cfg.AliyunSecretConfigured = cfg.AliyunAccessKeySecret != ""

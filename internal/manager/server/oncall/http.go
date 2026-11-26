@@ -183,6 +183,8 @@ func (h *Handler) RegisterPublic(r chi.Router) {
 	r.Post("/v1/oncall/chatops/quick-action", h.quickActionExecute)
 	r.Post("/v1/oncall/chatops/callback/feishu", h.feishuChatOpsCallback)
 	r.Post("/v1/oncall/chatops/callback/dingtalk", h.dingTalkChatOpsCallback)
+	r.Get("/v1/oncall/chatops/callback/wecom", h.weComChatOpsVerify)
+	r.Post("/v1/oncall/chatops/callback/wecom", h.weComChatOpsCallback)
 }
 
 // --- Schedule CRUD ---
@@ -235,22 +237,25 @@ func (h *Handler) createSchedule(w http.ResponseWriter, r *http.Request) {
 	if req.ReminderAdvanceHours != nil {
 		reminderAdvance = *req.ReminderAdvanceHours
 	}
+	repeatCount, repeatInterval := normalizeScheduleRepeat(req.EscalationRepeatCount, req.EscalationRepeatIntervalSeconds, 0, 300)
 	enabledVal := true
 	if req.Enabled != nil {
 		enabledVal = *req.Enabled
 	}
 
 	sched := &model.Schedule{
-		Name:                 req.Name,
-		Description:          req.Description,
-		Timezone:             req.Timezone,
-		HandoffTime:          req.HandoffTime,
-		ReminderAdvanceHours: reminderAdvance,
-		RequireSwapApproval:  req.RequireSwapApproval,
-		Enabled:              enabledVal,
-		CreatedBy:            caller.UserID,
-		CreatedAt:            time.Now(),
-		UpdatedAt:            time.Now(),
+		Name:                            req.Name,
+		Description:                     req.Description,
+		Timezone:                        req.Timezone,
+		HandoffTime:                     req.HandoffTime,
+		ReminderAdvanceHours:            reminderAdvance,
+		RequireSwapApproval:             req.RequireSwapApproval,
+		EscalationRepeatCount:           repeatCount,
+		EscalationRepeatIntervalSeconds: repeatInterval,
+		Enabled:                         enabledVal,
+		CreatedBy:                       caller.UserID,
+		CreatedAt:                       time.Now(),
+		UpdatedAt:                       time.Now(),
 	}
 
 	if err := h.store.CreateSchedule(r.Context(), sched); err != nil {
@@ -334,6 +339,14 @@ func (h *Handler) updateSchedule(w http.ResponseWriter, r *http.Request) {
 		sched.ReminderAdvanceHours = *req.ReminderAdvanceHours
 	}
 	sched.RequireSwapApproval = req.RequireSwapApproval
+	repeatCount, repeatInterval := normalizeScheduleRepeat(
+		req.EscalationRepeatCount,
+		req.EscalationRepeatIntervalSeconds,
+		sched.EscalationRepeatCount,
+		sched.EscalationRepeatIntervalSeconds,
+	)
+	sched.EscalationRepeatCount = repeatCount
+	sched.EscalationRepeatIntervalSeconds = repeatInterval
 	if req.Enabled != nil {
 		sched.Enabled = *req.Enabled
 	}
@@ -388,6 +401,29 @@ func (h *Handler) updateSchedule(w http.ResponseWriter, r *http.Request) {
 
 	updated, _ := h.store.GetSchedule(r.Context(), sched.ID)
 	writeJSON(w, http.StatusOK, updated)
+}
+
+func normalizeScheduleRepeat(reqCount *uint8, reqInterval *uint32, defCount uint8, defInterval uint32) (uint8, uint32) {
+	repeatCount := defCount
+	if reqCount != nil {
+		repeatCount = *reqCount
+	}
+	if repeatCount > 5 {
+		repeatCount = 5
+	}
+
+	repeatInterval := defInterval
+	if reqInterval != nil {
+		repeatInterval = *reqInterval
+	}
+	if repeatInterval == 0 {
+		repeatInterval = 300
+	} else if repeatInterval < 30 {
+		repeatInterval = 30
+	} else if repeatInterval > 3600 {
+		repeatInterval = 3600
+	}
+	return repeatCount, repeatInterval
 }
 
 func (h *Handler) deleteSchedule(w http.ResponseWriter, r *http.Request) {

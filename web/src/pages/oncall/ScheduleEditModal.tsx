@@ -57,6 +57,8 @@ export function ScheduleEditModal({
   const [timezone, setTimezone] = useState('Asia/Shanghai');
   const [handoffTime, setHandoffTime] = useState('09:00:00');
   const [reminderAdvanceHours, setReminderAdvanceHours] = useState(3);
+  const [escalationRepeatCount, setEscalationRepeatCount] = useState(0);
+  const [escalationRepeatIntervalSeconds, setEscalationRepeatIntervalSeconds] = useState(300);
   const [requireSwapApproval, setRequireSwapApproval] = useState(false);
   const [enabled, setEnabled] = useState(true);
 
@@ -108,6 +110,8 @@ export function ScheduleEditModal({
       setTimezone(initialSchedule.timezone || 'Asia/Shanghai');
       setHandoffTime(initialSchedule.handoff_time || '09:00:00');
       setReminderAdvanceHours(initialSchedule.reminder_advance_hours ?? 3);
+      setEscalationRepeatCount(initialSchedule.escalation_repeat_count ?? 0);
+      setEscalationRepeatIntervalSeconds(initialSchedule.escalation_repeat_interval_seconds || 300);
       setRequireSwapApproval(initialSchedule.require_swap_approval ?? false);
       setEnabled(initialSchedule.enabled ?? true);
 
@@ -154,6 +158,8 @@ export function ScheduleEditModal({
       setTimezone('Asia/Shanghai');
       setHandoffTime('09:00:00');
       setReminderAdvanceHours(3);
+      setEscalationRepeatCount(0);
+      setEscalationRepeatIntervalSeconds(300);
       setRequireSwapApproval(false);
       setEnabled(true);
 
@@ -269,6 +275,16 @@ export function ScheduleEditModal({
       const parsedAdvance = Number(reminderAdvanceHours);
       const safeAdvanceHours =
         Number.isFinite(parsedAdvance) && parsedAdvance >= 0 ? Math.min(48, Math.floor(parsedAdvance)) : 3;
+      const parsedRepeatCount = Number(escalationRepeatCount);
+      const safeRepeatCount =
+        Number.isFinite(parsedRepeatCount) && parsedRepeatCount >= 0
+          ? Math.min(5, Math.floor(parsedRepeatCount))
+          : 0;
+      const parsedRepeatInterval = Number(escalationRepeatIntervalSeconds);
+      const safeRepeatInterval =
+        !Number.isFinite(parsedRepeatInterval) || parsedRepeatInterval <= 0
+          ? 300
+          : Math.min(3600, Math.max(30, Math.floor(parsedRepeatInterval)));
 
       if (mode === 'create') {
         const res = await createSchedule({
@@ -277,6 +293,8 @@ export function ScheduleEditModal({
           timezone: timezone.trim() || 'Asia/Shanghai',
           handoff_time: handoffTime.trim() || '09:00:00',
           reminder_advance_hours: safeAdvanceHours,
+          escalation_repeat_count: safeRepeatCount,
+          escalation_repeat_interval_seconds: safeRepeatInterval,
           require_swap_approval: requireSwapApproval,
           enabled,
           rotations,
@@ -289,6 +307,8 @@ export function ScheduleEditModal({
           timezone: timezone.trim() || 'Asia/Shanghai',
           handoff_time: handoffTime.trim() || '09:00:00',
           reminder_advance_hours: safeAdvanceHours,
+          escalation_repeat_count: safeRepeatCount,
+          escalation_repeat_interval_seconds: safeRepeatInterval,
           require_swap_approval: requireSwapApproval,
           enabled,
           rotations,
@@ -505,6 +525,60 @@ export function ScheduleEditModal({
                   {tr(
                     '在接班前多久向接班人发送交接班提醒通知，填 0 表示关闭自动提醒',
                     'Advance hours before notifying incoming assignee (0 disables automatic reminders).'
+                  )}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label className="text-xs mb-1 block">
+                  {tr('升级链循环次数 (0-5 轮)', 'Escalation Chain Repeats (0–5)')}
+                </Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={5}
+                  value={escalationRepeatCount}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    const nextVal = Number(raw);
+                    setEscalationRepeatCount(
+                      raw === '' || !Number.isFinite(nextVal) ? 0 : Math.min(5, Math.max(0, Math.floor(nextVal)))
+                    );
+                  }}
+                  aria-label={tr('升级链循环次数 (0-5 轮)', 'Escalation Chain Repeats (0–5)')}
+                  className="w-full text-xs"
+                />
+                <span className="text-[11px] text-text-muted mt-1 block">
+                  {tr(
+                    '整条升级链无人认领后从第 1 级重新提醒的额外轮数，填 0 表示不循环',
+                    'Extra full escalation cycles from Step 1 if unacknowledged (0 disables repeats).'
+                  )}
+                </span>
+              </div>
+
+              <div>
+                <Label className="text-xs mb-1 block">
+                  {tr('循环重试间隔 (秒)', 'Repeat Interval (seconds)')}
+                </Label>
+                <Input
+                  type="number"
+                  min={30}
+                  max={3600}
+                  value={escalationRepeatIntervalSeconds}
+                  onChange={(e) => {
+                    const nextVal = Number(e.target.value);
+                    setEscalationRepeatIntervalSeconds(Number.isFinite(nextVal) ? nextVal : 300);
+                  }}
+                  disabled={escalationRepeatCount === 0}
+                  aria-label={tr('循环重试间隔 (秒)', 'Repeat Interval (seconds)')}
+                  className="w-full text-xs"
+                />
+                <span className="text-[11px] text-text-muted mt-1 block">
+                  {tr(
+                    '每轮升级链结束后等待多久开启下一轮循环（30–3600 秒，默认 300 秒）',
+                    'Cooldown before restarting Step 1 on the next cycle (30–3600s, default 300s).'
                   )}
                 </span>
               </div>

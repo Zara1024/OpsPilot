@@ -361,6 +361,8 @@ func (h *Handler) sanitizeChannelConfig(r *http.Request, cfg *channels.ChannelGa
 	out.FeishuVerificationConfigured = cfg.FeishuVerificationToken != ""
 	out.FeishuEncryptConfigured = cfg.FeishuEncryptKey != ""
 	out.DingTalkSecretConfigured = cfg.DingTalkAppSecret != ""
+	out.WeComTokenConfigured = cfg.WeComToken != ""
+	out.WeComAESKeyConfigured = cfg.WeComEncodingAESKey != ""
 	out.FeishuAppSecretConfigured = cfg.FeishuAppSecret != ""
 	out.WarRoomWebhookSecretConfigured = cfg.WarRoomWebhookSecret != ""
 
@@ -371,6 +373,8 @@ func (h *Handler) sanitizeChannelConfig(r *http.Request, cfg *channels.ChannelGa
 	out.FeishuVerificationToken = ""
 	out.FeishuEncryptKey = ""
 	out.DingTalkAppSecret = ""
+	out.WeComToken = ""
+	out.WeComEncodingAESKey = ""
 	out.FeishuAppSecret = ""
 	out.WarRoomWebhookSecret = ""
 	out.CallbackURLs = nil
@@ -381,6 +385,7 @@ func (h *Handler) sanitizeChannelConfig(r *http.Request, cfg *channels.ChannelGa
 		out.CallbackURLs = map[string]string{
 			"feishu":   fmt.Sprintf("%s/api/v1/oncall/chatops/callback/feishu?token=%s", base, escaped),
 			"dingtalk": fmt.Sprintf("%s/api/v1/oncall/chatops/callback/dingtalk?token=%s", base, escaped),
+			"wecom":    fmt.Sprintf("%s/api/v1/oncall/chatops/callback/wecom?token=%s", base, escaped),
 		}
 	}
 	return out

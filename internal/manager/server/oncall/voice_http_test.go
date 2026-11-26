@@ -439,3 +439,197 @@ func TestHandoffHTTP_RemindNowLogsHydrationAndZeroAdvanceHours(t *testing.T) {
 	}
 	_ = bizoncall.NewScheduler
 }
+
+func TestVoiceCallback_RedialFastEscalateAndDualCallbackGuard(t *testing.T) {
+	_, s, db, r := newTestHTTPHandler(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	adminTenant := tenantctx.Tenant{UserID: 1, Email: "admin@opspilot.local", Role: iammodel.RoleAdmin, IsSuperuser: true}
+
+	// 1. Explicit 0 / false must NOT revert to defaults on save/load.
+	wZero := httptest.NewRecorder()
+	r.ServeHTTP(wZero, reqWithTenant(http.MethodPut, "/v1/oncall/voice/config", `{
+		"provider":"mock",
+		"dispatch_enabled":true,
+		"voice_redial_max_attempts":0,
+		"voice_redial_delay_seconds":15,
+		"voice_fast_escalate_on_reject":false,
+		"voice_redial_on_no_dtmf":false
+	}`, adminTenant))
+	if wZero.Code != http.StatusOK {
+		t.Fatalf("PUT zero/false voice config failed: %d (%s)", wZero.Code, wZero.Body.String())
+	}
+	var savedZero struct {
+		Config map[string]any `json:"config"`
+	}
+	_ = json.Unmarshal(wZero.Body.Bytes(), &savedZero)
+	if savedZero.Config["voice_redial_max_attempts"] != float64(0) || savedZero.Config["voice_fast_escalate_on_reject"] != false {
+		t.Fatalf("expected explicit 0/false persisted cleanly, got %+v", savedZero.Config)
+	}
+
+	// Enable policy: 1 redial after 20s, fast-escalate on reject/unreachable/exhaustion.
+	wCfg := httptest.NewRecorder()
+	r.ServeHTTP(wCfg, reqWithTenant(http.MethodPut, "/v1/oncall/voice/config", `{
+		"provider":"mock",
+		"dispatch_enabled":true,
+		"voice_redial_max_attempts":1,
+		"voice_redial_delay_seconds":20,
+		"voice_fast_escalate_on_reject":true,
+		"voice_redial_on_no_dtmf":false
+	}`, adminTenant))
+	if wCfg.Code != http.StatusOK {
+		t.Fatalf("PUT active voice policy failed: %d", wCfg.Code)
+	}
+	tok, err := s.EnsureVoiceWebhookToken(ctx)
+	if err != nil {
+		t.Fatalf("EnsureVoiceWebhookToken: %v", err)
+	}
+
+	seedCall := func(incID uint64, callID, outCallID string, step uint8) uint64 {
+		t.Helper()
+		_ = db.Create(&alertmodel.Incident{
+			ID: incID, Title: "Voice Callback Alert", Severity: "critical", Status: alertmodel.StatusOpen,
+			DedupeKey: "vc-" + strconv.FormatUint(incID, 10), FirstFiredAt: now, LastFiredAt: now,
+		}).Error
+		task := &oncallmodel.EscalationTask{
+			IncidentID:          incID,
+			RuleKey:             "rule_voice",
+			Title:               "Voice Callback Alert",
+			Severity:            "critical",
+			Urgency:             "high",
+			ScheduleID:          1,
+			CurrentStep:         step,
+			LadderStep:          1,
+			Status:              oncallmodel.TaskStatusPending,
+			StepStartedAt:       now,
+			NextRunAt:           now.Add(5 * time.Minute),
+			LastVoiceCallID:     callID,
+			LastVoiceStep:       step,
+			LastVoiceLadderStep: 1,
+			LastVoiceUserID:     1,
+			CreatedAt:           now,
+			UpdatedAt:           now,
+		}
+		if err := s.EnqueueEscalationTask(ctx, task); err != nil {
+			t.Fatalf("EnqueueEscalationTask %d: %v", incID, err)
+		}
+		if err := s.CreateNotificationLog(ctx, &oncallmodel.NotificationLog{
+			TaskID:         task.ID,
+			IncidentID:     incID,
+			ScheduleID:     1,
+			EscalationStep: step,
+			UserID:         1,
+			UserName:       "Alice",
+			Target:         "138****0001",
+			Channel:        "voice_call",
+			Provider:       "aliyun",
+			CallID:         callID,
+			OutCallID:      outCallID,
+			Status:         oncallmodel.NotifyStatusCalling,
+			CreatedAt:      now,
+		}); err != nil {
+			t.Fatalf("CreateNotificationLog %s: %v", callID, err)
+		}
+		return task.ID
+	}
+
+	postCallback := func(payload string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/v1/oncall/voice/callback/aliyun?token="+url.QueryEscape(tok), bytes.NewBufferString(payload))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("voice callback returned %d: %s", w.Code, w.Body.String())
+		}
+	}
+
+	// 2. Rejected (200002) -> status=rejected, instant fast-escalate step 1->2; duplicate does NOT escalate to 3.
+	taskRejID := seedCall(501, "call_rej_1", "out_rej_1", 1)
+	postCallback(`{"call_id":"out_rej_1","out_id":"call_rej_1","status_code":"200002","status_msg":"user busy","duration":0}`)
+	postCallback(`{"call_id":"out_rej_1","out_id":"call_rej_1","status_code":"200002","status_msg":"user busy","duration":0}`)
+	logRej, _ := s.FindNotificationLogByCall(ctx, "out_rej_1", "call_rej_1")
+	taskRej, _ := s.GetEscalationTaskByID(ctx, taskRejID)
+	if logRej.Status != oncallmodel.NotifyStatusRejected || taskRej.CurrentStep != 2 || taskRej.LastVoiceCallID != "" {
+		t.Fatalf("expected rejected fast-escalate step 2 (once), got log=%q task=%+v", logRej.Status, taskRej)
+	}
+
+	// 3. Unreachable (200003) -> status=unreachable, instant fast-escalate step 1->2.
+	taskUnrID := seedCall(502, "call_unr_1", "out_unr_1", 1)
+	postCallback(`{"call_id":"out_unr_1","status_code":"200003","status_msg":"power off","duration":0}`)
+	logUnr, _ := s.FindNotificationLogByCall(ctx, "out_unr_1", "")
+	taskUnr, _ := s.GetEscalationTaskByID(ctx, taskUnrID)
+	if logUnr.Status != oncallmodel.NotifyStatusUnreachable || taskUnr.CurrentStep != 2 {
+		t.Fatalf("expected unreachable fast-escalate step 2, got log=%q task=%+v", logUnr.Status, taskUnr)
+	}
+
+	// 4. No answer (200001) -> 1st schedules redial (idempotent on duplicate), 2nd call exhausts budget and fast-escalates.
+	taskNAID := seedCall(503, "call_na_1", "out_na_1", 1)
+	// Simulate 90s grace step advancement (CurrentStep=2 while LastVoiceStep=1) before callback arrives.
+	taskNA, _ := s.GetEscalationTaskByID(ctx, taskNAID)
+	taskNA.CurrentStep = 2
+	taskNA.AwaitingVoiceGrace = true
+	_ = s.SaveEscalationTask(ctx, taskNA)
+
+	postCallback(`{"call_id":"out_na_1","status_code":"200001","status_msg":"ring timeout","duration":0}`)
+	postCallback(`{"call_id":"out_na_1","status_code":"200001","status_msg":"ring timeout","duration":0}`)
+	logNA1, _ := s.FindNotificationLogByCall(ctx, "out_na_1", "")
+	taskNA, _ = s.GetEscalationTaskByID(ctx, taskNAID)
+	if logNA1.Status != oncallmodel.NotifyStatusNoAnswer || taskNA.VoiceRedialCount != 1 || taskNA.CurrentStep != 1 || taskNA.AwaitingVoiceGrace {
+		t.Fatalf("expected single scheduled redial restoring step 1, got log=%q task=%+v", logNA1.Status, taskNA)
+	}
+
+	// Simulate worker placing 2nd call (redial attempt #1) and carrier returning no_answer again.
+	taskNA.LastVoiceCallID = "call_na_2"
+	_ = s.SaveEscalationTask(ctx, taskNA)
+	_ = s.CreateNotificationLog(ctx, &oncallmodel.NotificationLog{
+		TaskID: taskNAID, IncidentID: 503, ScheduleID: 1, EscalationStep: 1,
+		UserID: 1, UserName: "Alice", Channel: "voice_call", Provider: "aliyun",
+		CallID: "call_na_2", OutCallID: "out_na_2", Status: oncallmodel.NotifyStatusCalling, CreatedAt: now,
+	})
+	postCallback(`{"call_id":"out_na_2","out_id":"call_na_2","status_code":"200001","duration":0}`)
+	taskNA, _ = s.GetEscalationTaskByID(ctx, taskNAID)
+	if taskNA.CurrentStep != 2 {
+		t.Fatalf("expected exhausted no_answer redials to fast-escalate step 2, got step=%d", taskNA.CurrentStep)
+	}
+
+	// 5. Answered without DTMF waits by default (voice_redial_on_no_dtmf=false), redials only when enabled.
+	taskAnsID := seedCall(504, "call_ans_1", "out_ans_1", 1)
+	postCallback(`{"call_id":"out_ans_1","duration":12,"status_code":"200000"}`)
+	logAns, _ := s.FindNotificationLogByCall(ctx, "out_ans_1", "")
+	taskAns, _ := s.GetEscalationTaskByID(ctx, taskAnsID)
+	if logAns.Status != oncallmodel.NotifyStatusAnswered || taskAns.VoiceRedialCount != 0 || taskAns.CurrentStep != 1 {
+		t.Fatalf("expected answered without DTMF to wait when voice_redial_on_no_dtmf=false, got log=%q task=%+v", logAns.Status, taskAns)
+	}
+
+	wToggle := httptest.NewRecorder()
+	r.ServeHTTP(wToggle, reqWithTenant(http.MethodPut, "/v1/oncall/voice/config", `{
+		"provider":"mock",
+		"dispatch_enabled":true,
+		"voice_redial_max_attempts":1,
+		"voice_redial_delay_seconds":20,
+		"voice_fast_escalate_on_reject":true,
+		"voice_redial_on_no_dtmf":true
+	}`, adminTenant))
+	if wToggle.Code != http.StatusOK {
+		t.Fatalf("PUT voice_redial_on_no_dtmf=true failed: %d", wToggle.Code)
+	}
+	taskNoDTMFID := seedCall(506, "call_nodtmf_1", "out_nodtmf_1", 1)
+	postCallback(`{"call_id":"out_nodtmf_1","duration":10,"status_code":"200000"}`)
+	taskNoDTMF, _ := s.GetEscalationTaskByID(ctx, taskNoDTMFID)
+	if taskNoDTMF.VoiceRedialCount != 1 {
+		t.Fatalf("expected answered without DTMF to schedule redial when enabled, got redial_count=%d", taskNoDTMF.VoiceRedialCount)
+	}
+
+	// 6. Dual-callback guard: DTMF 1 followed by hangup event keeps dtmf_confirmed, updates duration, no redial.
+	taskDualID := seedCall(505, "call_dh_1", "out_dh_1", 1)
+	postCallback(`{"call_id":"out_dh_1","out_id":"call_dh_1","dtmf":"1"}`)
+	postCallback(`{"call_id":"out_dh_1","out_id":"call_dh_1","duration":24,"status_code":"200000"}`)
+	logDual, _ := s.FindNotificationLogByCall(ctx, "out_dh_1", "call_dh_1")
+	taskDual, _ := s.GetEscalationTaskByID(ctx, taskDualID)
+	var inc505 alertmodel.Incident
+	_ = db.First(&inc505, 505).Error
+	if logDual.Status != oncallmodel.NotifyStatusDTMFConfirmed || logDual.DurationSecs != 24 || taskDual.VoiceRedialCount != 0 || inc505.Status != alertmodel.StatusAcknowledged {
+		t.Fatalf("expected dual-callback guard to preserve dtmf_confirmed and update duration=24, got log=%+v task=%+v inc=%q", logDual, taskDual, inc505.Status)
+	}
+}

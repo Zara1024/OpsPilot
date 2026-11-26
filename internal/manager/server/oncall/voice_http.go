@@ -19,7 +19,11 @@ import (
 
 type updateVoiceConfigReq struct {
 	voice.VoiceGatewayConfig
-	DispatchEnabled *bool `json:"dispatch_enabled"`
+	DispatchEnabled           *bool `json:"dispatch_enabled"`
+	VoiceRedialMaxAttempts    *int  `json:"voice_redial_max_attempts"`
+	VoiceRedialDelaySeconds   *int  `json:"voice_redial_delay_seconds"`
+	VoiceFastEscalateOnReject *bool `json:"voice_fast_escalate_on_reject"`
+	VoiceRedialOnNoDTMF       *bool `json:"voice_redial_on_no_dtmf"`
 }
 
 // @Summary Get On-Call voice gateway configuration
@@ -74,6 +78,26 @@ func (h *Handler) updateVoiceConfig(w http.ResponseWriter, r *http.Request) {
 		} else {
 			cfg.DispatchEnabled = *req.DispatchEnabled
 		}
+		if req.VoiceRedialMaxAttempts == nil {
+			cfg.VoiceRedialMaxAttempts = existing.VoiceRedialMaxAttempts
+		} else {
+			cfg.VoiceRedialMaxAttempts = *req.VoiceRedialMaxAttempts
+		}
+		if req.VoiceRedialDelaySeconds == nil {
+			cfg.VoiceRedialDelaySeconds = existing.VoiceRedialDelaySeconds
+		} else {
+			cfg.VoiceRedialDelaySeconds = *req.VoiceRedialDelaySeconds
+		}
+		if req.VoiceFastEscalateOnReject == nil {
+			cfg.VoiceFastEscalateOnReject = existing.VoiceFastEscalateOnReject
+		} else {
+			cfg.VoiceFastEscalateOnReject = *req.VoiceFastEscalateOnReject
+		}
+		if req.VoiceRedialOnNoDTMF == nil {
+			cfg.VoiceRedialOnNoDTMF = existing.VoiceRedialOnNoDTMF
+		} else {
+			cfg.VoiceRedialOnNoDTMF = *req.VoiceRedialOnNoDTMF
+		}
 		if cfg.AliyunAccessKeySecret == "" || strings.Contains(cfg.AliyunAccessKeySecret, "*") {
 			cfg.AliyunAccessKeySecret = existing.AliyunAccessKeySecret
 		}
@@ -81,10 +105,30 @@ func (h *Handler) updateVoiceConfig(w http.ResponseWriter, r *http.Request) {
 			cfg.TencentSecretKey = existing.TencentSecretKey
 		}
 		cfg.WebhookToken = existing.WebhookToken
-	} else if req.DispatchEnabled != nil {
-		cfg.DispatchEnabled = *req.DispatchEnabled
 	} else {
-		cfg.DispatchEnabled = true
+		if req.DispatchEnabled != nil {
+			cfg.DispatchEnabled = *req.DispatchEnabled
+		} else {
+			cfg.DispatchEnabled = true
+		}
+		if req.VoiceRedialMaxAttempts != nil {
+			cfg.VoiceRedialMaxAttempts = *req.VoiceRedialMaxAttempts
+		} else {
+			cfg.VoiceRedialMaxAttempts = 1
+		}
+		if req.VoiceRedialDelaySeconds != nil {
+			cfg.VoiceRedialDelaySeconds = *req.VoiceRedialDelaySeconds
+		} else {
+			cfg.VoiceRedialDelaySeconds = 20
+		}
+		if req.VoiceFastEscalateOnReject != nil {
+			cfg.VoiceFastEscalateOnReject = *req.VoiceFastEscalateOnReject
+		} else {
+			cfg.VoiceFastEscalateOnReject = true
+		}
+		if req.VoiceRedialOnNoDTMF != nil {
+			cfg.VoiceRedialOnNoDTMF = *req.VoiceRedialOnNoDTMF
+		}
 	}
 
 	if cfg.Provider == "" {
@@ -98,6 +142,8 @@ func (h *Handler) updateVoiceConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	cfg.FailoverTimeoutSeconds = voice.NormalizeFailoverTimeoutSeconds(cfg.FailoverTimeoutSeconds)
+	cfg.VoiceRedialMaxAttempts = voice.NormalizeVoiceRedialMaxAttempts(cfg.VoiceRedialMaxAttempts)
+	cfg.VoiceRedialDelaySeconds = voice.NormalizeVoiceRedialDelaySeconds(cfg.VoiceRedialDelaySeconds)
 	if cfg.AliyunRegion == "" {
 		cfg.AliyunRegion = "cn-hangzhou"
 	}
@@ -338,20 +384,41 @@ func (h *Handler) authorizeVoiceCallback(w http.ResponseWriter, r *http.Request)
 }
 
 type parsedVoiceCallback struct {
-	OutCallID string
-	CallID    string
-	DTMF      string
-	Duration  int
-	Failed    bool
-	StatusMsg string
+	OutCallID     string
+	CallID        string
+	DTMF          string
+	Duration      int
+	Failed        bool
+	FailureStatus string
+	StatusCode    string
+	StatusMsg     string
 }
 
 func (h *Handler) applyVoiceCallbackEvent(r *http.Request, ev parsedVoiceCallback) {
 	if ev.OutCallID == "" && ev.CallID == "" {
 		return
 	}
-	entry, err := h.store.FindNotificationLogByCall(r.Context(), ev.OutCallID, ev.CallID)
+	ctx := r.Context()
+	entry, err := h.store.FindNotificationLogByCall(ctx, ev.OutCallID, ev.CallID)
 	if err != nil || entry == nil {
+		return
+	}
+
+	wasDTMFConfirmed := entry.Status == model.NotifyStatusDTMFConfirmed
+	wasTerminalFailure := entry.Status == model.NotifyStatusRejected ||
+		entry.Status == model.NotifyStatusNoAnswer ||
+		entry.Status == model.NotifyStatusUnreachable ||
+		entry.Status == model.NotifyStatusFailed
+	wasAnswered := entry.Status == model.NotifyStatusAnswered
+
+	// 挂断回调晚于按键认领回调到达时，仅补充通话时长，不降级状态也不触发重拨/快进升级。
+	if ev.DTMF == "" && wasDTMFConfirmed {
+		if ev.Duration > entry.DurationSecs {
+			entry.DurationSecs = ev.Duration
+			if err := h.store.UpdateNotificationLog(ctx, entry); err != nil {
+				slog.Warn("update duration on confirmed voice log failed", slog.Uint64("log_id", entry.ID), slog.Any("err", err))
+			}
+		}
 		return
 	}
 
@@ -362,17 +429,23 @@ func (h *Handler) applyVoiceCallbackEvent(r *http.Request, ev parsedVoiceCallbac
 		entry.DurationSecs = ev.Duration
 	}
 
+	callID := entry.CallID
+	if callID == "" {
+		callID = ev.CallID
+	}
+	now := time.Now().UTC()
+
 	switch ev.DTMF {
 	case "1":
 		entry.Status = model.NotifyStatusDTMFConfirmed
 		entry.Message = "语音电话按键 '1' 已确认认领接单"
-		if err := h.store.UpdateNotificationLog(r.Context(), entry); err != nil {
+		if err := h.store.UpdateNotificationLog(ctx, entry); err != nil {
 			slog.Warn("update voice callback log failed", slog.Uint64("log_id", entry.ID), slog.Any("err", err))
 		}
 		if entry.TaskID > 0 {
-			if task, taskErr := h.store.GetEscalationTaskByID(r.Context(), entry.TaskID); taskErr == nil && task != nil {
+			if task, taskErr := h.store.GetEscalationTaskByID(ctx, entry.TaskID); taskErr == nil && task != nil {
 				if batchIDs := model.ParseMergedIncidentIDs(task); len(batchIDs) > 0 {
-					if err := h.store.AckAlertIncidentsBatch(r.Context(), batchIDs, entry.UserID, "语音电话按键 1 确认接单"); err != nil {
+					if err := h.store.AckAlertIncidentsBatch(ctx, batchIDs, entry.UserID, "语音电话按键 1 确认接单"); err != nil {
 						slog.Warn("batch ack grouped incidents from voice callback failed", slog.Uint64("task_id", entry.TaskID), slog.Any("err", err))
 					}
 					return
@@ -380,36 +453,167 @@ func (h *Handler) applyVoiceCallbackEvent(r *http.Request, ev parsedVoiceCallbac
 			}
 		}
 		if entry.IncidentID > 0 {
-			if err := h.store.AckAlertIncident(r.Context(), entry.IncidentID, entry.UserID, "语音电话按键 1 确认接单"); err != nil {
+			if err := h.store.AckAlertIncident(ctx, entry.IncidentID, entry.UserID, "语音电话按键 1 确认接单"); err != nil {
 				slog.Warn("ack incident from voice callback failed", slog.Uint64("incident_id", entry.IncidentID), slog.Any("err", err))
 			}
 		}
 	case "2":
 		entry.Status = model.NotifyStatusAnswered
 		entry.Message = "语音电话按键 '2' 请求立即升级至下一梯队"
-		if err := h.store.UpdateNotificationLog(r.Context(), entry); err != nil {
+		if err := h.store.UpdateNotificationLog(ctx, entry); err != nil {
 			slog.Warn("update voice callback log failed", slog.Uint64("log_id", entry.ID), slog.Any("err", err))
 		}
 		if entry.IncidentID > 0 {
-			if err := h.store.EscalateAlertIncident(r.Context(), entry.IncidentID, entry.UserID, "语音电话按键 2 请求升级"); err != nil {
+			if err := h.store.EscalateAlertIncident(ctx, entry.IncidentID, entry.UserID, "语音电话按键 2 请求升级"); err != nil {
 				slog.Warn("escalate incident from voice callback failed", slog.Uint64("incident_id", entry.IncidentID), slog.Any("err", err))
 			}
-			if advanced, err := h.store.TriggerImmediateEscalationByIncident(r.Context(), entry.IncidentID, time.Now().UTC()); err == nil && advanced && h.worker != nil {
+			if advanced, err := h.store.TriggerImmediateEscalationByIncident(ctx, entry.IncidentID, now); err == nil && advanced && h.worker != nil {
 				h.worker.Wake()
 			}
 		}
 	default:
 		if ev.Failed {
-			entry.Status = model.NotifyStatusFailed
-		} else if ev.Duration > 0 {
+			failureStatus := ev.FailureStatus
+			if failureStatus == "" {
+				failureStatus = model.NotifyStatusFailed
+			}
+			entry.Status = failureStatus
+			if ev.StatusMsg != "" {
+				entry.Message = truncateLogMsg(ev.StatusMsg, 500)
+			} else if entry.Message == "" {
+				entry.Message = defaultVoiceFailureMessage(failureStatus)
+			}
+
+			// 幂等保护：同一通电话若已处理过失败/未接终态，重复回调不再重复扣减重拨次数。
+			shouldTriggerPolicy := !wasTerminalFailure && entry.TaskID > 0 && callID != ""
+			var policySuffix string
+			var wakeWorker bool
+
+			if shouldTriggerPolicy {
+				cfg := h.loadVoicePolicyConfig(r)
+				switch failureStatus {
+				case model.NotifyStatusRejected, model.NotifyStatusUnreachable:
+					if cfg.VoiceFastEscalateOnReject {
+						if nextStep, advanced, escErr := h.store.FastEscalateVoiceCall(ctx, entry.TaskID, callID, entry.EscalationStep, now); escErr != nil {
+							slog.Warn("fast escalate voice call failed", slog.Uint64("task_id", entry.TaskID), slog.Any("err", escErr))
+						} else if advanced {
+							policySuffix = fmt.Sprintf("（已触发快进升级至第 %d 级）", nextStep)
+							wakeWorker = true
+						}
+					}
+				case model.NotifyStatusNoAnswer:
+					maxRedials := voice.NormalizeVoiceRedialMaxAttempts(cfg.VoiceRedialMaxAttempts)
+					delaySecs := voice.NormalizeVoiceRedialDelaySeconds(cfg.VoiceRedialDelaySeconds)
+					if maxRedials > 0 {
+						attempt, scheduled, redialErr := h.store.ScheduleVoiceRedialByCall(ctx, entry.TaskID, callID, maxRedials, now.Add(time.Duration(delaySecs)*time.Second))
+						if redialErr != nil {
+							slog.Warn("schedule voice redial failed", slog.Uint64("task_id", entry.TaskID), slog.Any("err", redialErr))
+						} else if scheduled {
+							policySuffix = fmt.Sprintf("（%d 秒后自动第 %d 次重拨）", delaySecs, attempt)
+							wakeWorker = true
+						} else if cfg.VoiceFastEscalateOnReject {
+							if nextStep, advanced, escErr := h.store.FastEscalateVoiceCall(ctx, entry.TaskID, callID, entry.EscalationStep, now); escErr != nil {
+								slog.Warn("fast escalate after exhausted redials failed", slog.Uint64("task_id", entry.TaskID), slog.Any("err", escErr))
+							} else if advanced {
+								policySuffix = fmt.Sprintf("（重拨次数已耗尽，已升级至第 %d 级）", nextStep)
+								wakeWorker = true
+							}
+						}
+					} else if cfg.VoiceFastEscalateOnReject {
+						if nextStep, advanced, escErr := h.store.FastEscalateVoiceCall(ctx, entry.TaskID, callID, entry.EscalationStep, now); escErr != nil {
+							slog.Warn("fast escalate voice no_answer without redial failed", slog.Uint64("task_id", entry.TaskID), slog.Any("err", escErr))
+						} else if advanced {
+							policySuffix = fmt.Sprintf("（未开启重拨，已升级至第 %d 级）", nextStep)
+							wakeWorker = true
+						}
+					}
+				}
+			}
+
+			if policySuffix != "" {
+				entry.Message = truncateLogMsg(entry.Message+policySuffix, 500)
+			}
+			if err := h.store.UpdateNotificationLog(ctx, entry); err != nil {
+				slog.Warn("update voice callback log failed", slog.Uint64("log_id", entry.ID), slog.Any("err", err))
+			}
+			if wakeWorker && h.worker != nil {
+				h.worker.Wake()
+			}
+			return
+		}
+
+		if ev.Duration > 0 {
 			entry.Status = model.NotifyStatusAnswered
 		}
 		if ev.StatusMsg != "" {
 			entry.Message = truncateLogMsg(ev.StatusMsg, 500)
 		}
-		if err := h.store.UpdateNotificationLog(r.Context(), entry); err != nil {
+
+		var wakeWorker bool
+		if ev.Duration > 0 && !wasAnswered && entry.TaskID > 0 && callID != "" {
+			cfg := h.loadVoicePolicyConfig(r)
+			if cfg.VoiceRedialOnNoDTMF {
+				maxRedials := voice.NormalizeVoiceRedialMaxAttempts(cfg.VoiceRedialMaxAttempts)
+				delaySecs := voice.NormalizeVoiceRedialDelaySeconds(cfg.VoiceRedialDelaySeconds)
+				if maxRedials > 0 {
+					attempt, scheduled, redialErr := h.store.ScheduleVoiceRedialByCall(ctx, entry.TaskID, callID, maxRedials, now.Add(time.Duration(delaySecs)*time.Second))
+					if redialErr != nil {
+						slog.Warn("schedule voice no-dtmf redial failed", slog.Uint64("task_id", entry.TaskID), slog.Any("err", redialErr))
+					} else if scheduled {
+						base := entry.Message
+						if base == "" {
+							base = "已接听未按键"
+						}
+						entry.Message = truncateLogMsg(fmt.Sprintf("%s（未按键，%d 秒后自动第 %d 次重拨）", base, delaySecs, attempt), 500)
+						wakeWorker = true
+					} else if cfg.VoiceFastEscalateOnReject {
+						if nextStep, advanced, escErr := h.store.FastEscalateVoiceCall(ctx, entry.TaskID, callID, entry.EscalationStep, now); escErr != nil {
+							slog.Warn("fast escalate after no-dtmf redials failed", slog.Uint64("task_id", entry.TaskID), slog.Any("err", escErr))
+						} else if advanced {
+							base := entry.Message
+							if base == "" {
+								base = "已接听未按键"
+							}
+							entry.Message = truncateLogMsg(fmt.Sprintf("%s（未按键重拨耗尽，已升级至第 %d 级）", base, nextStep), 500)
+							wakeWorker = true
+						}
+					}
+				}
+			}
+		}
+
+		if err := h.store.UpdateNotificationLog(ctx, entry); err != nil {
 			slog.Warn("update voice callback log failed", slog.Uint64("log_id", entry.ID), slog.Any("err", err))
 		}
+		if wakeWorker && h.worker != nil {
+			h.worker.Wake()
+		}
+	}
+}
+
+func (h *Handler) loadVoicePolicyConfig(r *http.Request) voice.VoiceGatewayConfig {
+	cfg, err := h.store.GetVoiceConfig(r.Context())
+	if err != nil || cfg == nil {
+		return voice.VoiceGatewayConfig{
+			VoiceRedialMaxAttempts:    1,
+			VoiceRedialDelaySeconds:   20,
+			VoiceFastEscalateOnReject: true,
+			VoiceRedialOnNoDTMF:       false,
+		}
+	}
+	return *cfg
+}
+
+func defaultVoiceFailureMessage(status string) string {
+	switch status {
+	case model.NotifyStatusRejected:
+		return "被叫拒接或通话忙"
+	case model.NotifyStatusNoAnswer:
+		return "振铃超时无人接听"
+	case model.NotifyStatusUnreachable:
+		return "被叫关机、停机或不在服务区"
+	default:
+		return "语音外呼失败"
 	}
 }
 
@@ -472,21 +676,73 @@ func parseTencentCallbackEvents(body []byte) []parsedVoiceCallback {
 }
 
 func callbackFromMap(m map[string]any) parsedVoiceCallback {
+	statusCode := firstMapString(m, "status_code", "result", "Result", "call_result", "CallResult", "hangup_cause", "HangupCause")
 	ev := parsedVoiceCallback{
-		OutCallID: firstMapString(m, "call_id", "CallId", "callid"),
-		CallID:    firstMapString(m, "out_id", "OutId", "session_context", "SessionContext"),
-		DTMF:      firstMapString(m, "dtmf", "digits", "key_press", "press", "Digits"),
-		Duration:  firstMapInt(m, "duration", "duration_secs", "Duration"),
-		StatusMsg: firstMapString(m, "status_msg", "errmsg", "Result", "status_code"),
+		OutCallID:  firstMapString(m, "call_id", "CallId", "callid"),
+		CallID:     firstMapString(m, "out_id", "OutId", "session_context", "SessionContext"),
+		DTMF:       firstMapString(m, "dtmf", "digits", "key_press", "press", "Digits"),
+		Duration:   firstMapInt(m, "duration", "duration_secs", "Duration"),
+		StatusCode: statusCode,
+		StatusMsg:  firstMapString(m, "status_msg", "errmsg", "ErrMsg", "Result", "status_code"),
 	}
-	statusCode := firstMapString(m, "status_code", "result", "Result")
 	successFlag := firstMapString(m, "success")
-	if strings.EqualFold(successFlag, "false") || (statusCode != "" && statusCode != "0" && statusCode != "200000" && strings.ToLower(statusCode) != "ok" && strings.ToLower(statusCode) != "success") {
-		if ev.DTMF == "" && ev.Duration == 0 {
+	if ev.DTMF == "" && ev.Duration == 0 {
+		if status := classifyVoiceCallback(statusCode, ev.StatusMsg, successFlag); status != "" {
 			ev.Failed = true
+			ev.FailureStatus = status
 		}
 	}
 	return ev
+}
+
+// classifyVoiceCallback classifies an unsuccessful voice callback (with no DTMF and 0s duration)
+// into rejected, no_answer, unreachable, or generic failed. Empty string means success / indeterminate.
+func classifyVoiceCallback(statusCode, statusMsg, successFlag string) string {
+	code := strings.ToLower(strings.TrimSpace(statusCode))
+	msg := strings.ToLower(strings.TrimSpace(statusMsg))
+	combined := strings.TrimSpace(code + " " + msg)
+
+	if containsAnyVoiceToken(combined,
+		"200002", "486", "603",
+		"reject", "rejected", "decline", "declined", "busy",
+		"拒接", "挂断", "用户忙", "通话中", "忙碌",
+	) {
+		return model.NotifyStatusRejected
+	}
+
+	if containsAnyVoiceToken(combined,
+		"200001", "408", "480",
+		"no_answer", "no answer", "noanswer", "not_answered", "unanswered", "ring_timeout", "ringing_timeout", "timeout",
+		"无人接听", "无应答", "超时", "未接",
+	) {
+		return model.NotifyStatusNoAnswer
+	}
+
+	if containsAnyVoiceToken(combined,
+		"200003", "200004", "200005", "404", "484", "503",
+		"unreachable", "not_reachable", "power_off", "poweroff", "powered_off", "shutdown", "out_of_service", "invalid_number", "not_exist", "absent",
+		"关机", "停机", "空号", "不在服务区", "无法接通", "不可达",
+	) {
+		return model.NotifyStatusUnreachable
+	}
+
+	isSuccessCode := code == "" || code == "0" || code == "200000" || code == "ok" || code == "success"
+	if strings.EqualFold(successFlag, "false") || !isSuccessCode {
+		return model.NotifyStatusFailed
+	}
+	return ""
+}
+
+func containsAnyVoiceToken(text string, tokens ...string) bool {
+	if text == "" {
+		return false
+	}
+	for _, tok := range tokens {
+		if strings.Contains(text, tok) {
+			return true
+		}
+	}
+	return false
 }
 
 func firstMapString(m map[string]any, keys ...string) string {

@@ -212,4 +212,64 @@ describe('ChannelGatewaysSection', () => {
     });
     expect(await screen.findByDisplayValue('https://opspilot.test/api/v1/oncall/chatops/callback/feishu?token=newchat888')).toBeInTheDocument();
   });
+
+  it('renders WeCom CorpApp fields, masks secrets on save, and displays wecom callback URL', async () => {
+    const user = userEvent.setup();
+    vi.mocked(oncallApi.getChannelConfig).mockResolvedValue({
+      sms_enabled: false,
+      sms_provider: '',
+      email_enabled: false,
+      smtp_port: 465,
+      smtp_tls_mode: 'ssl',
+      smtp_timeout_seconds: 10,
+      war_room_provider: '',
+      wecom_corp_id: 'ww_corp_01',
+      wecom_token_configured: true,
+      wecom_aes_key_configured: true,
+      callback_urls: {
+        feishu: 'https://opspilot.test/api/v1/oncall/chatops/callback/feishu?token=tok1',
+        dingtalk: 'https://opspilot.test/api/v1/oncall/chatops/callback/dingtalk?token=tok1',
+        wecom: 'https://opspilot.test/api/v1/oncall/chatops/callback/wecom?token=tok1',
+      },
+    });
+    vi.mocked(oncallApi.updateChannelConfig).mockResolvedValue({
+      ok: true,
+      config: {
+        sms_enabled: false,
+        sms_provider: '',
+        email_enabled: false,
+        smtp_port: 465,
+        smtp_tls_mode: 'ssl',
+        smtp_timeout_seconds: 10,
+        war_room_provider: '',
+        wecom_corp_id: 'ww_corp_02',
+        wecom_token_configured: true,
+        wecom_aes_key_configured: true,
+        callback_urls: {
+          wecom: 'https://opspilot.test/api/v1/oncall/chatops/callback/wecom?token=tok1',
+        },
+      },
+    });
+
+    render(<ChannelGatewaysSection />);
+
+    const corpInput = (await screen.findByLabelText('企业微信 CorpID')) as HTMLInputElement;
+    expect(corpInput.value).toBe('ww_corp_01');
+    expect(
+      screen.getByDisplayValue('https://opspilot.test/api/v1/oncall/chatops/callback/wecom?token=tok1')
+    ).toBeInTheDocument();
+
+    await user.clear(corpInput);
+    await user.type(corpInput, 'ww_corp_02');
+    await user.click(screen.getByRole('button', { name: '保存多通道配置' }));
+
+    await waitFor(() => {
+      expect(oncallApi.updateChannelConfig).toHaveBeenCalledTimes(1);
+    });
+    expect(vi.mocked(oncallApi.updateChannelConfig).mock.calls[0][0]).toMatchObject({
+      wecom_corp_id: 'ww_corp_02',
+      wecom_token: '',
+      wecom_encoding_aes_key: '',
+    });
+  });
 });

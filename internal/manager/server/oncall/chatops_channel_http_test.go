@@ -6,13 +6,16 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
+	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -256,5 +259,122 @@ func TestChatOpsCallbacks_QuickActionFeishuDingTalkAndWarRoom(t *testing.T) {
 	r.ServeHTTP(wInc, reqWithTenant(http.MethodGet, "/v1/oncall/incidents/active", "", adminTenant))
 	if wInc.Code != http.StatusOK || !strings.Contains(wInc.Body.String(), "https://opspilot.test/alerts/incidents/402") {
 		t.Fatalf("expected war_room_url hydrated in /incidents/active, got %d %s", wInc.Code, wInc.Body.String())
+	}
+}
+
+func encryptWeComTestPayload(t *testing.T, encodingAESKey, corpID string, plaintext []byte) string {
+	t.Helper()
+	keyStr := encodingAESKey
+	if !strings.HasSuffix(keyStr, "=") {
+		keyStr += "="
+	}
+	aesKey, err := base64.StdEncoding.DecodeString(keyStr)
+	if err != nil || len(aesKey) != 32 {
+		t.Fatalf("invalid test encodingAESKey: %v len=%d", err, len(aesKey))
+	}
+	buf := make([]byte, 0, 20+len(plaintext)+len(corpID)+32)
+	buf = append(buf, bytes.Repeat([]byte{'r'}, 16)...)
+	var lenBuf [4]byte
+	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(plaintext)))
+	buf = append(buf, lenBuf[:]...)
+	buf = append(buf, plaintext...)
+	buf = append(buf, []byte(corpID)...)
+	padLen := 32 - (len(buf) % 32)
+	buf = append(buf, bytes.Repeat([]byte{byte(padLen)}, padLen)...)
+
+	block, err := aes.NewCipher(aesKey)
+	if err != nil {
+		t.Fatalf("aes.NewCipher: %v", err)
+	}
+	ct := make([]byte, len(buf))
+	cipher.NewCBCEncrypter(block, aesKey[:aes.BlockSize]).CryptBlocks(ct, buf)
+	return base64.StdEncoding.EncodeToString(ct)
+}
+
+func weComTestSignature(token, ts, nonce, encrypt string) string {
+	parts := []string{token, ts, nonce, encrypt}
+	sort.Strings(parts)
+	sum := sha1.Sum([]byte(strings.Join(parts, "")))
+	return hex.EncodeToString(sum[:])
+}
+
+func TestWeComChatOps_VerifyAndEncryptedCallback(t *testing.T) {
+	_, _, db, r := newTestHTTPHandler(t)
+	now := time.Now().UTC()
+	adminTenant := tenantctx.Tenant{UserID: 1, Email: "admin@opspilot.local", Role: iammodel.RoleAdmin, IsSuperuser: true}
+
+	const (
+		corpID         = "ww_test_corp_01"
+		wecomToken     = "wecom_cb_tok_secret"
+		encodingAESKey = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG"
+	)
+
+	// 1. Save WeCom CorpApp config via PUT /v1/oncall/channels/config -> no plaintext leak, exposes callback_urls["wecom"].
+	body, _ := json.Marshal(map[string]any{
+		"wecom_corp_id":          corpID,
+		"wecom_token":            wecomToken,
+		"wecom_encoding_aes_key": encodingAESKey,
+	})
+	wSave := httptest.NewRecorder()
+	r.ServeHTTP(wSave, reqWithTenant(http.MethodPut, "/v1/oncall/channels/config", string(body), adminTenant))
+	if wSave.Code != http.StatusOK {
+		t.Fatalf("PUT channel config with wecom failed: %d (%s)", wSave.Code, wSave.Body.String())
+	}
+	if strings.Contains(wSave.Body.String(), wecomToken) || strings.Contains(wSave.Body.String(), encodingAESKey) {
+		t.Fatalf("expected WeCom secrets masked in PUT response, got %s", wSave.Body.String())
+	}
+	var saveResp struct {
+		OK     bool                          `json:"ok"`
+		Config channels.ChannelGatewayConfig `json:"config"`
+	}
+	_ = json.Unmarshal(wSave.Body.Bytes(), &saveResp)
+	if !saveResp.Config.WeComTokenConfigured || !saveResp.Config.WeComAESKeyConfigured ||
+		saveResp.Config.WeComCorpID != corpID || saveResp.Config.CallbackURLs["wecom"] == "" {
+		t.Fatalf("unexpected WeCom config response: %+v", saveResp.Config)
+	}
+
+	// 2. GET /v1/oncall/chatops/callback/wecom decrypts echostr on valid SHA-1 signature, rejects invalid signature.
+	ts := strconv.FormatInt(now.Unix(), 10)
+	nonce := "wc_nonce_1"
+	encEcho := encryptWeComTestPayload(t, encodingAESKey, corpID, []byte("wecom_echo_verified_987"))
+	sigEcho := weComTestSignature(wecomToken, ts, nonce, encEcho)
+
+	verifyURL := "/v1/oncall/chatops/callback/wecom?msg_signature=" + url.QueryEscape(sigEcho) +
+		"&timestamp=" + url.QueryEscape(ts) +
+		"&nonce=" + url.QueryEscape(nonce) +
+		"&echostr=" + url.QueryEscape(encEcho)
+	wVerify := httptest.NewRecorder()
+	r.ServeHTTP(wVerify, httptest.NewRequest(http.MethodGet, verifyURL, nil))
+	if wVerify.Code != http.StatusOK || wVerify.Body.String() != "wecom_echo_verified_987" {
+		t.Fatalf("expected decrypted wecom echostr, got %d (%q)", wVerify.Code, wVerify.Body.String())
+	}
+
+	wBadSig := httptest.NewRecorder()
+	r.ServeHTTP(wBadSig, httptest.NewRequest(http.MethodGet, strings.Replace(verifyURL, sigEcho, "deadbeef", 1), nil))
+	if wBadSig.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for bad WeCom signature, got %d", wBadSig.Code)
+	}
+
+	// 3. POST /v1/oncall/chatops/callback/wecom with encrypted template_card_event XML acknowledges incident.
+	_ = db.Create(&alertmodel.Incident{
+		ID: 409, Title: "WeCom Card Alert", Severity: "critical", Status: alertmodel.StatusOpen,
+		DedupeKey: "wecom-409", FirstFiredAt: now, LastFiredAt: now,
+	}).Error
+	xmlPlain := `<xml><ToUserName><![CDATA[ww_test_corp_01]]></ToUserName><FromUserName><![CDATA[zhangsan]]></FromUserName><Event><![CDATA[template_card_event]]></Event><EventKey><![CDATA[ack:409]]></EventKey></xml>`
+	encEvent := encryptWeComTestPayload(t, encodingAESKey, corpID, []byte(xmlPlain))
+	sigEvent := weComTestSignature(wecomToken, ts, nonce, encEvent)
+	envelope := `<xml><ToUserName><![CDATA[` + corpID + `]]></ToUserName><Encrypt><![CDATA[` + encEvent + `]]></Encrypt></xml>`
+
+	postURL := "/v1/oncall/chatops/callback/wecom?msg_signature=" + url.QueryEscape(sigEvent) +
+		"&timestamp=" + url.QueryEscape(ts) + "&nonce=" + url.QueryEscape(nonce)
+	wPost := httptest.NewRecorder()
+	r.ServeHTTP(wPost, httptest.NewRequest(http.MethodPost, postURL, strings.NewReader(envelope)))
+	if wPost.Code != http.StatusOK || !strings.Contains(wPost.Body.String(), `"errcode":0`) {
+		t.Fatalf("expected 200 errcode=0 on encrypted WeCom XML callback, got %d (%s)", wPost.Code, wPost.Body.String())
+	}
+	var inc409 alertmodel.Incident
+	_ = db.First(&inc409, 409).Error
+	if inc409.Status != alertmodel.StatusAcknowledged {
+		t.Fatalf("expected incident 409 acknowledged via WeCom callback, got %q", inc409.Status)
 	}
 }

@@ -11,7 +11,37 @@ const (
 	defaultFailoverTimeoutSecs = 8
 	minFailoverTimeoutSecs     = 3
 	maxFailoverTimeoutSecs     = 30
+
+	defaultVoiceRedialDelaySecs = 20
+	minVoiceRedialDelaySecs     = 10
+	maxVoiceRedialDelaySecs     = 120
+	maxVoiceRedialAttemptsCap   = 3
 )
+
+// NormalizeVoiceRedialMaxAttempts clamps per-step automatic redials to [0, 3].
+func NormalizeVoiceRedialMaxAttempts(v int) int {
+	if v < 0 {
+		return 0
+	}
+	if v > maxVoiceRedialAttemptsCap {
+		return maxVoiceRedialAttemptsCap
+	}
+	return v
+}
+
+// NormalizeVoiceRedialDelaySeconds clamps redial backoff within [10, 120] seconds (default 20s).
+func NormalizeVoiceRedialDelaySeconds(secs int) int {
+	if secs <= 0 {
+		return defaultVoiceRedialDelaySecs
+	}
+	if secs < minVoiceRedialDelaySecs {
+		return minVoiceRedialDelaySecs
+	}
+	if secs > maxVoiceRedialDelaySecs {
+		return maxVoiceRedialDelaySecs
+	}
+	return secs
+}
 
 type VoiceGateway struct {
 	providers map[string]VoiceProvider

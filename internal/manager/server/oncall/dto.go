@@ -18,25 +18,29 @@ type RotationInput struct {
 }
 
 type CreateScheduleRequest struct {
-	Name                 string          `json:"name"`
-	Description          string          `json:"description"`
-	Timezone             string          `json:"timezone"`
-	HandoffTime          string          `json:"handoff_time"`
-	ReminderAdvanceHours *uint32         `json:"reminder_advance_hours"`
-	RequireSwapApproval  bool            `json:"require_swap_approval"`
-	Enabled              *bool           `json:"enabled"`
-	Rotations            []RotationInput `json:"rotations"`
+	Name                            string          `json:"name"`
+	Description                     string          `json:"description"`
+	Timezone                        string          `json:"timezone"`
+	HandoffTime                     string          `json:"handoff_time"`
+	ReminderAdvanceHours            *uint32         `json:"reminder_advance_hours"`
+	RequireSwapApproval             bool            `json:"require_swap_approval"`
+	EscalationRepeatCount           *uint8          `json:"escalation_repeat_count"`
+	EscalationRepeatIntervalSeconds *uint32         `json:"escalation_repeat_interval_seconds"`
+	Enabled                         *bool           `json:"enabled"`
+	Rotations                       []RotationInput `json:"rotations"`
 }
 
 type UpdateScheduleRequest struct {
-	Name                 string          `json:"name"`
-	Description          string          `json:"description"`
-	Timezone             string          `json:"timezone"`
-	HandoffTime          string          `json:"handoff_time"`
-	ReminderAdvanceHours *uint32         `json:"reminder_advance_hours"`
-	RequireSwapApproval  bool            `json:"require_swap_approval"`
-	Enabled              *bool           `json:"enabled"`
-	Rotations            []RotationInput `json:"rotations"`
+	Name                            string          `json:"name"`
+	Description                     string          `json:"description"`
+	Timezone                        string          `json:"timezone"`
+	HandoffTime                     string          `json:"handoff_time"`
+	ReminderAdvanceHours            *uint32         `json:"reminder_advance_hours"`
+	RequireSwapApproval             bool            `json:"require_swap_approval"`
+	EscalationRepeatCount           *uint8          `json:"escalation_repeat_count"`
+	EscalationRepeatIntervalSeconds *uint32         `json:"escalation_repeat_interval_seconds"`
+	Enabled                         *bool           `json:"enabled"`
+	Rotations                       []RotationInput `json:"rotations"`
 }
 
 type CreateOverrideRequest struct {

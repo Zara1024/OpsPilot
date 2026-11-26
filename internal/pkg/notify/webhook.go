@@ -591,17 +591,203 @@ func formatDingTalkMessage(msg Message) map[string]any {
 	}
 }
 
-// NewWeComSender posts a text payload compatible with 企业微信 (WeCom) group
-// bots. Endpoint URL carries the bot key as a query param; the v1 wiring
-// has no extra signing — the secret query string IS the credential. Same
-// JSON shape as DingTalk: {"msgtype":"text","text":{"content":"..."}}.
+// NewWeComSender posts an interactive template_card (when valid action/console URLs exist)
+// or rich markdown message compatible with 企业微信 (WeCom) group bots.
 func NewWeComSender(name, endpoint string, client *http.Client) Sender {
 	return newWebhookSender(name, endpoint, "", client, func(msg Message) (any, error) {
-		return map[string]any{
-			"msgtype": "text",
-			"text":    map[string]string{"content": formatText(msg)},
-		}, nil
+		return formatWeComMessage(msg), nil
 	}, nil)
+}
+
+func formatWeComMessage(msg Message) map[string]any {
+	statusLower := strings.ToLower(strings.TrimSpace(msg.Labels["status"]))
+	isResolved := statusLower == "resolved"
+	isActive := statusLower == "" || statusLower == "open" || statusLower == "firing"
+
+	prefix := "🔔【系统通知】"
+	sevText := "NOTICE"
+	mdSevColor := "comment"
+	if isResolved {
+		prefix = "✅【告警恢复】"
+		sevText = "RESOLVED (已恢复)"
+		mdSevColor = "info"
+	} else {
+		switch msg.Severity {
+		case SeverityCritical:
+			prefix = "🚨【严重告警】"
+			sevText = "CRITICAL (严重)"
+			mdSevColor = "warning"
+		case SeverityWarning:
+			prefix = "⚠️【告警提醒】"
+			sevText = "WARNING (警告)"
+			mdSevColor = "warning"
+		case SeverityInfo:
+			prefix = "ℹ️【信息提醒】"
+			sevText = "INFO (信息)"
+			mdSevColor = "comment"
+		default:
+			if msg.Severity != "" {
+				sevText = strings.ToUpper(string(msg.Severity))
+			}
+		}
+	}
+
+	ruleVal := firstNonEmptyLabel(msg.Labels, "rule_name", "rule")
+	if ruleVal == "" {
+		ruleVal = nonEmpty(msg.Subject, "系统告警")
+	}
+	devVal := firstNonEmptyLabel(msg.Labels, "device_name", "device", "target")
+	fullTitle := prefix + ruleVal
+	if devVal != "" {
+		fullTitle += " - " + devVal
+	}
+
+	statusText := strings.ToUpper(statusLower)
+	if isResolved {
+		statusText = "RESOLVED (已恢复)"
+	} else if isActive {
+		statusText = "OPEN (发生中)"
+	}
+
+	subTitle := strings.TrimSpace(msg.Body)
+	if subTitle == "" {
+		subTitle = strings.TrimSpace(msg.Subject)
+	}
+
+	baseURL := strings.TrimRight(strings.TrimSpace(msg.Labels["console_url"]), "/")
+	type jumpItem struct {
+		Title string
+		URL   string
+	}
+	var jumps []jumpItem
+	if msg.Labels != nil {
+		for _, qa := range []struct {
+			key   string
+			label string
+		}{
+			{"oncall_ack_url", "✅ 认领告警"},
+			{"oncall_silence_url", "🔇 静音 30m"},
+			{"oncall_escalate_url", "⚡ 升级二线"},
+		} {
+			if u := strings.TrimSpace(msg.Labels[qa.key]); strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://") {
+				jumps = append(jumps, jumpItem{Title: qa.label, URL: u})
+			}
+		}
+	}
+	var detailURL string
+	if baseURL != "" {
+		if iid := strings.TrimSpace(msg.Labels["incident_id"]); iid != "" {
+			detailURL = fmt.Sprintf("%s/alerts/incidents/%s", baseURL, iid)
+		} else {
+			detailURL = fmt.Sprintf("%s/alerts", baseURL)
+		}
+		if len(jumps) < 3 {
+			jumps = append(jumps, jumpItem{Title: "📋 告警事件", URL: detailURL})
+		}
+	}
+	if rb := strings.TrimSpace(msg.Labels["runbook_url"]); (strings.HasPrefix(rb, "http://") || strings.HasPrefix(rb, "https://")) && len(jumps) < 3 {
+		jumps = append(jumps, jumpItem{Title: "📖 处理预案", URL: rb})
+	}
+
+	// Use WeCom template_card (text_notice) whenever at least one valid URL exists for card_action.
+	if len(jumps) > 0 || detailURL != "" {
+		primaryURL := detailURL
+		if primaryURL == "" {
+			primaryURL = jumps[0].URL
+		}
+		if len(jumps) > 3 {
+			jumps = jumps[:3]
+		}
+		horiz := []map[string]any{
+			{"keyname": "告警级别", "value": sevText},
+		}
+		if statusText != "" {
+			horiz = append(horiz, map[string]any{"keyname": "状态", "value": statusText})
+		}
+		if iid := strings.TrimSpace(msg.Labels["incident_id"]); iid != "" {
+			horiz = append(horiz, map[string]any{"keyname": "事件编号", "value": "#" + iid})
+		}
+		if devVal != "" {
+			horiz = append(horiz, map[string]any{"keyname": "告警对象", "value": devVal})
+		}
+		if assignee := strings.TrimSpace(msg.Labels["assignee"]); assignee != "" {
+			horiz = append(horiz, map[string]any{"keyname": "值班人", "value": assignee})
+		}
+		if !msg.OccurredAt.IsZero() && len(horiz) < 6 {
+			cst := time.FixedZone("CST", 8*3600)
+			horiz = append(horiz, map[string]any{"keyname": "时间", "value": msg.OccurredAt.In(cst).Format("01-02 15:04:05")})
+		}
+
+		jumpList := make([]map[string]any, 0, len(jumps))
+		for _, j := range jumps {
+			jumpList = append(jumpList, map[string]any{
+				"type":  1,
+				"title": j.Title,
+				"url":   j.URL,
+			})
+		}
+
+		return map[string]any{
+			"msgtype": "template_card",
+			"template_card": map[string]any{
+				"card_type": "text_notice",
+				"source": map[string]any{
+					"desc":       "OpsPilot On-Call",
+					"desc_color": 0,
+				},
+				"main_title": map[string]any{
+					"title": fullTitle,
+					"desc":  ruleVal,
+				},
+				"sub_title_text":          subTitle,
+				"horizontal_content_list": horiz,
+				"jump_list":               jumpList,
+				"card_action": map[string]any{
+					"type": 1,
+					"url":  primaryURL,
+				},
+			},
+		}
+	}
+
+	// Rich markdown fallback when no external URLs are present.
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("### %s\n", fullTitle))
+	sb.WriteString(fmt.Sprintf("> 级别：<font color=\"%s\">%s</font>\n", mdSevColor, sevText))
+	if statusText != "" {
+		sb.WriteString(fmt.Sprintf("> 状态：%s\n", statusText))
+	}
+	if iid := strings.TrimSpace(msg.Labels["incident_id"]); iid != "" {
+		sb.WriteString(fmt.Sprintf("> 事件编号：#%s\n", iid))
+	}
+	if devVal != "" {
+		sb.WriteString(fmt.Sprintf("> 告警对象：%s\n", devVal))
+	}
+	if !msg.OccurredAt.IsZero() {
+		cst := time.FixedZone("CST", 8*3600)
+		sb.WriteString(fmt.Sprintf("> 发生时间：%s\n", msg.OccurredAt.In(cst).Format("2006-01-02 15:04:05")))
+	}
+	if subTitle != "" {
+		sb.WriteString("\n" + subTitle)
+	}
+	return map[string]any{
+		"msgtype": "markdown",
+		"markdown": map[string]any{
+			"content": sb.String(),
+		},
+	}
+}
+
+func firstNonEmptyLabel(labels map[string]string, keys ...string) string {
+	for _, k := range keys {
+		if labels == nil {
+			continue
+		}
+		if v := strings.TrimSpace(labels[k]); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // NewTelegramSender posts to the Telegram Bot API sendMessage endpoint.

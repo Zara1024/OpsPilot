@@ -242,6 +242,9 @@ func (w *EscalationWorker) resolveOpenGroup(ctx context.Context, task *model.Esc
 	} else {
 		body = fmt.Sprintf("告警单号: INC-%04d | 级别: %s", openList[0].ID, openList[0].Severity)
 	}
+	if task.RepeatCount > 0 {
+		title = fmt.Sprintf("[第 %d 轮提醒] %s", task.RepeatCount+1, title)
+	}
 
 	return &openGroupContext{
 		openIncidents: openList,
@@ -320,10 +323,12 @@ func (w *EscalationWorker) processTask(ctx context.Context, task *model.Escalati
 		task.CurrentStep = 1
 	}
 	if idx >= len(policies) {
-		task.Status = model.TaskStatusCompleted
-		task.LockedUntil = nil
-		w.finishSave(ctx, task, model.TaskStatusCompleted)
+		w.completeOrRepeat(ctx, task, sched, cfg, grp, isNight, now, false)
 		return
+	}
+	if task.LastVoiceStep != 0 && task.CurrentStep != task.LastVoiceStep {
+		task.VoiceRedialCount = 0
+		task.AwaitingVoiceGrace = false
 	}
 
 	policy := policies[idx]
@@ -336,7 +341,7 @@ func (w *EscalationWorker) processTask(ctx context.Context, task *model.Escalati
 		}
 	}
 	if targetUser == nil && policy.TargetType == "webhook" {
-		w.executeWebhookBroadcastStep(ctx, task, grp, policies, idx, now, isNight)
+		w.executeWebhookBroadcastStep(ctx, task, grp, policies, idx, sched, cfg, now, isNight)
 		return
 	}
 	if targetUser == nil {
@@ -361,7 +366,7 @@ func (w *EscalationWorker) processTask(ctx context.Context, task *model.Escalati
 			IsNight:        isNight,
 			CreatedAt:      now,
 		})
-		w.advanceTeamStepImmediately(ctx, task, policies, idx, now, msg)
+		w.advanceTeamStepImmediately(ctx, task, policies, idx, sched, cfg, grp, isNight, now, msg)
 		return
 	}
 
@@ -371,12 +376,12 @@ func (w *EscalationWorker) processTask(ctx context.Context, task *model.Escalati
 		task.LadderStep = 1
 	}
 	if int(task.LadderStep) > len(rules) {
-		w.advanceAfterLadderComplete(ctx, task, policies, idx, now)
+		w.advanceAfterLadderComplete(ctx, task, policies, idx, sched, cfg, grp, isNight, now, false)
 		return
 	}
 
 	rule := rules[int(task.LadderStep)-1]
-	transientErr := w.executeRuleStep(ctx, task, rule, targetUser, cfg, grp, isNight, now, suppressVoiceMW)
+	voicePlacedWaiting, transientErr := w.executeRuleStep(ctx, task, rule, targetUser, cfg, grp, isNight, now, suppressVoiceMW)
 	if transientErr != nil && task.AttemptCount < maxStepRetries {
 		task.AttemptCount++
 		task.LastError = truncateString(transientErr.Error(), 500)
@@ -399,10 +404,10 @@ func (w *EscalationWorker) processTask(ctx context.Context, task *model.Escalati
 	}
 	task.LockedUntil = nil
 
-	w.scheduleNextRun(ctx, task, policies, idx, rules, now)
+	w.scheduleNextRun(ctx, task, policies, idx, rules, sched, cfg, grp, isNight, now, voicePlacedWaiting)
 }
 
-func (w *EscalationWorker) executeWebhookBroadcastStep(ctx context.Context, task *model.EscalationTask, grp *openGroupContext, policies []*model.EscalationPolicy, idx int, now time.Time, isNight bool) {
+func (w *EscalationWorker) executeWebhookBroadcastStep(ctx context.Context, task *model.EscalationTask, grp *openGroupContext, policies []*model.EscalationPolicy, idx int, sched *model.Schedule, cfg *voice.VoiceGatewayConfig, now time.Time, isNight bool) {
 	subject := fmt.Sprintf("[OpsPilot On-Call Step %d] %s", task.CurrentStep, grp.title)
 	body := fmt.Sprintf("%s\n升级步骤: %d", grp.detailBody, task.CurrentStep)
 	labels := map[string]string{
@@ -447,7 +452,7 @@ func (w *EscalationWorker) executeWebhookBroadcastStep(ctx context.Context, task
 	task.LastDispatchedAt = &nowCopy
 	task.LockedUntil = nil
 	task.AttemptCount = 0
-	w.advanceAfterLadderComplete(ctx, task, policies, idx, now)
+	w.advanceAfterLadderComplete(ctx, task, policies, idx, sched, cfg, grp, isNight, now, false)
 }
 
 func (w *EscalationWorker) executeRuleStep(
@@ -460,7 +465,7 @@ func (w *EscalationWorker) executeRuleStep(
 	isNight bool,
 	now time.Time,
 	suppressVoiceMW *model.MaintenanceWindow,
-) error {
+) (bool, error) {
 	userName := displayNameOrEmail(user)
 	title := grp.title
 
@@ -486,29 +491,35 @@ func (w *EscalationWorker) executeRuleStep(
 				IsNight:        isNight,
 				CreatedAt:      now,
 			})
-			return nil
+			return false, nil
 		}
 
-		cooldownSince := now.Add(-w.voiceCooldown)
-		throttled, tErr := w.store.HasRecentVoiceCall(ctx, user.ID, cooldownSince)
-		if tErr == nil && throttled {
-			w.recordLog(ctx, &model.NotificationLog{
-				TaskID:         task.ID,
-				IncidentID:     task.IncidentID,
-				AlertCount:     grp.alertCount,
-				ScheduleID:     task.ScheduleID,
-				EscalationStep: task.CurrentStep,
-				UserID:         user.ID,
-				UserName:       userName,
-				Target:         maskPhone(user.Phone),
-				Channel:        "voice_call",
-				Provider:       cfg.Provider,
-				Status:         model.NotifyStatusThrottled,
-				Message:        fmt.Sprintf("throttled: voice call cooldown (%v) active", w.voiceCooldown),
-				IsNight:        isNight,
-				CreatedAt:      now,
-			})
-			return nil
+		isRedial := task.VoiceRedialCount > 0 &&
+			task.LastVoiceStep == task.CurrentStep &&
+			task.LastVoiceLadderStep == task.LadderStep &&
+			task.LastVoiceUserID == user.ID
+		if !isRedial {
+			cooldownSince := now.Add(-w.voiceCooldown)
+			throttled, tErr := w.store.HasRecentVoiceCall(ctx, user.ID, cooldownSince)
+			if tErr == nil && throttled {
+				w.recordLog(ctx, &model.NotificationLog{
+					TaskID:         task.ID,
+					IncidentID:     task.IncidentID,
+					AlertCount:     grp.alertCount,
+					ScheduleID:     task.ScheduleID,
+					EscalationStep: task.CurrentStep,
+					UserID:         user.ID,
+					UserName:       userName,
+					Target:         maskPhone(user.Phone),
+					Channel:        "voice_call",
+					Provider:       cfg.Provider,
+					Status:         model.NotifyStatusThrottled,
+					Message:        fmt.Sprintf("throttled: voice call cooldown (%v) active", w.voiceCooldown),
+					IsNight:        isNight,
+					CreatedAt:      now,
+				})
+				return false, nil
+			}
 		}
 
 		if strings.TrimSpace(user.Phone) == "" {
@@ -528,15 +539,19 @@ func (w *EscalationWorker) executeRuleStep(
 				IsNight:        isNight,
 				CreatedAt:      now,
 			})
-			return nil
+			return false, nil
 		}
 
+		callTitle := title
+		if isRedial {
+			callTitle = fmt.Sprintf("[第 %d 次重拨] %s", task.VoiceRedialCount, title)
+		}
 		callID := fmt.Sprintf("call_%d_%d", task.IncidentID, now.UnixNano())
 		res, err := w.voiceGateway.SendVoiceCall(ctx, cfg, &voice.CallRequest{
 			CallID:      callID,
 			PhoneNumber: user.Phone,
 			Urgency:     task.Urgency,
-			Title:       title,
+			Title:       callTitle,
 			Severity:    task.Severity,
 		})
 		if res != nil && res.FallbackFrom != "" {
@@ -590,9 +605,9 @@ func (w *EscalationWorker) executeRuleStep(
 				CreatedAt:      now,
 			})
 			if isPermanentVoiceConfigErr(msg) && (res == nil || res.FallbackFrom == "") {
-				return nil
+				return false, nil
 			}
-			return err
+			return false, err
 		}
 
 		// Record call log. Note: mock provider returns dtmf_confirmed in simulation,
@@ -616,6 +631,9 @@ func (w *EscalationWorker) executeRuleStep(
 			dur = res.DurationSecs
 			msg = res.Message
 		}
+		if isRedial {
+			msg = fmt.Sprintf("[第 %d 次自动重拨] %s", task.VoiceRedialCount, msg)
+		}
 		w.recordLog(ctx, &model.NotificationLog{
 			TaskID:         task.ID,
 			IncidentID:     task.IncidentID,
@@ -636,7 +654,12 @@ func (w *EscalationWorker) executeRuleStep(
 			IsNight:        isNight,
 			CreatedAt:      now,
 		})
-		return nil
+		task.LastVoiceCallID = callID
+		task.LastVoiceStep = task.CurrentStep
+		task.LastVoiceLadderStep = task.LadderStep
+		task.LastVoiceUserID = user.ID
+		task.AwaitingVoiceGrace = false
+		return status == model.NotifyStatusCalling, nil
 
 	case "im_dm", "im_group_at", "webhook":
 		subject := fmt.Sprintf("[OpsPilot On-Call] %s (%s)", title, strings.ToUpper(task.Severity))
@@ -666,7 +689,7 @@ func (w *EscalationWorker) executeRuleStep(
 				IsNight:        isNight,
 				CreatedAt:      now,
 			})
-			return nil
+			return false, nil
 		}
 		provider, err := w.deliverer.Deliver(ctx, rule.Channel, user, subject, body, task.Severity, labels)
 		if err != nil {
@@ -690,9 +713,9 @@ func (w *EscalationWorker) executeRuleStep(
 				CreatedAt:      now,
 			})
 			if strings.Contains(err.Error(), "no notification channel configured") {
-				return nil
+				return false, nil
 			}
-			return err
+			return false, err
 		}
 		w.recordLog(ctx, &model.NotificationLog{
 			TaskID:         task.ID,
@@ -710,7 +733,7 @@ func (w *EscalationWorker) executeRuleStep(
 			IsNight:        isNight,
 			CreatedAt:      now,
 		})
-		return nil
+		return false, nil
 
 	case "sms":
 		if strings.TrimSpace(user.Phone) == "" {
@@ -730,7 +753,7 @@ func (w *EscalationWorker) executeRuleStep(
 				IsNight:        isNight,
 				CreatedAt:      now,
 			})
-			return nil
+			return false, nil
 		}
 		chCfg, cfgErr := w.store.GetChannelConfig(ctx)
 		if cfgErr != nil || chCfg == nil {
@@ -782,9 +805,9 @@ func (w *EscalationWorker) executeRuleStep(
 			CreatedAt:      now,
 		})
 		if smsErr != nil && !channels.IsPermanentConfigErr(msg) {
-			return smsErr
+			return false, smsErr
 		}
-		return nil
+		return false, nil
 
 	case "email":
 		if strings.TrimSpace(user.Email) == "" {
@@ -804,7 +827,7 @@ func (w *EscalationWorker) executeRuleStep(
 				IsNight:        isNight,
 				CreatedAt:      now,
 			})
-			return nil
+			return false, nil
 		}
 		chCfg, cfgErr := w.store.GetChannelConfig(ctx)
 		if cfgErr != nil || chCfg == nil {
@@ -870,9 +893,9 @@ func (w *EscalationWorker) executeRuleStep(
 			CreatedAt:      now,
 		})
 		if emailErr != nil && !channels.IsPermanentConfigErr(msg) {
-			return emailErr
+			return false, emailErr
 		}
-		return nil
+		return false, nil
 
 	default:
 		// Future channels without an active external gateway: fail honestly rather than fabricating success.
@@ -892,7 +915,7 @@ func (w *EscalationWorker) executeRuleStep(
 			IsNight:        isNight,
 			CreatedAt:      now,
 		})
-		return nil
+		return false, nil
 	}
 }
 
@@ -1015,7 +1038,19 @@ func (w *EscalationWorker) resolveTargetUser(ctx context.Context, scheduleID uin
 	return user, nil
 }
 
-func (w *EscalationWorker) scheduleNextRun(ctx context.Context, task *model.EscalationTask, policies []*model.EscalationPolicy, idx int, rules []*model.UserNotificationRule, now time.Time) {
+func (w *EscalationWorker) scheduleNextRun(
+	ctx context.Context,
+	task *model.EscalationTask,
+	policies []*model.EscalationPolicy,
+	idx int,
+	rules []*model.UserNotificationRule,
+	sched *model.Schedule,
+	cfg *voice.VoiceGatewayConfig,
+	grp *openGroupContext,
+	isNight bool,
+	now time.Time,
+	voicePlacedWaiting bool,
+) {
 	hasNextTeam := idx+1 < len(policies)
 	var teamEscalateAt time.Time
 	if hasNextTeam {
@@ -1036,11 +1071,18 @@ func (w *EscalationWorker) scheduleNextRun(ctx context.Context, task *model.Esca
 			nextLadderAt = now
 		}
 		if hasNextTeam && nextLadderAt.After(teamEscalateAt) {
+			nextAt := teamEscalateAt
+			if voicePlacedWaiting && cfg != nil && cfg.VoiceRedialMaxAttempts > 0 && int(task.VoiceRedialCount) < cfg.VoiceRedialMaxAttempts && nextAt.Before(now.Add(90*time.Second)) {
+				nextAt = now.Add(90 * time.Second)
+				task.AwaitingVoiceGrace = true
+			} else {
+				task.AwaitingVoiceGrace = false
+			}
 			task.CurrentStep++
 			task.LadderStep = 1
 			task.PinnedAssigneeID = 0
-			task.StepStartedAt = teamEscalateAt
-			task.NextRunAt = teamEscalateAt
+			task.StepStartedAt = nextAt
+			task.NextRunAt = nextAt
 		} else {
 			task.LadderStep++
 			task.NextRunAt = nextLadderAt
@@ -1051,10 +1093,21 @@ func (w *EscalationWorker) scheduleNextRun(ctx context.Context, task *model.Esca
 		return
 	}
 
-	w.advanceAfterLadderComplete(ctx, task, policies, idx, now)
+	w.advanceAfterLadderComplete(ctx, task, policies, idx, sched, cfg, grp, isNight, now, voicePlacedWaiting)
 }
 
-func (w *EscalationWorker) advanceAfterLadderComplete(ctx context.Context, task *model.EscalationTask, policies []*model.EscalationPolicy, idx int, now time.Time) {
+func (w *EscalationWorker) advanceAfterLadderComplete(
+	ctx context.Context,
+	task *model.EscalationTask,
+	policies []*model.EscalationPolicy,
+	idx int,
+	sched *model.Schedule,
+	cfg *voice.VoiceGatewayConfig,
+	grp *openGroupContext,
+	isNight bool,
+	now time.Time,
+	voicePlacedWaiting bool,
+) {
 	if idx+1 < len(policies) {
 		wait := time.Duration(policies[idx+1].WaitSeconds) * time.Second
 		if wait <= 0 {
@@ -1063,6 +1116,12 @@ func (w *EscalationWorker) advanceAfterLadderComplete(ctx context.Context, task 
 		nextTeamAt := task.StepStartedAt.Add(wait)
 		if nextTeamAt.Before(now) {
 			nextTeamAt = now
+		}
+		if voicePlacedWaiting && cfg != nil && cfg.VoiceRedialMaxAttempts > 0 && int(task.VoiceRedialCount) < cfg.VoiceRedialMaxAttempts && nextTeamAt.Before(now.Add(90*time.Second)) {
+			nextTeamAt = now.Add(90 * time.Second)
+			task.AwaitingVoiceGrace = true
+		} else {
+			task.AwaitingVoiceGrace = false
 		}
 		task.CurrentStep++
 		task.LadderStep = 1
@@ -1075,15 +1134,27 @@ func (w *EscalationWorker) advanceAfterLadderComplete(ctx context.Context, task 
 		}
 		return
 	}
-	task.Status = model.TaskStatusCompleted
-	task.LockedUntil = nil
-	w.finishSave(ctx, task, model.TaskStatusCompleted)
+	w.completeOrRepeat(ctx, task, sched, cfg, grp, isNight, now, voicePlacedWaiting)
 }
 
-func (w *EscalationWorker) advanceTeamStepImmediately(ctx context.Context, task *model.EscalationTask, policies []*model.EscalationPolicy, idx int, now time.Time, reason string) {
+func (w *EscalationWorker) advanceTeamStepImmediately(
+	ctx context.Context,
+	task *model.EscalationTask,
+	policies []*model.EscalationPolicy,
+	idx int,
+	sched *model.Schedule,
+	cfg *voice.VoiceGatewayConfig,
+	grp *openGroupContext,
+	isNight bool,
+	now time.Time,
+	reason string,
+) {
 	task.AttemptCount = 0
 	task.LastError = truncateString(reason, 500)
 	task.LockedUntil = nil
+	task.VoiceRedialCount = 0
+	task.AwaitingVoiceGrace = false
+	task.LastVoiceCallID = ""
 	if idx+1 < len(policies) {
 		task.CurrentStep++
 		task.LadderStep = 1
@@ -1095,7 +1166,81 @@ func (w *EscalationWorker) advanceTeamStepImmediately(ctx context.Context, task 
 		}
 		return
 	}
+	w.completeOrRepeat(ctx, task, sched, cfg, grp, isNight, now, false)
+}
+
+func (w *EscalationWorker) completeOrRepeat(
+	ctx context.Context,
+	task *model.EscalationTask,
+	sched *model.Schedule,
+	cfg *voice.VoiceGatewayConfig,
+	grp *openGroupContext,
+	isNight bool,
+	now time.Time,
+	voicePlacedWaiting bool,
+) {
+	// 1. Final-step voice callback grace window so unanswered calls still get a chance to redial before cycling or completing.
+	if voicePlacedWaiting && !task.AwaitingVoiceGrace && cfg != nil && cfg.VoiceRedialMaxAttempts > 0 && int(task.VoiceRedialCount) < cfg.VoiceRedialMaxAttempts {
+		task.AwaitingVoiceGrace = true
+		task.CurrentStep++
+		task.NextRunAt = now.Add(90 * time.Second)
+		task.LockedUntil = nil
+		if err := w.store.SaveEscalationTask(ctx, task); err != nil {
+			w.log.Warn("oncall save voice grace window failed", slog.Uint64("task_id", task.ID), slog.Any("err", err))
+		}
+		return
+	}
+
+	// 2. Escalation chain repeat when configured on the schedule and repeat budget remains.
+	if sched != nil && sched.EscalationRepeatCount > 0 && task.RepeatCount < sched.EscalationRepeatCount {
+		repeatInterval := time.Duration(sched.EscalationRepeatIntervalSeconds) * time.Second
+		if sched.EscalationRepeatIntervalSeconds == 0 {
+			repeatInterval = 5 * time.Minute
+		} else if repeatInterval < 30*time.Second {
+			repeatInterval = 30 * time.Second
+		}
+		task.RepeatCount++
+		task.CurrentStep = 1
+		task.LadderStep = 1
+		task.PinnedAssigneeID = 0
+		task.AssigneeUserID = 0
+		task.VoiceRedialCount = 0
+		task.LastVoiceCallID = ""
+		task.AwaitingVoiceGrace = false
+		task.AttemptCount = 0
+		nextAt := now.Add(repeatInterval)
+		task.StepStartedAt = nextAt
+		task.NextRunAt = nextAt
+		task.LockedUntil = nil
+		if err := w.store.SaveEscalationTask(ctx, task); err != nil {
+			w.log.Warn("oncall save repeat escalation task failed", slog.Uint64("task_id", task.ID), slog.Any("err", err))
+			return
+		}
+		alertCount := 1
+		if grp != nil && grp.alertCount > 0 {
+			alertCount = grp.alertCount
+		}
+		w.recordLog(ctx, &model.NotificationLog{
+			TaskID:         task.ID,
+			IncidentID:     task.IncidentID,
+			AlertCount:     alertCount,
+			ScheduleID:     task.ScheduleID,
+			EscalationStep: 1,
+			Target:         sched.Name,
+			Channel:        "escalation",
+			Provider:       "repeat",
+			Status:         model.NotifyStatusSent,
+			Message:        truncateString(fmt.Sprintf("升级链第 %d 轮未获认领，将于 %d 秒后开启第 %d 轮循环通知", task.RepeatCount, int(repeatInterval.Seconds()), task.RepeatCount+1), 500),
+			IsNight:        isNight,
+			CreatedAt:      now,
+		})
+		return
+	}
+
+	// 3. Exhausted escalation chain -> mark completed.
 	task.Status = model.TaskStatusCompleted
+	task.AwaitingVoiceGrace = false
+	task.LockedUntil = nil
 	w.finishSave(ctx, task, model.TaskStatusCompleted)
 }
 

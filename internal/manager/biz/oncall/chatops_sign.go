@@ -4,13 +4,16 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
+	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -128,15 +131,15 @@ func DecryptFeishuEvent(encryptKey, encryptedBase64 string) ([]byte, error) {
 	}
 	pt := make([]byte, len(ct))
 	cipher.NewCBCDecrypter(block, iv).CryptBlocks(pt, ct)
-	return unpadPKCS7(pt)
+	return unpadPKCS7(pt, aes.BlockSize)
 }
 
-func unpadPKCS7(b []byte) ([]byte, error) {
-	if len(b) == 0 {
+func unpadPKCS7(b []byte, blockSize int) ([]byte, error) {
+	if len(b) == 0 || blockSize <= 0 {
 		return nil, errors.New("empty plaintext")
 	}
 	pad := int(b[len(b)-1])
-	if pad <= 0 || pad > aes.BlockSize || pad > len(b) {
+	if pad <= 0 || pad > blockSize || pad > len(b) {
 		return nil, errors.New("invalid pkcs7 padding")
 	}
 	for i := len(b) - pad; i < len(b); i++ {
@@ -145,6 +148,66 @@ func unpadPKCS7(b []byte) ([]byte, error) {
 		}
 	}
 	return b[:len(b)-pad], nil
+}
+
+// VerifyWeComSignature validates WeCom CorpApp msg_signature = sha1(sort(token, timestamp, nonce, encrypt)).
+func VerifyWeComSignature(token, timestamp, nonce, encrypt, msgSignature string) error {
+	if token == "" || msgSignature == "" {
+		return errors.New("wecom signature or token is empty")
+	}
+	parts := []string{token, timestamp, nonce, encrypt}
+	sort.Strings(parts)
+	sum := sha1.Sum([]byte(strings.Join(parts, "")))
+	expected := hex.EncodeToString(sum[:])
+	if subtle.ConstantTimeCompare([]byte(strings.ToLower(strings.TrimSpace(msgSignature))), []byte(expected)) != 1 {
+		return errors.New("wecom msg_signature mismatch")
+	}
+	return nil
+}
+
+// DecryptWeComMessage decrypts a WeCom CorpApp Base64 ciphertext using EncodingAESKey (AES-256-CBC, 32-byte PKCS#7).
+func DecryptWeComMessage(encodingAESKey, encryptedBase64, expectedCorpID string) ([]byte, error) {
+	keyStr := strings.TrimSpace(encodingAESKey)
+	if keyStr == "" {
+		return nil, errors.New("wecom encoding_aes_key is empty")
+	}
+	if !strings.HasSuffix(keyStr, "=") {
+		keyStr += "="
+	}
+	aesKey, err := base64.StdEncoding.DecodeString(keyStr)
+	if err != nil || len(aesKey) != 32 {
+		return nil, errors.New("invalid wecom encoding_aes_key")
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encryptedBase64))
+	if err != nil {
+		return nil, fmt.Errorf("wecom ciphertext base64 decode: %w", err)
+	}
+	if len(raw) == 0 || len(raw)%aes.BlockSize != 0 {
+		return nil, errors.New("wecom ciphertext is not block aligned")
+	}
+	block, err := aes.NewCipher(aesKey)
+	if err != nil {
+		return nil, err
+	}
+	pt := make([]byte, len(raw))
+	cipher.NewCBCDecrypter(block, aesKey[:aes.BlockSize]).CryptBlocks(pt, raw)
+	unpadded, err := unpadPKCS7(pt, 32)
+	if err != nil {
+		return nil, fmt.Errorf("wecom pkcs7 unpad: %w", err)
+	}
+	if len(unpadded) < 20 {
+		return nil, errors.New("wecom decrypted payload too short")
+	}
+	msgLen := int(binary.BigEndian.Uint32(unpadded[16:20]))
+	if msgLen < 0 || 20+msgLen > len(unpadded) {
+		return nil, errors.New("invalid wecom embedded message length")
+	}
+	msg := unpadded[20 : 20+msgLen]
+	corpID := string(unpadded[20+msgLen:])
+	if expectedCorpID != "" && corpID != expectedCorpID {
+		return nil, errors.New("wecom receiveid mismatch")
+	}
+	return msg, nil
 }
 
 // VerifyDingTalkCallbackSignature verifies DingTalk timestamp + "\n" + appSecret HMAC-SHA256 Base64 signature with replay protection.

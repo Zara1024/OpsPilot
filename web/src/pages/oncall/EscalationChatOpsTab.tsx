@@ -844,6 +844,7 @@ export function EscalationChatOpsTab({ schedules, users: propUsers = [] }: Escal
                 { value: 'webhook', label: tr('Webhook 广播', 'Webhook') },
                 { value: 'sms', label: tr('短信', 'SMS') },
                 { value: 'email', label: tr('邮件', 'Email') },
+                { value: 'escalation', label: tr('升级链循环', 'Escalation Repeat') },
                 { value: 'maintenance', label: tr('维护抑制', 'Maintenance') },
               ]}
               className="w-36 text-xs"
@@ -885,9 +886,13 @@ export function EscalationChatOpsTab({ schedules, users: propUsers = [] }: Escal
                 <tbody className="divide-y divide-border">
                   {logs.map((item) => {
                     const tone =
-                      item.status === 'failed'
+                      item.status === 'failed' ||
+                      item.status === 'rejected' ||
+                      item.status === 'unreachable'
                         ? 'danger'
-                        : item.status === 'throttled' || item.status === 'suppressed'
+                        : item.status === 'throttled' ||
+                          item.status === 'suppressed' ||
+                          item.status === 'no_answer'
                         ? 'warning'
                         : item.status === 'calling'
                         ? 'accent'
@@ -897,6 +902,12 @@ export function EscalationChatOpsTab({ schedules, users: propUsers = [] }: Escal
                         ? tr('按键确认', 'DTMF Acked')
                         : item.status === 'answered'
                         ? tr('已接听', 'Answered')
+                        : item.status === 'rejected'
+                        ? tr('被叫拒接', 'Rejected')
+                        : item.status === 'no_answer'
+                        ? tr('无人接听', 'No Answer')
+                        : item.status === 'unreachable'
+                        ? tr('不可达/关机', 'Unreachable')
                         : item.status === 'calling'
                         ? tr('呼叫中', 'Calling')
                         : item.status === 'sent'

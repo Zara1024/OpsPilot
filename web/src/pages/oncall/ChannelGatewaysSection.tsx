@@ -104,6 +104,11 @@ export function ChannelGatewaysSection() {
     feishu_encrypt_configured: false,
     dingtalk_app_secret: '',
     dingtalk_secret_configured: false,
+    wecom_corp_id: '',
+    wecom_token: '',
+    wecom_token_configured: false,
+    wecom_encoding_aes_key: '',
+    wecom_aes_key_configured: false,
     war_room_provider: '',
     feishu_app_id: '',
     feishu_app_secret: '',
@@ -142,6 +147,8 @@ export function ChannelGatewaysSection() {
       feishu_verification_token: '',
       feishu_encrypt_key: '',
       dingtalk_app_secret: '',
+      wecom_token: '',
+      wecom_encoding_aes_key: '',
       feishu_app_secret: '',
       war_room_webhook_secret: '',
     }));
@@ -254,8 +261,8 @@ export function ChannelGatewaysSection() {
           </h2>
           <p className="text-xs text-text-muted mt-0.5">
             {tr(
-              '配置短信网关、邮件服务器以及飞书和钉钉卡片回调与应急作战室自动建群。',
-              'Configure SMS providers, SMTP email delivery, Feishu/DingTalk interactive card callbacks, and War Room provisioning.'
+              '配置短信网关、邮件服务器以及飞书、钉钉和企业微信卡片回调与应急作战室自动建群。',
+              'Configure SMS providers, SMTP email delivery, Feishu/DingTalk/WeCom interactive card callbacks, and War Room provisioning.'
             )}
           </p>
         </div>
@@ -637,7 +644,7 @@ export function ChannelGatewaysSection() {
         <div className="flex items-center gap-2 border-b border-border pb-3">
           <Shield size={16} className="text-indigo-500" />
           <h3 className="text-xs font-semibold text-text uppercase tracking-wider">
-            {tr('飞书和钉钉卡片回调与应急作战室', 'Interactive Card Callbacks & War Room')}
+            {tr('飞书、钉钉与企业微信卡片回调与应急作战室', 'Feishu, DingTalk & WeCom Callbacks & War Room')}
           </h3>
         </div>
 
@@ -664,6 +671,37 @@ export function ChannelGatewaysSection() {
               disabled={!isAdmin}
               onChange={(v) => setConfig({ ...config, dingtalk_app_secret: v })}
             />
+
+            <div className="space-y-2.5 pt-2 border-t border-border">
+              <div className="text-xs font-semibold text-text">
+                {tr('企业微信自建应用加密回调参数', 'WeCom CorpApp Encrypted Callback')}
+              </div>
+              <div>
+                <Label className="text-xs">{tr('企业微信 CorpID', 'WeCom CorpID')}</Label>
+                <Input
+                  value={config.wecom_corp_id || ''}
+                  onChange={(e) => setConfig({ ...config, wecom_corp_id: e.target.value })}
+                  placeholder="ww..."
+                  disabled={!isAdmin}
+                  aria-label={tr('企业微信 CorpID', 'WeCom CorpID')}
+                  className="mt-1 text-xs font-mono"
+                />
+              </div>
+              <SecretField
+                label={tr('企业微信回调 Token', 'WeCom Callback Token')}
+                value={config.wecom_token || ''}
+                configured={config.wecom_token_configured}
+                disabled={!isAdmin}
+                onChange={(v) => setConfig({ ...config, wecom_token: v })}
+              />
+              <SecretField
+                label={tr('企业微信 EncodingAESKey', 'WeCom EncodingAESKey')}
+                value={config.wecom_encoding_aes_key || ''}
+                configured={config.wecom_aes_key_configured}
+                disabled={!isAdmin}
+                onChange={(v) => setConfig({ ...config, wecom_encoding_aes_key: v })}
+              />
+            </div>
 
             {isAdmin && config.callback_urls && Object.keys(config.callback_urls).length > 0 && (
               <div className="space-y-2 pt-2 border-t border-border">
@@ -706,7 +744,7 @@ export function ChannelGatewaysSection() {
                 </div>
                 {rotateSuccess && (
                   <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-2 text-xs text-emerald-700 dark:text-emerald-300">
-                    {tr('ChatOps 回调 Token 已轮换生效，请复制最新地址更新至飞书/钉钉开放平台。', 'Callback token rotated. Update your Feishu/DingTalk app settings with the new URLs.')}
+                    {tr('ChatOps 回调 Token 已轮换生效，请复制最新地址更新至飞书/钉钉/企业微信开放平台。', 'Callback token rotated. Update your Feishu/DingTalk/WeCom app settings with the new URLs.')}
                   </div>
                 )}
                 {config.callback_urls.feishu && (
@@ -739,6 +777,23 @@ export function ChannelGatewaysSection() {
                         aria-label={tr('复制钉钉回调地址', 'Copy DingTalk callback URL')}
                       >
                         {copiedKey === 'dingtalk' ? <Check size={13} /> : <Copy size={13} />}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {config.callback_urls.wecom && (
+                  <div className="space-y-1">
+                    <Label className="text-xs text-text-muted">{tr('企业微信应用回调地址', 'WeCom App Callback URL')}</Label>
+                    <div className="flex items-center gap-2">
+                      <Input readOnly value={config.callback_urls.wecom} className="text-xs font-mono flex-1 min-w-0" />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        type="button"
+                        onClick={() => handleCopyURL('wecom', config.callback_urls!.wecom)}
+                        aria-label={tr('复制企业微信回调地址', 'Copy WeCom callback URL')}
+                      >
+                        {copiedKey === 'wecom' ? <Check size={13} /> : <Copy size={13} />}
                       </Button>
                     </div>
                   </div>

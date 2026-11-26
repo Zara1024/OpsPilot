@@ -18,6 +18,9 @@ const (
 	NotifyStatusCalling       = "calling"
 	NotifyStatusAnswered      = "answered"
 	NotifyStatusDTMFConfirmed = "dtmf_confirmed"
+	NotifyStatusRejected      = "rejected"
+	NotifyStatusNoAnswer      = "no_answer"
+	NotifyStatusUnreachable   = "unreachable"
 	NotifyStatusThrottled     = "throttled"
 	NotifyStatusSuppressed    = "suppressed"
 	NotifyStatusFailed        = "failed"
@@ -54,10 +57,17 @@ type EscalationTask struct {
 	RouteID               uint64     `gorm:"column:route_id;not null;default:0" json:"route_id"`
 	CurrentStep           uint8      `gorm:"column:current_step;not null;default:1" json:"current_step"`
 	LadderStep            uint8      `gorm:"column:ladder_step;not null;default:1" json:"ladder_step"`
-	StepStartedAt         time.Time  `gorm:"column:step_started_at;not null" json:"step_started_at"`
-	AssigneeUserID        uint64     `gorm:"column:assignee_user_id;not null;default:0" json:"assignee_user_id"`
-	PinnedAssigneeID      uint64     `gorm:"column:pinned_assignee_id;not null;default:0" json:"pinned_assignee_id"`
-	Status                string     `gorm:"column:status;size:24;not null;default:'pending';index:idx_oncall_task_due,priority:1" json:"status"`
+	StepStartedAt       time.Time  `gorm:"column:step_started_at;not null" json:"step_started_at"`
+	AssigneeUserID      uint64     `gorm:"column:assignee_user_id;not null;default:0" json:"assignee_user_id"`
+	PinnedAssigneeID    uint64     `gorm:"column:pinned_assignee_id;not null;default:0" json:"pinned_assignee_id"`
+	RepeatCount         uint8      `gorm:"column:repeat_count;not null;default:0" json:"repeat_count"`
+	VoiceRedialCount    uint8      `gorm:"column:voice_redial_count;not null;default:0" json:"voice_redial_count"`
+	LastVoiceCallID     string     `gorm:"column:last_voice_call_id;size:64;not null;default:''" json:"last_voice_call_id"`
+	LastVoiceStep       uint8      `gorm:"column:last_voice_step;not null;default:0" json:"last_voice_step"`
+	LastVoiceLadderStep uint8      `gorm:"column:last_voice_ladder_step;not null;default:0" json:"last_voice_ladder_step"`
+	LastVoiceUserID     uint64     `gorm:"column:last_voice_user_id;not null;default:0" json:"last_voice_user_id"`
+	AwaitingVoiceGrace  bool       `gorm:"column:awaiting_voice_grace;not null;default:false" json:"awaiting_voice_grace"`
+	Status              string     `gorm:"column:status;size:24;not null;default:'pending';index:idx_oncall_task_due,priority:1" json:"status"`
 	NextRunAt             time.Time  `gorm:"column:next_run_at;not null;index:idx_oncall_task_due,priority:2" json:"next_run_at"`
 	LockedUntil           *time.Time `gorm:"column:locked_until" json:"locked_until,omitempty"`
 	AttemptCount          int        `gorm:"column:attempt_count;not null;default:0" json:"attempt_count"`

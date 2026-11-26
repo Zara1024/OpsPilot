@@ -46,9 +46,11 @@ type Schedule struct {
 	Description          string         `gorm:"column:description;size:255;not null;default:''" json:"description"`
 	Timezone             string         `gorm:"column:timezone;size:64;not null;default:'Asia/Shanghai'" json:"timezone"`
 	HandoffTime          string         `gorm:"column:handoff_time;size:16;not null;default:'09:00:00'" json:"handoff_time"`
-	ReminderAdvanceHours uint32         `gorm:"column:reminder_advance_hours;not null;default:3" json:"reminder_advance_hours"`
-	RequireSwapApproval  bool           `gorm:"column:require_swap_approval;not null;default:false" json:"require_swap_approval"`
-	Enabled              bool           `gorm:"column:enabled;not null;default:true;index:idx_oncall_sched_enabled" json:"enabled"`
+	ReminderAdvanceHours            uint32         `gorm:"column:reminder_advance_hours;not null;default:3" json:"reminder_advance_hours"`
+	RequireSwapApproval             bool           `gorm:"column:require_swap_approval;not null;default:false" json:"require_swap_approval"`
+	EscalationRepeatCount           uint8          `gorm:"column:escalation_repeat_count;not null;default:0" json:"escalation_repeat_count"`
+	EscalationRepeatIntervalSeconds uint32         `gorm:"column:escalation_repeat_interval_seconds;not null;default:300" json:"escalation_repeat_interval_seconds"`
+	Enabled                         bool           `gorm:"column:enabled;not null;default:true;index:idx_oncall_sched_enabled" json:"enabled"`
 	CreatedBy            uint64         `gorm:"column:created_by;not null;default:0" json:"created_by"`
 	CreatedAt            time.Time      `gorm:"column:created_at;not null" json:"created_at"`
 	UpdatedAt            time.Time      `gorm:"column:updated_at;not null" json:"updated_at"`

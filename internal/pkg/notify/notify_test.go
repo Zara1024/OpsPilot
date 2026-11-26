@@ -347,6 +347,103 @@ func TestDingTalkSenderMarkdownFallback(t *testing.T) {
 	}
 }
 
+func TestWeComSenderEmitsTemplateCard(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("decode payload: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	sender := NewWeComSender("wecom", srv.URL, srv.Client())
+	err := sender.Send(context.Background(), Message{
+		Subject:  "核心数据库主从延迟 > 10s",
+		Body:     "replica lag = 12.4s on db-master-01",
+		Severity: SeverityCritical,
+		Labels: map[string]string{
+			"status":              "open",
+			"rule_name":           "数据库复制延迟",
+			"device_name":         "db-master-01",
+			"incident_id":         "42",
+			"assignee":            "Alice",
+			"console_url":         "https://opspilot.test",
+			"oncall_ack_url":      "https://opspilot.test/qa?action=ack",
+			"oncall_silence_url":  "https://opspilot.test/qa?action=silence",
+			"oncall_escalate_url": "https://opspilot.test/qa?action=escalate",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	if got["msgtype"] != "template_card" {
+		t.Fatalf("expected msgtype=template_card, got %v", got["msgtype"])
+	}
+	card, ok := got["template_card"].(map[string]any)
+	if !ok {
+		t.Fatalf("template_card missing or invalid: %v", got["template_card"])
+	}
+	if card["card_type"] != "text_notice" {
+		t.Fatalf("expected card_type=text_notice, got %v", card["card_type"])
+	}
+	mainTitle, _ := card["main_title"].(map[string]any)
+	titleStr, _ := mainTitle["title"].(string)
+	if !strings.Contains(titleStr, "🚨【严重告警】数据库复制延迟 - db-master-01") {
+		t.Errorf("unexpected main_title.title: %q", titleStr)
+	}
+	cardAction, _ := card["card_action"].(map[string]any)
+	if cardAction["url"] != "https://opspilot.test/alerts/incidents/42" {
+		t.Errorf("unexpected card_action.url: %v", cardAction["url"])
+	}
+	jumpList, _ := card["jump_list"].([]any)
+	if len(jumpList) != 3 {
+		t.Fatalf("expected 3 quick-action items in jump_list, got %d (%v)", len(jumpList), jumpList)
+	}
+	firstJump, _ := jumpList[0].(map[string]any)
+	if firstJump["url"] != "https://opspilot.test/qa?action=ack" {
+		t.Errorf("unexpected first jump_list item: %v", firstJump)
+	}
+}
+
+func TestWeComSenderMarkdownFallback(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("decode payload: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	sender := NewWeComSender("wecom", srv.URL, srv.Client())
+	err := sender.Send(context.Background(), Message{
+		Subject:  "设备恢复正常",
+		Severity: SeverityInfo,
+		Labels: map[string]string{
+			"status":         "resolved",
+			"rule_name":      "主机离线告警",
+			"oncall_ack_url": "javascript:alert(1)",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	if got["msgtype"] != "markdown" {
+		t.Fatalf("expected msgtype=markdown when no valid http(s) links exist, got %v", got["msgtype"])
+	}
+	md, ok := got["markdown"].(map[string]any)
+	if !ok {
+		t.Fatalf("markdown missing: %v", got["markdown"])
+	}
+	content, _ := md["content"].(string)
+	if !strings.Contains(content, "✅【告警恢复】主机离线告警") || !strings.Contains(content, "RESOLVED (已恢复)") {
+		t.Errorf("unexpected markdown content: %q", content)
+	}
+}
+
 func TestFormatTextChineseCard(t *testing.T) {
 	occurred := time.Date(2026, 10, 8, 22, 50, 0, 0, time.Local)
 	msg := Message{

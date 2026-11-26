@@ -52,6 +52,11 @@ type ChannelGatewayConfig struct {
 	FeishuEncryptConfigured        bool   `json:"feishu_encrypt_configured"`
 	DingTalkAppSecret              string `json:"dingtalk_app_secret,omitempty"`
 	DingTalkSecretConfigured       bool   `json:"dingtalk_secret_configured"`
+	WeComCorpID                    string `json:"wecom_corp_id,omitempty"`
+	WeComToken                     string `json:"wecom_token,omitempty"`
+	WeComTokenConfigured           bool   `json:"wecom_token_configured"`
+	WeComEncodingAESKey            string `json:"wecom_encoding_aes_key,omitempty"`
+	WeComAESKeyConfigured          bool   `json:"wecom_aes_key_configured"`
 	WarRoomProvider                string `json:"war_room_provider"` // "" | "feishu" | "webhook"
 	FeishuAppID                    string `json:"feishu_app_id,omitempty"`
 	FeishuAppSecret                string `json:"feishu_app_secret,omitempty"`
