@@ -451,3 +451,56 @@ func TestSlackSenderColorByUnknownSeverity(t *testing.T) {
 		}
 	}
 }
+
+func TestFeishuAndDingTalkCardsIncludeOnCallQuickActionButtons(t *testing.T) {
+	ackURL := "https://opspilot.test/api/v1/oncall/chatops/quick-action?inc=17&action=ack&exp=9999999999&sig=abc"
+	silenceURL := "https://opspilot.test/api/v1/oncall/chatops/quick-action?inc=17&action=silence&exp=9999999999&sig=def"
+	escalateURL := "https://opspilot.test/api/v1/oncall/chatops/quick-action?inc=17&action=escalate&exp=9999999999&sig=ghi"
+	consoleURL := "https://opspilot.test/oncall"
+
+	msg := Message{
+		Subject:    "CPU overload on prod-node-01",
+		Body:       "usage 98%",
+		Severity:   SeverityCritical,
+		Source:     "monitoring_pipeline",
+		OccurredAt: time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC),
+		Labels: map[string]string{
+			"incident_id":         "17",
+			"rule_name":           "CPU 高负载",
+			"console_url":         consoleURL,
+			"oncall_ack_url":      ackURL,
+			"oncall_silence_url":  silenceURL,
+			"oncall_escalate_url": escalateURL,
+		},
+	}
+
+	feishuRaw, err := json.Marshal(formatFeishuCard(msg))
+	if err != nil {
+		t.Fatalf("marshal feishu card: %v", err)
+	}
+	wantIncidentURL := consoleURL + "/alerts/incidents/17"
+	feishuStr := strings.ReplaceAll(string(feishuRaw), `\u0026`, "&")
+	for _, wantURL := range []string{ackURL, silenceURL, escalateURL, wantIncidentURL} {
+		if !strings.Contains(feishuStr, wantURL) {
+			t.Errorf("feishu card missing expected URL %q: %s", wantURL, feishuStr)
+		}
+	}
+
+	dingRaw, err := json.Marshal(formatDingTalkMessage(msg))
+	if err != nil {
+		t.Fatalf("marshal dingtalk card: %v", err)
+	}
+	var dingMap map[string]any
+	if err := json.Unmarshal(dingRaw, &dingMap); err != nil {
+		t.Fatalf("unmarshal dingtalk card: %v", err)
+	}
+	if dingMap["msgtype"] != "actionCard" {
+		t.Fatalf("dingtalk msgtype = %v, want actionCard", dingMap["msgtype"])
+	}
+	dingStr := strings.ReplaceAll(string(dingRaw), `\u0026`, "&")
+	for _, wantURL := range []string{ackURL, silenceURL, escalateURL, wantIncidentURL} {
+		if !strings.Contains(dingStr, wantURL) {
+			t.Errorf("dingtalk card missing expected URL %q: %s", wantURL, dingStr)
+		}
+	}
+}

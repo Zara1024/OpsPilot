@@ -252,6 +252,91 @@ func (s *Store) EscalateAlertIncident(ctx context.Context, id uint64, userID uin
 	})
 }
 
+// ReassignAlertIncident validates targetUserID, logs an audit event, and pins active escalation tasks to targetUserID.
+func (s *Store) ReassignAlertIncident(ctx context.Context, incidentID, operatorID, targetUserID uint64, note string) (string, error) {
+	if incidentID == 0 || targetUserID == 0 {
+		return "", fmt.Errorf("incident_id and target_user are required")
+	}
+
+	var targetName string
+	now := time.Now().UTC()
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var inc alertmodel.Incident
+		if err := tx.Where("id = ?", incidentID).First(&inc).Error; err != nil {
+			return fmt.Errorf("incident %d not found: %w", incidentID, err)
+		}
+
+		var target UserSummary
+		if err := tx.Table("users").Select("id, display_name, email, phone").Where("id = ?", targetUserID).First(&target).Error; err != nil {
+			return fmt.Errorf("target user %d not found: %w", targetUserID, err)
+		}
+		targetName = strings.TrimSpace(target.DisplayName)
+		if targetName == "" {
+			targetName = strings.TrimSpace(target.Email)
+		}
+		if targetName == "" {
+			targetName = fmt.Sprintf("User#%d", target.ID)
+		}
+
+		reason := fmt.Sprintf("已转派至值班工程师 %s", targetName)
+		if strings.TrimSpace(note) != "" {
+			reason = reason + " (" + strings.TrimSpace(note) + ")"
+		}
+
+		var userPtr *uint64
+		if operatorID > 0 {
+			op := operatorID
+			userPtr = &op
+		}
+		evt := &alertmodel.Event{
+			IncidentID:     incidentID,
+			EventType:      "reassigned",
+			StatusAfter:    inc.Status,
+			Severity:       inc.Severity,
+			Title:          inc.Title,
+			ActorType:      alertmodel.ActorTypeUser,
+			ActorID:        userPtr,
+			OperatorUserID: userPtr,
+			Reason:         reason,
+			SnapshotJSON:   "{}",
+			OccurredAt:     now,
+		}
+		if err := tx.Create(evt).Error; err != nil {
+			return fmt.Errorf("create reassign event: %w", err)
+		}
+
+		var candidates []*oncallmodel.EscalationTask
+		if err := tx.Where("status = ? AND (incident_id = ? OR alert_count > 1)", oncallmodel.TaskStatusPending, incidentID).
+			Find(&candidates).Error; err != nil {
+			return fmt.Errorf("query pending tasks for reassign: %w", err)
+		}
+		for _, task := range candidates {
+			if !oncallmodel.ContainsIncidentID(task, incidentID) {
+				continue
+			}
+			if err := tx.Model(&oncallmodel.EscalationTask{}).
+				Where("id = ? AND status = ?", task.ID, oncallmodel.TaskStatusPending).
+				Updates(map[string]any{
+					"pinned_assignee_id": targetUserID,
+					"assignee_user_id":   targetUserID,
+					"ladder_step":        uint8(1),
+					"step_started_at":    now,
+					"next_run_at":        now,
+					"locked_until":       nil,
+					"attempt_count":      0,
+					"updated_at":         now,
+				}).Error; err != nil {
+				return fmt.Errorf("pin escalation task %d to user %d: %w", task.ID, targetUserID, err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return targetName, nil
+}
+
 // GetAlertAnalyticsData compiles real metrics from alert_incidents for burnout analysis.
 func (s *Store) GetAlertAnalyticsData(ctx context.Context) (*AlertAnalyticsData, error) {
 	var total int64

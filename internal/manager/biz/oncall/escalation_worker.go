@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/oncall/channels"
 	"github.com/Zara1024/OpsPilot/internal/manager/biz/oncall/voice"
 	store "github.com/Zara1024/OpsPilot/internal/manager/data/oncall/store"
 	alertmodel "github.com/Zara1024/OpsPilot/internal/manager/model/alert"
@@ -24,31 +25,35 @@ const (
 
 // EscalationWorkerOpts configures EscalationWorker dependencies and timing.
 type EscalationWorkerOpts struct {
-	Store         *store.Store
-	Scheduler     *Scheduler
-	VoiceGateway  *voice.VoiceGateway
-	Deliverer     MessageDeliverer
-	Metrics       *Metrics
-	Log           *slog.Logger
-	TickInterval  time.Duration
-	LeaseDuration time.Duration
-	VoiceCooldown time.Duration
-	Now           func() time.Time
+	Store          *store.Store
+	Scheduler      *Scheduler
+	VoiceGateway   *voice.VoiceGateway
+	ChannelGateway *channels.ChannelGateway
+	Deliverer      MessageDeliverer
+	Metrics        *Metrics
+	Log            *slog.Logger
+	PublicURL      string
+	TickInterval   time.Duration
+	LeaseDuration  time.Duration
+	VoiceCooldown  time.Duration
+	Now            func() time.Time
 }
 
 // EscalationWorker executes due On-Call escalation tasks with DB lease locking.
 type EscalationWorker struct {
-	store         *store.Store
-	scheduler     *Scheduler
-	voiceGateway  *voice.VoiceGateway
-	deliverer     MessageDeliverer
-	metrics       *Metrics
-	log           *slog.Logger
-	tickInterval  time.Duration
-	leaseDuration time.Duration
-	voiceCooldown time.Duration
-	now           func() time.Time
-	wakeCh        chan struct{}
+	store          *store.Store
+	scheduler      *Scheduler
+	voiceGateway   *voice.VoiceGateway
+	channelGateway *channels.ChannelGateway
+	deliverer      MessageDeliverer
+	metrics        *Metrics
+	log            *slog.Logger
+	publicURL      string
+	tickInterval   time.Duration
+	leaseDuration  time.Duration
+	voiceCooldown  time.Duration
+	now            func() time.Time
+	wakeCh         chan struct{}
 }
 
 // NewEscalationWorker constructs an EscalationWorker with sensible production defaults.
@@ -73,26 +78,32 @@ func NewEscalationWorker(opts EscalationWorkerOpts) *EscalationWorker {
 	if vg == nil {
 		vg = voice.NewVoiceGateway()
 	}
+	cg := opts.ChannelGateway
+	if cg == nil {
+		cg = channels.NewChannelGateway()
+	}
 	log := opts.Log
 	if log == nil {
 		log = slog.Default()
 	}
 	nowFn := opts.Now
 	if nowFn == nil {
-		nowFn = time.Now
+		nowFn = func() time.Time { return time.Now().UTC() }
 	}
 	return &EscalationWorker{
-		store:         opts.Store,
-		scheduler:     sched,
-		voiceGateway:  vg,
-		deliverer:     opts.Deliverer,
-		metrics:       opts.Metrics,
-		log:           log,
-		tickInterval:  tick,
-		leaseDuration: lease,
-		voiceCooldown: cooldown,
-		now:           nowFn,
-		wakeCh:        make(chan struct{}, 1),
+		store:          opts.Store,
+		scheduler:      sched,
+		voiceGateway:   vg,
+		channelGateway: cg,
+		deliverer:      opts.Deliverer,
+		metrics:        opts.Metrics,
+		log:            log,
+		publicURL:      strings.TrimRight(strings.TrimSpace(opts.PublicURL), "/"),
+		tickInterval:   tick,
+		leaseDuration:  lease,
+		voiceCooldown:  cooldown,
+		now:            nowFn,
+		wakeCh:         make(chan struct{}, 1),
 	}
 }
 
@@ -134,7 +145,7 @@ func (w *EscalationWorker) ProcessBatch(ctx context.Context) int {
 	if w == nil || w.store == nil {
 		return 0
 	}
-	now := w.now()
+	now := w.now().UTC()
 	tasks, err := w.store.ClaimDueEscalationTasks(ctx, now, w.leaseDuration, 20)
 	if err != nil {
 		w.log.Warn("oncall claim due escalation tasks failed", slog.Any("err", err))
@@ -276,12 +287,20 @@ func (w *EscalationWorker) processTask(ctx context.Context, task *model.Escalati
 	sched, _ := w.store.GetSchedule(ctx, task.ScheduleID)
 	isNight := isNightInSchedule(now, sched)
 
-	if policy.TargetType == "webhook" {
+	var targetUser *store.UserSummary
+	var resolveErr error
+	if task.PinnedAssigneeID > 0 {
+		if usersMap, uErr := w.store.GetUsersByIDs(ctx, []uint64{task.PinnedAssigneeID}); uErr == nil {
+			targetUser = usersMap[task.PinnedAssigneeID]
+		}
+	}
+	if targetUser == nil && policy.TargetType == "webhook" {
 		w.executeWebhookBroadcastStep(ctx, task, grp, policies, idx, now, isNight)
 		return
 	}
-
-	targetUser, resolveErr := w.resolveTargetUser(ctx, task.ScheduleID, policy, sched, now)
+	if targetUser == nil {
+		targetUser, resolveErr = w.resolveTargetUser(ctx, task.ScheduleID, policy, sched, now)
+	}
 	if resolveErr != nil || targetUser == nil {
 		msg := "no active on-call engineer for target"
 		if resolveErr != nil {
@@ -351,6 +370,7 @@ func (w *EscalationWorker) executeWebhookBroadcastStep(ctx context.Context, task
 		"rule":        task.RuleKey,
 		"alert_count": fmt.Sprintf("%d", grp.alertCount),
 	}
+	w.enrichQuickActionLabels(ctx, task.IncidentID, labels)
 
 	var provider string
 	var sendErr error
@@ -563,6 +583,7 @@ func (w *EscalationWorker) executeRuleStep(
 			"assignee":    userName,
 			"alert_count": fmt.Sprintf("%d", grp.alertCount),
 		}
+		w.enrichQuickActionLabels(ctx, task.IncidentID, labels)
 		if w.deliverer == nil {
 			w.recordLog(ctx, &model.NotificationLog{
 				TaskID:         task.ID,
@@ -626,8 +647,170 @@ func (w *EscalationWorker) executeRuleStep(
 		})
 		return nil
 
+	case "sms":
+		if strings.TrimSpace(user.Phone) == "" {
+			w.recordLog(ctx, &model.NotificationLog{
+				TaskID:         task.ID,
+				IncidentID:     task.IncidentID,
+				AlertCount:     grp.alertCount,
+				ScheduleID:     task.ScheduleID,
+				EscalationStep: task.CurrentStep,
+				UserID:         user.ID,
+				UserName:       userName,
+				Target:         user.Email,
+				Channel:        "sms",
+				Provider:       "unconfigured",
+				Status:         model.NotifyStatusFailed,
+				Message:        "user phone number not configured",
+				IsNight:        isNight,
+				CreatedAt:      now,
+			})
+			return nil
+		}
+		chCfg, cfgErr := w.store.GetChannelConfig(ctx)
+		if cfgErr != nil || chCfg == nil {
+			chCfg = store.DefaultChannelGatewayConfig()
+		}
+		cg := w.channelGateway
+		if cg == nil {
+			cg = channels.NewChannelGateway()
+		}
+		smsRes, smsErr := cg.SendSMS(ctx, chCfg, &channels.SMSRequest{
+			PhoneNumber: user.Phone,
+			Urgency:     task.Urgency,
+			Title:       title,
+			IncidentID:  task.IncidentID,
+		})
+		provider := chCfg.SMSProvider
+		if provider == "" {
+			provider = "unconfigured"
+		}
+		msg := ""
+		status := model.NotifyStatusSent
+		if smsRes != nil {
+			if smsRes.Provider != "" {
+				provider = smsRes.Provider
+			}
+			msg = smsRes.Message
+		}
+		if smsErr != nil {
+			status = model.NotifyStatusFailed
+			if msg == "" {
+				msg = smsErr.Error()
+			}
+		}
+		w.recordLog(ctx, &model.NotificationLog{
+			TaskID:         task.ID,
+			IncidentID:     task.IncidentID,
+			AlertCount:     grp.alertCount,
+			ScheduleID:     task.ScheduleID,
+			EscalationStep: task.CurrentStep,
+			UserID:         user.ID,
+			UserName:       userName,
+			Target:         maskPhone(user.Phone),
+			Channel:        "sms",
+			Provider:       provider,
+			OutCallID:      func() string { if smsRes != nil { return smsRes.BizID }; return "" }(),
+			Status:         status,
+			Message:        truncateString(msg, 500),
+			IsNight:        isNight,
+			CreatedAt:      now,
+		})
+		if smsErr != nil && !channels.IsPermanentConfigErr(msg) {
+			return smsErr
+		}
+		return nil
+
+	case "email":
+		if strings.TrimSpace(user.Email) == "" {
+			w.recordLog(ctx, &model.NotificationLog{
+				TaskID:         task.ID,
+				IncidentID:     task.IncidentID,
+				AlertCount:     grp.alertCount,
+				ScheduleID:     task.ScheduleID,
+				EscalationStep: task.CurrentStep,
+				UserID:         user.ID,
+				UserName:       userName,
+				Target:         maskPhone(user.Phone),
+				Channel:        "email",
+				Provider:       "unconfigured",
+				Status:         model.NotifyStatusFailed,
+				Message:        "user email not configured",
+				IsNight:        isNight,
+				CreatedAt:      now,
+			})
+			return nil
+		}
+		chCfg, cfgErr := w.store.GetChannelConfig(ctx)
+		if cfgErr != nil || chCfg == nil {
+			chCfg = store.DefaultChannelGatewayConfig()
+		}
+		cg := w.channelGateway
+		if cg == nil {
+			cg = channels.NewChannelGateway()
+		}
+		actionLinks := map[string]string{}
+		if w.publicURL != "" {
+			labels := map[string]string{}
+			w.enrichQuickActionLabels(ctx, task.IncidentID, labels)
+			if u := labels["oncall_ack_url"]; u != "" {
+				actionLinks["认领告警"] = u
+			}
+			if u := labels["oncall_silence_url"]; u != "" {
+				actionLinks["静音 30 分钟"] = u
+			}
+			if u := labels["oncall_escalate_url"]; u != "" {
+				actionLinks["升级二线"] = u
+			}
+		}
+		subject := fmt.Sprintf("[OpsPilot On-Call] %s (%s)", title, strings.ToUpper(task.Severity))
+		textBody := fmt.Sprintf("%s\n值班人: %s | 升级步骤: %d", grp.detailBody, userName, task.CurrentStep)
+		emailRes, emailErr := cg.SendEmail(ctx, chCfg, &channels.EmailRequest{
+			To:          user.Email,
+			Subject:     subject,
+			TextBody:    textBody,
+			Urgency:     task.Urgency,
+			IncidentID:  task.IncidentID,
+			ActionLinks: actionLinks,
+		})
+		provider := "smtp"
+		msg := ""
+		status := model.NotifyStatusSent
+		if emailRes != nil {
+			if emailRes.Provider != "" {
+				provider = emailRes.Provider
+			}
+			msg = emailRes.Message
+		}
+		if emailErr != nil {
+			status = model.NotifyStatusFailed
+			if msg == "" {
+				msg = emailErr.Error()
+			}
+		}
+		w.recordLog(ctx, &model.NotificationLog{
+			TaskID:         task.ID,
+			IncidentID:     task.IncidentID,
+			AlertCount:     grp.alertCount,
+			ScheduleID:     task.ScheduleID,
+			EscalationStep: task.CurrentStep,
+			UserID:         user.ID,
+			UserName:       userName,
+			Target:         user.Email,
+			Channel:        "email",
+			Provider:       provider,
+			Status:         status,
+			Message:        truncateString(msg, 500),
+			IsNight:        isNight,
+			CreatedAt:      now,
+		})
+		if emailErr != nil && !channels.IsPermanentConfigErr(msg) {
+			return emailErr
+		}
+		return nil
+
 	default:
-		// sms, email, or future channels without an active external gateway yet: fail honestly, do not fabricate mock success.
+		// Future channels without an active external gateway: fail honestly rather than fabricating success.
 		w.recordLog(ctx, &model.NotificationLog{
 			TaskID:         task.ID,
 			IncidentID:     task.IncidentID,
@@ -645,6 +828,33 @@ func (w *EscalationWorker) executeRuleStep(
 			CreatedAt:      now,
 		})
 		return nil
+	}
+}
+
+func (w *EscalationWorker) enrichQuickActionLabels(ctx context.Context, incidentID uint64, labels map[string]string) {
+	if w == nil || labels == nil || w.publicURL == "" {
+		return
+	}
+	labels["console_url"] = w.publicURL
+	if incidentID == 0 || w.store == nil {
+		return
+	}
+	tok, err := w.store.EnsureChatOpsCallbackToken(ctx)
+	if err != nil {
+		w.log.Warn("ensure chatops callback token failed", slog.Uint64("incident_id", incidentID), slog.Any("err", err))
+		return
+	}
+	if tok == "" {
+		return
+	}
+	if u := SignQuickActionURL(w.publicURL, tok, incidentID, "ack", 24*time.Hour); u != "" {
+		labels["oncall_ack_url"] = u
+	}
+	if u := SignQuickActionURL(w.publicURL, tok, incidentID, "silence", 24*time.Hour); u != "" {
+		labels["oncall_silence_url"] = u
+	}
+	if u := SignQuickActionURL(w.publicURL, tok, incidentID, "escalate", 24*time.Hour); u != "" {
+		labels["oncall_escalate_url"] = u
 	}
 }
 
@@ -763,6 +973,7 @@ func (w *EscalationWorker) scheduleNextRun(ctx context.Context, task *model.Esca
 		if hasNextTeam && nextLadderAt.After(teamEscalateAt) {
 			task.CurrentStep++
 			task.LadderStep = 1
+			task.PinnedAssigneeID = 0
 			task.StepStartedAt = teamEscalateAt
 			task.NextRunAt = teamEscalateAt
 		} else {
@@ -790,6 +1001,7 @@ func (w *EscalationWorker) advanceAfterLadderComplete(ctx context.Context, task 
 		}
 		task.CurrentStep++
 		task.LadderStep = 1
+		task.PinnedAssigneeID = 0
 		task.StepStartedAt = nextTeamAt
 		task.NextRunAt = nextTeamAt
 		task.LockedUntil = nil
@@ -810,6 +1022,7 @@ func (w *EscalationWorker) advanceTeamStepImmediately(ctx context.Context, task 
 	if idx+1 < len(policies) {
 		task.CurrentStep++
 		task.LadderStep = 1
+		task.PinnedAssigneeID = 0
 		task.StepStartedAt = now
 		task.NextRunAt = now
 		if err := w.store.SaveEscalationTask(ctx, task); err != nil {

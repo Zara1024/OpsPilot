@@ -64,6 +64,9 @@ const HandoffAnalyticsTab = lazy(() =>
 const VoiceGatewayTab = lazy(() =>
   import('./oncall/VoiceGatewayTab').then((m) => ({ default: m.VoiceGatewayTab })),
 );
+const ChannelGatewaysSection = lazy(() =>
+  import('./oncall/ChannelGatewaysSection').then((m) => ({ default: m.ChannelGatewaysSection })),
+);
 const SecondaryRotationModal = lazy(() =>
   import('./oncall/SecondaryRotationModal').then((m) => ({ default: m.SecondaryRotationModal })),
 );
@@ -486,7 +489,7 @@ export default function OnCallPage() {
               </TabsTrigger>
               <TabsTrigger value="voice">
                 <PhoneCall size={14} className="mr-1.5" />
-                {tr('语音网关', 'Voice Gateway')}
+                {tr('通道网关', 'Channel Gateways')}
               </TabsTrigger>
             </TabsList>
           }
@@ -1026,7 +1029,7 @@ export default function OnCallPage() {
 
         <TabsContent value="escalation">
           <Suspense fallback={<OnCallTabFallback />}>
-            <EscalationChatOpsTab schedules={schedules} />
+            <EscalationChatOpsTab schedules={schedules} users={users} />
           </Suspense>
         </TabsContent>
 
@@ -1044,7 +1047,10 @@ export default function OnCallPage() {
 
         <TabsContent value="voice">
           <Suspense fallback={<OnCallTabFallback />}>
-            <VoiceGatewayTab />
+            <div className="space-y-8">
+              <VoiceGatewayTab />
+              <ChannelGatewaysSection />
+            </div>
           </Suspense>
         </TabsContent>
       </div>

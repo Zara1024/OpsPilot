@@ -10,6 +10,7 @@ import (
 
 	managerbizalert "github.com/Zara1024/OpsPilot/internal/manager/biz/alert"
 	managerbizoncall "github.com/Zara1024/OpsPilot/internal/manager/biz/oncall"
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/oncall/channels"
 	"github.com/Zara1024/OpsPilot/internal/manager/biz/oncall/voice"
 	oncallstore "github.com/Zara1024/OpsPilot/internal/manager/data/oncall/store"
 	managerserveroncall "github.com/Zara1024/OpsPilot/internal/manager/server/oncall"
@@ -33,6 +34,11 @@ func bootstrapOncall(cfg *config.Config, log *slog.Logger, reg *prometheus.Regis
 	metrics := managerbizoncall.NewMetrics(reg)
 	sched := managerbizoncall.NewScheduler(storage.oncallStore)
 	vg := voice.NewVoiceGateway()
+	cg := channels.NewChannelGateway()
+	publicURL := ""
+	if cfg != nil {
+		publicURL = strings.TrimRight(strings.TrimSpace(cfg.PublicURL), "/")
+	}
 
 	var alertRepo managerbizalert.Repo
 	if alerts != nil {
@@ -41,15 +47,18 @@ func bootstrapOncall(cfg *config.Config, log *slog.Logger, reg *prometheus.Regis
 	deliverer := &oncallMessageDeliverer{
 		notifyRouter: notifyRouter,
 		alertRepo:    alertRepo,
+		publicURL:    publicURL,
 	}
 
 	worker := managerbizoncall.NewEscalationWorker(managerbizoncall.EscalationWorkerOpts{
-		Store:        storage.oncallStore,
-		Scheduler:    sched,
-		VoiceGateway: vg,
-		Deliverer:    deliverer,
-		Metrics:      metrics,
-		Log:          compLog,
+		Store:          storage.oncallStore,
+		Scheduler:      sched,
+		VoiceGateway:   vg,
+		ChannelGateway: cg,
+		Deliverer:      deliverer,
+		Metrics:        metrics,
+		Log:            compLog,
+		PublicURL:      publicURL,
 	})
 	handoffReminder := managerbizoncall.NewHandoffReminderWorker(managerbizoncall.HandoffReminderWorkerOpts{
 		Store:     storage.oncallStore,
@@ -66,13 +75,10 @@ func bootstrapOncall(cfg *config.Config, log *slog.Logger, reg *prometheus.Regis
 		alerts.alertUC.SetOnCallDispatcher(dispatcher)
 	}
 
-	publicURL := ""
-	if cfg != nil {
-		publicURL = cfg.PublicURL
-	}
 	handler := managerserveroncall.NewHandlerWithDeps(storage.oncallStore, managerserveroncall.HandlerDeps{
 		PublicURL:       publicURL,
 		VoiceGateway:    vg,
+		ChannelGateway:  cg,
 		Deliverer:       deliverer,
 		Worker:          worker,
 		HandoffReminder: handoffReminder,
@@ -89,15 +95,23 @@ func bootstrapOncall(cfg *config.Config, log *slog.Logger, reg *prometheus.Regis
 type oncallMessageDeliverer struct {
 	notifyRouter *notify.Router
 	alertRepo    managerbizalert.Repo
+	publicURL    string
 }
 
 func (d *oncallMessageDeliverer) Deliver(ctx context.Context, channel string, _ *oncallstore.UserSummary, subject, body, severity string, labels map[string]string) (string, error) {
+	enrichedLabels := make(map[string]string, len(labels)+1)
+	for k, v := range labels {
+		enrichedLabels[k] = v
+	}
+	if d.publicURL != "" && enrichedLabels["console_url"] == "" {
+		enrichedLabels["console_url"] = d.publicURL
+	}
 	msg := notify.Message{
 		Subject:    subject,
 		Body:       body,
 		Severity:   mapNotifySeverity(severity),
 		Source:     "oncall:" + channel,
-		Labels:     labels,
+		Labels:     enrichedLabels,
 		OccurredAt: time.Now().UTC(),
 	}
 

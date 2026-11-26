@@ -11,6 +11,7 @@ import (
 	"time"
 
 	bizoncall "github.com/Zara1024/OpsPilot/internal/manager/biz/oncall"
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/oncall/channels"
 	"github.com/Zara1024/OpsPilot/internal/manager/biz/oncall/voice"
 	store "github.com/Zara1024/OpsPilot/internal/manager/data/oncall/store"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/oncall"
@@ -267,6 +268,113 @@ func (h *Handler) testNotification(w http.ResponseWriter, r *http.Request) {
 			"message": msg,
 		})
 
+	case "sms":
+		chCfg, cfgErr := h.store.GetChannelConfig(r.Context())
+		if cfgErr != nil || chCfg == nil {
+			chCfg = store.DefaultChannelGatewayConfig()
+		}
+		cg := h.channelGateway
+		if cg == nil {
+			cg = channels.NewChannelGateway()
+		}
+		smsRes, smsErr := cg.SendSMS(r.Context(), chCfg, &channels.SMSRequest{
+			PhoneNumber: userSummary.Phone,
+			Urgency:     req.Urgency,
+			Title:       "OpsPilot 个人通知阶梯短信测试",
+		})
+		status := model.NotifyStatusSent
+		provider := chCfg.SMSProvider
+		bizID := ""
+		msg := ""
+		if smsRes != nil {
+			if smsRes.Provider != "" {
+				provider = smsRes.Provider
+			}
+			if smsRes.Status != "" {
+				status = smsRes.Status
+			}
+			bizID = smsRes.BizID
+			msg = smsRes.Message
+		}
+		if smsErr != nil {
+			status = model.NotifyStatusFailed
+			if msg == "" {
+				msg = smsErr.Error()
+			}
+		}
+		if provider == "" {
+			provider = "unconfigured"
+		}
+		h.recordNotificationLog(r.Context(), &model.NotificationLog{
+			UserID:    c.UserID,
+			UserName:  userName,
+			Target:    maskPhoneForLog(userSummary.Phone),
+			Channel:   "sms",
+			Provider:  provider,
+			OutCallID: bizID,
+			Status:    status,
+			Message:   truncateLogMsg(msg, 500),
+			CreatedAt: time.Now(),
+		})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":      smsErr == nil,
+			"channel": req.Channel,
+			"target":  maskPhoneForLog(userSummary.Phone),
+			"status":  status,
+			"message": msg,
+		})
+
+	case "email":
+		chCfg, cfgErr := h.store.GetChannelConfig(r.Context())
+		if cfgErr != nil || chCfg == nil {
+			chCfg = store.DefaultChannelGatewayConfig()
+		}
+		cg := h.channelGateway
+		if cg == nil {
+			cg = channels.NewChannelGateway()
+		}
+		emailRes, emailErr := cg.SendEmail(r.Context(), chCfg, &channels.EmailRequest{
+			To:       userSummary.Email,
+			Subject:  "[OpsPilot On-Call] 个人通知阶梯邮件测试",
+			TextBody: fmt.Sprintf("触发人: %s | 紧急程度: %s", userName, req.Urgency),
+			Urgency:  req.Urgency,
+		})
+		status := model.NotifyStatusSent
+		provider := "smtp"
+		msg := ""
+		if emailRes != nil {
+			if emailRes.Provider != "" {
+				provider = emailRes.Provider
+			}
+			if emailRes.Status != "" {
+				status = emailRes.Status
+			}
+			msg = emailRes.Message
+		}
+		if emailErr != nil {
+			status = model.NotifyStatusFailed
+			if msg == "" {
+				msg = emailErr.Error()
+			}
+		}
+		h.recordNotificationLog(r.Context(), &model.NotificationLog{
+			UserID:    c.UserID,
+			UserName:  userName,
+			Target:    userSummary.Email,
+			Channel:   "email",
+			Provider:  provider,
+			Status:    status,
+			Message:   truncateLogMsg(msg, 500),
+			CreatedAt: time.Now(),
+		})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":      emailErr == nil,
+			"channel": req.Channel,
+			"target":  userSummary.Email,
+			"status":  status,
+			"message": msg,
+		})
+
 	default:
 		msg := fmt.Sprintf("通道 [%s] 尚未接入外部服务商，请优先使用语音网关或 IM/Webhook 渠道。", req.Channel)
 		h.recordNotificationLog(r.Context(), &model.NotificationLog{
@@ -508,8 +616,15 @@ func (h *Handler) listActiveIncidents(w http.ResponseWriter, r *http.Request) {
 			userIDs = append(userIDs, *inc.AcknowledgedBy)
 		}
 	}
-	userMap, _ := h.store.GetUsersByIDs(r.Context(), userIDs)
 	activeSteps, _ := h.store.GetActiveEscalationStepsByIncidents(r.Context(), incidentIDs)
+	pinnedAssignees, _ := h.store.GetActivePinnedAssigneesByIncidents(r.Context(), incidentIDs)
+	for _, uid := range pinnedAssignees {
+		if uid > 0 {
+			userIDs = append(userIDs, uid)
+		}
+	}
+	userMap, _ := h.store.GetUsersByIDs(r.Context(), userIDs)
+	warRoomsMap, _ := h.store.ListWarRoomsByIncidents(r.Context(), incidentIDs)
 
 	items := make([]bizoncall.IncidentSummary, 0, len(incidents))
 	for _, inc := range incidents {
@@ -570,6 +685,15 @@ func (h *Handler) listActiveIncidents(w http.ResponseWriter, r *http.Request) {
 				assignee = live.PrimaryUser.UserName
 			}
 		}
+		if pinnedUID := pinnedAssignees[inc.ID]; pinnedUID > 0 {
+			if u, ok := userMap[pinnedUID]; ok && u != nil {
+				if u.DisplayName != "" {
+					assignee = u.DisplayName
+				} else if u.Email != "" {
+					assignee = u.Email
+				}
+			}
+		}
 
 		ackedByName := ""
 		if inc.AcknowledgedBy != nil {
@@ -585,6 +709,10 @@ func (h *Handler) listActiveIncidents(w http.ResponseWriter, r *http.Request) {
 		if s := activeSteps[inc.ID]; s > 0 {
 			step = s
 		}
+		warRoomURL := ""
+		if wr := warRoomsMap[inc.ID]; wr != nil {
+			warRoomURL = wr.RoomURL
+		}
 		items = append(items, bizoncall.IncidentSummary{
 			ID:              fmt.Sprintf("INC-%04d", inc.ID),
 			Title:           inc.Title,
@@ -598,6 +726,7 @@ func (h *Handler) listActiveIncidents(w http.ResponseWriter, r *http.Request) {
 			AckedAt:         inc.AcknowledgedAt,
 			AckedBy:         ackedByName,
 			EscalationStep:  step,
+			WarRoomURL:      warRoomURL,
 		})
 	}
 

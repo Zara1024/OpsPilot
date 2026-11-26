@@ -12,6 +12,7 @@ import {
   RefreshCw,
   ExternalLink,
   History,
+  UserPlus,
 } from 'lucide-react';
 import {
   Button,
@@ -23,10 +24,12 @@ import {
   PaginationFooter,
   Select,
   Switch,
+  Textarea,
 } from '@/components/ui';
 import { useDialogs } from '@/components/ui/useDialogs';
 import { Modal } from '@/components/Modal';
 import { useI18n } from '@/i18n/locale';
+import { listUsers, type User } from '@/api/users';
 import {
   listEscalationPolicies,
   createEscalationPolicy,
@@ -47,9 +50,10 @@ import {
 
 interface EscalationChatOpsTabProps {
   schedules: OnCallSchedule[];
+  users?: User[];
 }
 
-export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
+export function EscalationChatOpsTab({ schedules, users: propUsers = [] }: EscalationChatOpsTabProps) {
   const { tr } = useI18n();
   const { confirmAction, alertAction, dialog } = useDialogs();
 
@@ -57,7 +61,13 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
   const [incidents, setIncidents] = useState<ActiveIncident[]>([]);
   const [incidentsLoading, setIncidentsLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionWarRoomUrl, setActionWarRoomUrl] = useState<string | null>(null);
   const [incidentFilter, setIncidentFilter] = useState<'all' | 'active'>('all');
+  const [usersList, setUsersList] = useState<User[]>(propUsers);
+  const [reassignIncident, setReassignIncident] = useState<ActiveIncident | null>(null);
+  const [reassignUserId, setReassignUserId] = useState<number>(0);
+  const [reassignNote, setReassignNote] = useState('');
+  const [reassigning, setReassigning] = useState(false);
 
   // Policies state
   const [policies, setPolicies] = useState<EscalationPolicy[]>([]);
@@ -80,7 +90,7 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
   const [rulesSuccess, setRulesSuccess] = useState(false);
 
   // Test notification state
-  const [testChannel, setTestChannel] = useState<'im_dm' | 'sms' | 'voice_call'>('im_dm');
+  const [testChannel, setTestChannel] = useState<'im_dm' | 'sms' | 'email' | 'voice_call'>('im_dm');
   const [testingNotification, setTestingNotification] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -167,6 +177,12 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
     fetchMyRules(urgencyMode);
   }, [urgencyMode, fetchMyRules]);
 
+  useEffect(() => {
+    if (propUsers.length > 0) {
+      setUsersList(propUsers);
+    }
+  }, [propUsers]);
+
   // ChatOps action trigger
   const handleChatOps = async (
     action: 'ack' | 'silence' | 'escalate' | 'warroom',
@@ -175,11 +191,54 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
     try {
       const res = await triggerChatOpsAction(action, incidentId);
       setActionMessage(res.message || tr('操作执行成功', 'Action performed successfully'));
+      setActionWarRoomUrl(res.war_room_url || null);
       await fetchIncidents();
-      setTimeout(() => setActionMessage(null), 4000);
+      setTimeout(() => {
+        setActionMessage(null);
+        setActionWarRoomUrl(null);
+      }, 6000);
     } catch (e: unknown) {
       console.error('ChatOps error:', e);
       await alertAction(e instanceof Error ? e.message : tr('ChatOps 执行失败', 'ChatOps failed'));
+    }
+  };
+
+  const handleOpenReassign = async (inc: ActiveIncident) => {
+    setReassignIncident(inc);
+    setReassignNote('');
+    let available = usersList;
+    if (available.length === 0) {
+      try {
+        const res = await listUsers();
+        available = res.items || [];
+        setUsersList(available);
+      } catch (e) {
+        console.error('Failed to load users for reassign:', e);
+      }
+    }
+    setReassignUserId(available[0]?.id || 0);
+  };
+
+  const handleSubmitReassign = async () => {
+    if (!reassignIncident || !reassignUserId || reassigning) return;
+    setReassigning(true);
+    try {
+      const res = await triggerChatOpsAction(
+        'reassign',
+        reassignIncident.id,
+        reassignNote.trim() || undefined,
+        reassignUserId
+      );
+      setActionMessage(res.message || tr('转派成功', 'Incident reassigned'));
+      setActionWarRoomUrl(null);
+      setReassignIncident(null);
+      await fetchIncidents();
+      await fetchLogs(0, logsChannel);
+      setTimeout(() => setActionMessage(null), 6000);
+    } catch (e: unknown) {
+      await alertAction(e instanceof Error ? e.message : tr('转派失败', 'Failed to reassign incident'));
+    } finally {
+      setReassigning(false);
     }
   };
 
@@ -354,8 +413,19 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
         </div>
 
         {actionMessage && (
-          <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/30 px-3 py-2 text-xs text-emerald-600 dark:text-emerald-400">
-            {actionMessage}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+            <span>{actionMessage}</span>
+            {actionWarRoomUrl && (
+              <a
+                href={actionWarRoomUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 font-semibold underline hover:opacity-80"
+              >
+                <ExternalLink size={12} />
+                {tr('打开作战室', 'Open War Room')}
+              </a>
+            )}
           </div>
         )}
 
@@ -424,7 +494,7 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
                   </div>
 
                   {/* ChatOps Action Buttons */}
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {inc.status !== 'acknowledged' && inc.status !== 'resolved' && (
                       <Button
                         size="sm"
@@ -433,6 +503,16 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
                       >
                         <CheckCircle2 size={14} className="mr-1.5" />
                         {tr('认领', 'Acknowledge')}
+                      </Button>
+                    )}
+                    {inc.status !== 'resolved' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleOpenReassign(inc)}
+                      >
+                        <UserPlus size={14} className="mr-1.5" />
+                        {tr('转派', 'Reassign')}
                       </Button>
                     )}
                     <Button
@@ -451,15 +531,27 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
                       <Zap size={14} className="mr-1.5 text-amber-500" />
                       {tr('立即升级', 'Escalate')}
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-indigo-600 dark:text-indigo-400"
-                      onClick={() => handleChatOps('warroom', inc.id)}
-                    >
-                      <ExternalLink size={14} className="mr-1.5" />
-                      {tr('应急作战室', 'War Room')}
-                    </Button>
+                    {inc.war_room_url ? (
+                      <a
+                        href={inc.war_room_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex h-7 items-center gap-1.5 rounded-md border border-indigo-500/40 bg-indigo-500/10 px-2.5 text-xs font-medium text-indigo-600 transition-colors hover:bg-indigo-500/20 dark:text-indigo-400"
+                      >
+                        <ExternalLink size={13} />
+                        {tr('进入作战室', 'Open War Room')}
+                      </a>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-indigo-600 dark:text-indigo-400"
+                        onClick={() => handleChatOps('warroom', inc.id)}
+                      >
+                        <ExternalLink size={14} className="mr-1.5" />
+                        {tr('应急作战室', 'War Room')}
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -680,10 +772,13 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
                 <Label className="text-xs">{tr('选择测试通道', 'Select Channel')}</Label>
                 <Select
                   value={testChannel}
-                  onValueChange={(val) => setTestChannel(val as 'im_dm' | 'sms' | 'voice_call')}
+                  onValueChange={(val) =>
+                    setTestChannel(val as 'im_dm' | 'sms' | 'email' | 'voice_call')
+                  }
                   options={[
                     { value: 'im_dm', label: tr('企业微信/飞书/钉钉私聊', 'IM Bot DM') },
                     { value: 'sms', label: tr('短信服务网关', 'SMS Gateway') },
+                    { value: 'email', label: tr('电子邮件通知', 'Email (SMTP)') },
                     { value: 'voice_call', label: tr('语音电话外呼', 'Voice Call') },
                   ]}
                   className="mt-1 w-full text-xs"
@@ -945,6 +1040,63 @@ export function EscalationChatOpsTab({ schedules }: EscalationChatOpsTabProps) {
               value={String(policyScheduleId)}
               onValueChange={(val) => setPolicyScheduleId(Number(val))}
               options={schedules.map((s) => ({ value: String(s.id), label: s.name }))}
+              className="mt-1 w-full text-xs"
+            />
+          </div>
+        </div>
+      </Modal>
+
+      {/* Reassign Incident Modal */}
+      <Modal
+        open={Boolean(reassignIncident)}
+        onClose={() => setReassignIncident(null)}
+        title={
+          reassignIncident
+            ? tr(`转派告警 ${reassignIncident.id}`, `Reassign Incident ${reassignIncident.id}`)
+            : tr('转派告警', 'Reassign Incident')
+        }
+        size="sm"
+        footer={
+          <div className="flex justify-end gap-2 w-full">
+            <Button size="sm" variant="ghost" onClick={() => setReassignIncident(null)}>
+              {tr('取消', 'Cancel')}
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={handleSubmitReassign}
+              disabled={reassigning || !reassignUserId}
+            >
+              {reassigning ? tr('转派中...', 'Reassigning...') : tr('确认转派', 'Confirm Reassign')}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-3 py-2 text-xs">
+          {reassignIncident && (
+            <div className="rounded border border-border bg-bg/50 px-3 py-2 text-text">
+              {reassignIncident.title}
+            </div>
+          )}
+          <div>
+            <Label className="text-xs">{tr('目标接手工程师', 'Target Engineer')} *</Label>
+            <Select
+              value={String(reassignUserId)}
+              onValueChange={(val) => setReassignUserId(Number(val))}
+              options={usersList.map((u) => ({
+                value: String(u.id),
+                label: u.display_name ? `${u.display_name} (${u.email})` : u.email,
+              }))}
+              className="mt-1 w-full text-xs"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">{tr('转派说明（可选）', 'Handoff Note (Optional)')}</Label>
+            <Textarea
+              rows={3}
+              value={reassignNote}
+              onChange={(e) => setReassignNote(e.target.value)}
+              placeholder={tr('请填写排查上下文或转派原因...', 'Provide investigation context or reason...')}
               className="mt-1 w-full text-xs"
             />
           </div>

@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	bizoncall "github.com/Zara1024/OpsPilot/internal/manager/biz/oncall"
+	"github.com/Zara1024/OpsPilot/internal/manager/biz/oncall/channels"
 	"github.com/Zara1024/OpsPilot/internal/manager/biz/oncall/voice"
 	store "github.com/Zara1024/OpsPilot/internal/manager/data/oncall/store"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/oncall"
@@ -21,6 +22,7 @@ import (
 type HandlerDeps struct {
 	PublicURL       string
 	VoiceGateway    *voice.VoiceGateway
+	ChannelGateway  *channels.ChannelGateway
 	Deliverer       bizoncall.MessageDeliverer
 	Worker          *bizoncall.EscalationWorker
 	HandoffReminder *bizoncall.HandoffReminderWorker
@@ -36,6 +38,7 @@ type Handler struct {
 	handoffService   *bizoncall.HandoffService
 	burnoutAnalyzer  *bizoncall.BurnoutAnalyzer
 	voiceGateway     *voice.VoiceGateway
+	channelGateway   *channels.ChannelGateway
 	deliverer        bizoncall.MessageDeliverer
 	worker           *bizoncall.EscalationWorker
 	handoffReminder  *bizoncall.HandoffReminderWorker
@@ -48,7 +51,14 @@ func NewHandler(s *store.Store) *Handler {
 
 func NewHandlerWithDeps(s *store.Store, deps HandlerDeps) *Handler {
 	sched := bizoncall.NewScheduler(s)
+	cg := deps.ChannelGateway
+	if cg == nil {
+		cg = channels.NewChannelGateway()
+	}
 	ee := bizoncall.NewEscalationEngine(s, sched)
+	ee.SetChannelGateway(cg)
+	ee.SetDeliverer(deps.Deliverer)
+	ee.SetPublicURL(deps.PublicURL)
 	if deps.Worker != nil {
 		ee.SetWorker(deps.Worker)
 	}
@@ -74,6 +84,7 @@ func NewHandlerWithDeps(s *store.Store, deps HandlerDeps) *Handler {
 		handoffService:   bizoncall.NewHandoffService(s, sched),
 		burnoutAnalyzer:  bizoncall.NewBurnoutAnalyzer(s),
 		voiceGateway:     vg,
+		channelGateway:   cg,
 		deliverer:        deps.Deliverer,
 		worker:           deps.Worker,
 		handoffReminder:  hr,
@@ -136,21 +147,29 @@ func (h *Handler) Register(r chi.Router) {
 	r.Get("/v1/oncall/analytics/burnout", h.getBurnoutAnalytics)
 	r.Get("/v1/oncall/analytics/noisy-alerts", h.getNoisyAlerts)
 
-	// Voice Gateway
+	// Voice & Multi-Channel Gateways (SMS, SMTP Email, ChatOps & War Room)
 	r.Get("/v1/oncall/voice/config", h.getVoiceConfig)
 	r.Put("/v1/oncall/voice/config", h.updateVoiceConfig)
 	r.Post("/v1/oncall/voice/test-call", h.testVoiceCall)
+	r.Get("/v1/oncall/channels/config", h.getChannelConfig)
+	r.Put("/v1/oncall/channels/config", h.updateChannelConfig)
+	r.Post("/v1/oncall/channels/test-sms", h.testSMSChannel)
+	r.Post("/v1/oncall/channels/test-email", h.testEmailChannel)
 
 	// Notification Delivery Logs & Escalation State Tasks
 	r.Get("/v1/oncall/notifications/logs", h.listNotificationLogs)
 	r.Get("/v1/oncall/escalations/tasks", h.listEscalationTasks)
 }
 
-// RegisterPublic mounts public unauthenticated endpoints (e.g. token-secured Webcal feed).
+// RegisterPublic mounts public unauthenticated endpoints (e.g. token-secured Webcal feed & signed ChatOps/Voice callbacks).
 func (h *Handler) RegisterPublic(r chi.Router) {
 	r.Get("/v1/oncall/calendar/subscribe/{token}.ics", h.subscribeCalendarICS)
 	r.Post("/v1/oncall/voice/callback/aliyun", h.aliyunVoiceCallback)
 	r.Post("/v1/oncall/voice/callback/tencent", h.tencentVoiceCallback)
+	r.Get("/v1/oncall/chatops/quick-action", h.quickActionConfirm)
+	r.Post("/v1/oncall/chatops/quick-action", h.quickActionExecute)
+	r.Post("/v1/oncall/chatops/callback/feishu", h.feishuChatOpsCallback)
+	r.Post("/v1/oncall/chatops/callback/dingtalk", h.dingTalkChatOpsCallback)
 }
 
 // --- Schedule CRUD ---

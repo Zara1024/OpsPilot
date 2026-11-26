@@ -313,6 +313,32 @@ func formatFeishuCard(msg Message) map[string]any {
 	baseURL := strings.TrimRight(strings.TrimSpace(msg.Labels["console_url"]), "/")
 	var actions []any
 
+	if msg.Labels != nil {
+		for _, qa := range []struct {
+			key   string
+			label string
+			kind  string
+			act   string
+		}{
+			{"oncall_ack_url", "✅ 认领告警", "primary", "ack"},
+			{"oncall_silence_url", "🔇 静音 30m", "default", "silence"},
+			{"oncall_escalate_url", "⚡ 升级二线", "danger", "escalate"},
+		} {
+			if u := strings.TrimSpace(msg.Labels[qa.key]); strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://") {
+				actions = append(actions, map[string]any{
+					"tag":  "button",
+					"text": map[string]any{"tag": "plain_text", "content": qa.label},
+					"type": qa.kind,
+					"url":  u,
+					"value": map[string]string{
+						"opspilot_action": qa.act,
+						"incident_id":     msg.Labels["incident_id"],
+					},
+				})
+			}
+		}
+	}
+
 	if baseURL != "" {
 		if did, ok := msg.Labels["device_id"]; ok && did != "" {
 			actions = append(actions, map[string]any{
@@ -498,6 +524,24 @@ func formatDingTalkMessage(msg Message) map[string]any {
 
 	baseURL := strings.TrimRight(strings.TrimSpace(msg.Labels["console_url"]), "/")
 	var btns []map[string]string
+
+	if msg.Labels != nil {
+		for _, qa := range []struct {
+			key   string
+			title string
+		}{
+			{"oncall_ack_url", "✅ 认领告警"},
+			{"oncall_silence_url", "🔇 静音 30m"},
+			{"oncall_escalate_url", "⚡ 升级二线"},
+		} {
+			if u := strings.TrimSpace(msg.Labels[qa.key]); strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://") {
+				btns = append(btns, map[string]string{
+					"title":     qa.title,
+					"actionURL": u,
+				})
+			}
+		}
+	}
 
 	if baseURL != "" {
 		if did, ok := msg.Labels["device_id"]; ok && did != "" {

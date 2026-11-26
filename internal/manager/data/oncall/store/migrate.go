@@ -18,6 +18,8 @@ func Migrate(db *gorm.DB) error {
 		&model.UserCalendarToken{},
 		&model.HandoffLog{},
 		&model.VoiceConfigRecord{},
+		&model.ChannelConfigRecord{},
+		&model.WarRoom{},
 		&model.EscalationTask{},
 		&model.NotificationLog{},
 	)

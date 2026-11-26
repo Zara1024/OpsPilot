@@ -32,7 +32,9 @@ func (s *Store) EnqueueOrMergeEscalationTask(
 		return false, errors.New("invalid escalation task")
 	}
 	if now.IsZero() {
-		now = time.Now()
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
 	}
 
 	var merged bool
@@ -99,12 +101,18 @@ func (s *Store) EnqueueOrMergeEscalationTask(
 		task.GroupIntervalSeconds = int(groupInterval.Seconds())
 		if task.StepStartedAt.IsZero() || groupWait > 0 || groupInterval > 0 {
 			task.StepStartedAt = nextRun
+		} else {
+			task.StepStartedAt = task.StepStartedAt.UTC()
 		}
 		if task.NextRunAt.IsZero() || groupWait > 0 || groupInterval > 0 {
 			task.NextRunAt = nextRun
+		} else {
+			task.NextRunAt = task.NextRunAt.UTC()
 		}
 		if task.CreatedAt.IsZero() {
 			task.CreatedAt = now
+		} else {
+			task.CreatedAt = task.CreatedAt.UTC()
 		}
 		task.UpdatedAt = now
 		if err := tx.Create(task).Error; err != nil {
@@ -125,6 +133,26 @@ func (s *Store) GetEscalationTaskByID(ctx context.Context, id uint64) (*model.Es
 		return nil, err
 	}
 	return &task, nil
+}
+
+// FindPendingTaskByIncident returns the latest pending escalation task covering incidentID (single or grouped).
+func (s *Store) FindPendingTaskByIncident(ctx context.Context, incidentID uint64) (*model.EscalationTask, error) {
+	if incidentID == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	var candidates []*model.EscalationTask
+	if err := s.db.WithContext(ctx).
+		Where("status = ? AND (incident_id = ? OR alert_count > 1)", model.TaskStatusPending, incidentID).
+		Order("id desc").
+		Find(&candidates).Error; err != nil {
+		return nil, err
+	}
+	for _, c := range candidates {
+		if model.ContainsIncidentID(c, incidentID) {
+			return c, nil
+		}
+	}
+	return nil, gorm.ErrRecordNotFound
 }
 
 // CancelEscalationTasksByIncident terminates or shrinks pending escalation tasks covering incidentID.
@@ -214,6 +242,11 @@ func (s *Store) TriggerImmediateEscalationByIncident(ctx context.Context, incide
 	if incidentID == 0 {
 		return false, nil
 	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
 	var updated bool
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var candidates []*model.EscalationTask
@@ -236,13 +269,15 @@ func (s *Store) TriggerImmediateEscalationByIncident(ctx context.Context, incide
 		res := tx.Model(&model.EscalationTask{}).
 			Where("id = ? AND status = ?", target.ID, model.TaskStatusPending).
 			Updates(map[string]any{
-				"current_step":    target.CurrentStep + 1,
-				"ladder_step":     uint8(1),
-				"step_started_at": now,
-				"next_run_at":     now,
-				"locked_until":    nil,
-				"attempt_count":   0,
-				"updated_at":      now,
+				"current_step":       target.CurrentStep + 1,
+				"ladder_step":        uint8(1),
+				"pinned_assignee_id": uint64(0),
+				"assignee_user_id":   uint64(0),
+				"step_started_at":    now,
+				"next_run_at":        now,
+				"locked_until":       nil,
+				"attempt_count":      0,
+				"updated_at":         now,
 			})
 		if res.Error != nil {
 			return fmt.Errorf("advance escalation task: %w", res.Error)
@@ -255,6 +290,11 @@ func (s *Store) TriggerImmediateEscalationByIncident(ctx context.Context, incide
 
 // ClaimDueEscalationTasks optimistically leases due pending tasks for safe concurrent/multi-replica processing.
 func (s *Store) ClaimDueEscalationTasks(ctx context.Context, now time.Time, lease time.Duration, limit int) ([]*model.EscalationTask, error) {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -296,7 +336,17 @@ func (s *Store) SaveEscalationTask(ctx context.Context, task *model.EscalationTa
 	if task == nil {
 		return errors.New("escalation task is nil")
 	}
-	task.UpdatedAt = time.Now()
+	if !task.StepStartedAt.IsZero() {
+		task.StepStartedAt = task.StepStartedAt.UTC()
+	}
+	if !task.NextRunAt.IsZero() {
+		task.NextRunAt = task.NextRunAt.UTC()
+	}
+	if task.LockedUntil != nil {
+		lu := task.LockedUntil.UTC()
+		task.LockedUntil = &lu
+	}
+	task.UpdatedAt = time.Now().UTC()
 	if err := s.db.WithContext(ctx).Save(task).Error; err != nil {
 		return fmt.Errorf("save escalation task %d: %w", task.ID, err)
 	}
@@ -339,6 +389,32 @@ func (s *Store) GetActiveEscalationStepsByIncidents(ctx context.Context, inciden
 		for _, id := range model.ParseMergedIncidentIDs(task) {
 			if _, ok := wanted[id]; ok {
 				out[id] = task.CurrentStep
+			}
+		}
+	}
+	return out, nil
+}
+
+// GetActivePinnedAssigneesByIncidents maps incident_id -> pinned_assignee_id for pending reassigned escalation tasks.
+func (s *Store) GetActivePinnedAssigneesByIncidents(ctx context.Context, incidentIDs []uint64) (map[uint64]uint64, error) {
+	if len(incidentIDs) == 0 {
+		return map[uint64]uint64{}, nil
+	}
+	var pending []*model.EscalationTask
+	if err := s.db.WithContext(ctx).
+		Where("status = ? AND pinned_assignee_id > 0", model.TaskStatusPending).
+		Find(&pending).Error; err != nil {
+		return nil, fmt.Errorf("lookup pinned assignees: %w", err)
+	}
+	wanted := make(map[uint64]struct{}, len(incidentIDs))
+	for _, id := range incidentIDs {
+		wanted[id] = struct{}{}
+	}
+	out := make(map[uint64]uint64, len(incidentIDs))
+	for _, task := range pending {
+		for _, id := range model.ParseMergedIncidentIDs(task) {
+			if _, ok := wanted[id]; ok {
+				out[id] = task.PinnedAssigneeID
 			}
 		}
 	}

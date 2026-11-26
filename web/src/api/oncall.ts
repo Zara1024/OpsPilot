@@ -334,6 +334,7 @@ export interface ActiveIncident {
   acked_at?: string;
   acked_by?: string;
   escalation_step: number;
+  war_room_url?: string;
 }
 
 export interface ChatOpsActionResult {
@@ -400,9 +401,15 @@ export async function deleteEscalationPolicy(id: number): Promise<{ ok: boolean 
 export async function triggerChatOpsAction(
   action: 'ack' | 'silence' | 'escalate' | 'reassign' | 'warroom',
   incidentId: string,
-  note?: string
+  note?: string,
+  targetUser?: number
 ): Promise<ChatOpsActionResult> {
-  return request('POST', '/oncall/chatops/callback', { action, incident_id: incidentId, note });
+  return request('POST', '/oncall/chatops/callback', {
+    action,
+    incident_id: incidentId,
+    note,
+    target_user: targetUser,
+  });
 }
 
 export async function listActiveIncidents(status?: string): Promise<{ items: ActiveIncident[]; total: number }> {
@@ -675,6 +682,97 @@ export async function listNotificationLogs(params?: {
   if (params?.status && params.status !== 'all') sp.set('status', params.status);
   const q = sp.toString();
   return request('GET', `/oncall/notifications/logs${q ? `?${q}` : ''}`);
+}
+
+export interface ChannelGatewayConfig {
+  sms_enabled: boolean;
+  sms_provider: '' | 'aliyun' | 'tencent';
+  aliyun_access_key_id?: string;
+  aliyun_access_key_secret?: string;
+  aliyun_secret_configured?: boolean;
+  aliyun_sign_name?: string;
+  aliyun_template_code?: string;
+  aliyun_region?: string;
+  tencent_secret_id?: string;
+  tencent_secret_key?: string;
+  tencent_secret_configured?: boolean;
+  tencent_sdk_app_id?: string;
+  tencent_sign_name?: string;
+  tencent_template_id?: string;
+  tencent_region?: string;
+
+  email_enabled: boolean;
+  smtp_host?: string;
+  smtp_port: number;
+  smtp_username?: string;
+  smtp_password?: string;
+  smtp_password_configured?: boolean;
+  smtp_from?: string;
+  smtp_tls_mode: 'ssl' | 'starttls' | 'none';
+  smtp_timeout_seconds: number;
+
+  chatops_token_configured?: boolean;
+  feishu_verification_token?: string;
+  feishu_verification_configured?: boolean;
+  feishu_encrypt_key?: string;
+  feishu_encrypt_configured?: boolean;
+  dingtalk_app_secret?: string;
+  dingtalk_secret_configured?: boolean;
+
+  war_room_provider: '' | 'feishu' | 'webhook';
+  feishu_app_id?: string;
+  feishu_app_secret?: string;
+  feishu_app_secret_configured?: boolean;
+  war_room_webhook_url?: string;
+  war_room_webhook_secret?: string;
+  war_room_webhook_secret_configured?: boolean;
+
+  callback_urls?: Record<string, string>;
+  updated_by?: number;
+  updated_at?: string;
+}
+
+export interface TestSMSResult {
+  provider: string;
+  status: 'sent' | 'failed';
+  request_id?: string;
+  biz_id?: string;
+  phone_number: string;
+  message: string;
+}
+
+export interface TestEmailResult {
+  provider: string;
+  status: 'sent' | 'failed';
+  to: string;
+  subject: string;
+  message: string;
+}
+
+export async function getChannelConfig(): Promise<ChannelGatewayConfig> {
+  return request('GET', '/oncall/channels/config');
+}
+
+export async function updateChannelConfig(
+  data: ChannelGatewayConfig
+): Promise<{ ok: boolean; config: ChannelGatewayConfig }> {
+  return request('PUT', '/oncall/channels/config', data);
+}
+
+export async function testSMSChannel(data: {
+  phone_number?: string;
+  title?: string;
+  urgency?: 'high' | 'low';
+}): Promise<TestSMSResult> {
+  return request('POST', '/oncall/channels/test-sms', data);
+}
+
+export async function testEmailChannel(data: {
+  to?: string;
+  subject?: string;
+  urgency?: 'high' | 'low';
+}): Promise<TestEmailResult> {
+  return request('POST', '/oncall/channels/test-email', data);
 }
 
 export async function listEscalationTasks(

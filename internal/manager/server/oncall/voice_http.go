@@ -373,7 +373,7 @@ func (h *Handler) applyVoiceCallbackEvent(r *http.Request, ev parsedVoiceCallbac
 			if err := h.store.EscalateAlertIncident(r.Context(), entry.IncidentID, entry.UserID, "语音电话按键 2 请求升级"); err != nil {
 				slog.Warn("escalate incident from voice callback failed", slog.Uint64("incident_id", entry.IncidentID), slog.Any("err", err))
 			}
-			if advanced, err := h.store.TriggerImmediateEscalationByIncident(r.Context(), entry.IncidentID, time.Now()); err == nil && advanced && h.worker != nil {
+			if advanced, err := h.store.TriggerImmediateEscalationByIncident(r.Context(), entry.IncidentID, time.Now().UTC()); err == nil && advanced && h.worker != nil {
 				h.worker.Wake()
 			}
 		}
