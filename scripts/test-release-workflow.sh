@@ -86,7 +86,7 @@ raise "Edge publish step must call the Make target" unless publish.fetch("run").
 raise "Edge publish step must use the CNB_TOKEN secret" unless publish.fetch("env").fetch("CNB_TOKEN") == "${{ secrets.CNB_TOKEN }}"
 go_setup = edge.fetch("steps").find { |step| step["name"] == "Set up Go" }
 raise "missing Edge Go setup step" unless go_setup
-raise "Edge Go toolchain must be exact for immutable binary comparison" unless go_setup.fetch("with").fetch("go-version") == "1.25.11"
+raise "Edge Go toolchain must be exact for immutable binary comparison" unless go_setup.fetch("with").fetch("go-version") == "1.26.11"
 
 release_needs = Array(jobs.fetch("release").fetch("needs"))
 raise "GitHub Release must wait for Edge publication" unless release_needs.sort == ["build", "edge-release"]

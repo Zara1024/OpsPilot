@@ -250,7 +250,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25.x'
+          go-version: '1.26.x'
           cache: true
 
       - name: Install host tools
@@ -317,7 +317,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           # Exact toolchain is part of the immutable Edge binary identity.
-          go-version: '1.25.11'
+          go-version: '1.26.11'
           cache: true
 
       - name: Publish versioned Edge release to CNB

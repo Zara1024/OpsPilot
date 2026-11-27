@@ -37,7 +37,7 @@ USER 65532:65532
 ENTRYPOINT ["sh", "/app/log-entrypoint.sh"]
 CMD ["opentelemetry-instrument", "python", "app.py"]
 
-FROM golang:1.25-bookworm AS go-build
+FROM golang:1.26-bookworm AS go-build
 WORKDIR /src
 COPY go.mod go.sum ./
 COPY examples/apm-go/ ./examples/apm-go/
