@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/Zara1024/OpsPilot/internal/pkg/config"
+	"github.com/Zara1024/OpsPilot/internal/pkg/coord"
 	"github.com/Zara1024/OpsPilot/internal/pkg/logger"
 	"github.com/Zara1024/OpsPilot/internal/pkg/notify"
 	"github.com/Zara1024/OpsPilot/internal/pkg/prom"
@@ -98,8 +99,8 @@ func run() (runErr error) {
 	}
 	aiops := bootstrapAIOps(cfg, log, notifyRouter, storage, settings, models, devices, alerts, telemetry, tunnel)
 	knowledge := bootstrapKnowledge(rootCtx, cfg, log, storage, settings, telemetry, aiops)
-	runtime := bootstrapRuntime(rootCtx, cfg, log, reg, tracing, models, devices, telemetry, tunnel, aiops, settings)
-	automation := bootstrapAutomation(rootCtx, cfg, log, reg, notifyRouter, &cleanup, storage, settings, models, alerts, telemetry, aiops, runtime)
+	runtime := bootstrapRuntime(rootCtx, cfg, log, reg, storage, tracing, models, devices, telemetry, tunnel, aiops, settings)
+	automation := bootstrapAutomation(cfg, log, reg, notifyRouter, &cleanup, storage, settings, models, alerts, telemetry, aiops, runtime)
 	system := bootstrapSystem(cfg, storage, iam, settings, models, telemetry, aiops, knowledge, automation, alerts)
 	extensions := bootstrapExtensions(rootCtx, cfg, log, reg, notifyRouter, storage, settings, devices, alerts, tunnel, aiops, runtime, automation, iam)
 	imbridge := bootstrapIMBridge(rootCtx, cfg, log, storage, models, devices, alerts, telemetry, aiops, runtime, extensions, reg)
@@ -107,11 +108,16 @@ func run() (runErr error) {
 	if err != nil {
 		return err
 	}
-	http, err := buildHTTPServers(cfg, log, reg, storage, iam, settings, devices, telemetry, tunnel, aiops, runtime, imbridge, automation, system, extensions, external, oncall)
+	http, err := buildHTTPServers(rootCtx, cfg, log, reg, storage, iam, settings, devices, telemetry, tunnel, aiops, runtime, imbridge, automation, system, extensions, external, oncall)
 	if err != nil {
 		return err
 	}
-	return runWorkers(rootCtx, cfg, log, notifyRouter, storage, settings, devices, alerts, telemetry, aiops, runtime, automation, http, external, oncall)
+	elector := coord.NewElector(storage.leaseStore, storage.instanceID, coord.ElectorConfig{
+		TTL:           cfg.HA.LeaseTTL,
+		RenewInterval: cfg.HA.LeaseRenewInterval,
+		RetryInterval: cfg.HA.LeaseRetryInterval,
+	}, reg, log.With(slog.String("comp", "coord")))
+	return runWorkers(rootCtx, cfg, log, elector, notifyRouter, storage, settings, devices, alerts, telemetry, aiops, runtime, automation, extensions, imbridge, http, external, oncall)
 }
 
 // startupCleanup preserves the original reverse shutdown order.

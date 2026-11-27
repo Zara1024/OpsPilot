@@ -83,8 +83,10 @@ type FlowRun struct {
 	// {{trigger.*}} (manual: the user-supplied input object).
 	TriggerJSON string `gorm:"type:text;not null"`
 	// Error is the run-level failure reason ("" while healthy).
-	Error     string  `gorm:"size:2048;not null"`
-	CreatedBy *uint64 `gorm:"index"`
+	Error          string     `gorm:"size:2048;not null"`
+	CreatedBy      *uint64    `gorm:"index"`
+	ExecutionOwner string     `gorm:"column:execution_owner;size:128;not null;default:'';index"`
+	LeaseUntil     *time.Time `gorm:"column:lease_until;index"`
 
 	StartedAt  *time.Time
 	FinishedAt *time.Time

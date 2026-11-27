@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -50,18 +51,31 @@ type RunRepo interface {
 	PruneRuns(ctx context.Context, before time.Time) (int64, error)
 }
 
+// RunLeaseRepo 为多副本部署提供条件式租约续期与仅清理过期遗留运行的持久化契约。
+type RunLeaseRepo interface {
+	RenewRunLease(ctx context.Context, runID, owner string, until time.Time) error
+	SweepExpiredRuns(ctx context.Context, now, legacyCutoff time.Time, reason string) (int64, error)
+}
+
 // runRetention is how long finished runs are kept before PruneOldRuns
 // reaps them. Overridable via OPSPILOT_FLOW_RUN_RETENTION_DAYS.
 const defaultRunRetentionDays = 14
 
+const (
+	flowRunLeaseTTL    = 60 * time.Second
+	flowRunLeaseRenew  = 20 * time.Second
+	flowLegacyStaleAge = 5 * time.Minute
+)
+
 // Usecase wires definitions, runs and the engine.
 type Usecase struct {
-	repo    Repo
-	runs    RunRepo
-	engine  *Engine
-	catalog ToolCatalog
-	llm     GenLLM
-	log     *slog.Logger
+	repo       Repo
+	runs       RunRepo
+	engine     *Engine
+	catalog    ToolCatalog
+	llm        GenLLM
+	log        *slog.Logger
+	instanceID string
 }
 
 // NewUsecase constructs the biz facade. engine may be nil in tests
@@ -70,7 +84,15 @@ func NewUsecase(repo Repo, runs RunRepo, engine *Engine, log *slog.Logger) *Usec
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Usecase{repo: repo, runs: runs, engine: engine, log: log}
+	return &Usecase{repo: repo, runs: runs, engine: engine, log: log, instanceID: uuid.NewString()}
+}
+
+// WithInstanceID 绑定当前 Manager 副本 ID，作为异步工作流执行的租约持有者标识。
+func (u *Usecase) WithInstanceID(id string) *Usecase {
+	if trimmed := strings.TrimSpace(id); trimmed != "" {
+		u.instanceID = trimmed
+	}
+	return u
 }
 
 // CreateInput / UpdateInput are the write payloads.
@@ -327,15 +349,18 @@ func (u *Usecase) triggerRun(ctx context.Context, id uint64, entryType string, e
 		tb = []byte("{}")
 	}
 	now := time.Now().UTC()
+	leaseUntil := now.Add(flowRunLeaseTTL)
 	run := &model.FlowRun{
-		ID:          uuid.NewString(),
-		FlowID:      f.ID,
-		FlowVersion: f.Version,
-		Status:      model.RunStatusRunning,
-		TriggerType: entryType,
-		TriggerJSON: string(tb),
-		CreatedBy:   by,
-		StartedAt:   &now,
+		ID:             uuid.NewString(),
+		FlowID:         f.ID,
+		FlowVersion:    f.Version,
+		Status:         model.RunStatusRunning,
+		TriggerType:    entryType,
+		TriggerJSON:    string(tb),
+		CreatedBy:      by,
+		ExecutionOwner: u.instanceID,
+		LeaseUntil:     &leaseUntil,
+		StartedAt:      &now,
 	}
 	if err := u.runs.CreateRun(ctx, run); err != nil {
 		return nil, err
@@ -346,7 +371,33 @@ func (u *Usecase) triggerRun(ctx context.Context, id uint64, entryType string, e
 	// cancel in-flight work).
 	go func() {
 		bg := context.Background()
+		renewCtx, stopRenew := context.WithCancel(bg)
+		var renewWG sync.WaitGroup
+		if lr, ok := u.runs.(RunLeaseRepo); ok && u.instanceID != "" {
+			renewWG.Add(1)
+			go func() {
+				defer renewWG.Done()
+				t := time.NewTicker(flowRunLeaseRenew)
+				defer t.Stop()
+				for {
+					select {
+					case <-renewCtx.Done():
+						return
+					case <-t.C:
+						callCtx, cancel := context.WithTimeout(renewCtx, 5*time.Second)
+						if err := lr.RenewRunLease(callCtx, run.ID, u.instanceID, time.Now().UTC().Add(flowRunLeaseTTL)); err != nil && renewCtx.Err() == nil {
+							u.log.Warn("flow run lease renew failed", slog.String("run_id", run.ID), slog.Any("err", err))
+						}
+						cancel()
+					}
+				}
+			}()
+		}
+
 		status, execErr := u.engine.Execute(bg, run, g, entryType, entryNodeIDs...)
+		stopRenew()
+		renewWG.Wait()
+
 		fin := time.Now().UTC()
 		run.Status = status
 		run.FinishedAt = &fin
@@ -400,6 +451,50 @@ func (u *Usecase) HealStaleRuns(ctx context.Context) {
 	}
 	if n > 0 {
 		u.log.Info("flow stale runs swept", slog.Int64("count", n))
+	}
+}
+
+// SweepExpiredRuns 清理租约已过期（或旧版无 owner 超时）的孤立运行记录，保护其他活跃副本上的运行。
+func (u *Usecase) SweepExpiredRuns(ctx context.Context) int64 {
+	if u.runs == nil {
+		return 0
+	}
+	now := time.Now().UTC()
+	const reason = "flow execution lease expired before completion"
+	if lr, ok := u.runs.(RunLeaseRepo); ok {
+		n, err := lr.SweepExpiredRuns(ctx, now, now.Add(-flowLegacyStaleAge), reason)
+		if err != nil {
+			u.log.Warn("flow expired-run sweep failed", slog.Any("err", err))
+			return 0
+		}
+		if n > 0 {
+			u.log.Info("flow expired runs swept", slog.Int64("count", n))
+		}
+		return n
+	}
+	n, err := u.runs.SweepStaleRunning(ctx, reason)
+	if err != nil {
+		u.log.Warn("flow stale-run fallback sweep failed", slog.Any("err", err))
+		return 0
+	}
+	return n
+}
+
+// RunStaleRunReconciler 在主节点租约上下文内定期回收租约过期的遗留工作流运行，直至 ctx 取消。
+func (u *Usecase) RunStaleRunReconciler(ctx context.Context) error {
+	if u == nil || u.runs == nil {
+		return nil
+	}
+	u.SweepExpiredRuns(ctx)
+	t := time.NewTicker(30 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-t.C:
+			u.SweepExpiredRuns(ctx)
+		}
 	}
 }
 

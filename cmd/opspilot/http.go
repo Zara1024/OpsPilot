@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
+	"database/sql"
 	"log/slog"
 	"net/http"
+	"time"
 
-	chi "github.com/go-chi/chi/v5"
 	managerserveraudit "github.com/Zara1024/OpsPilot/internal/manager/server/audit"
 	managermiddleware "github.com/Zara1024/OpsPilot/internal/manager/server/middleware"
 	pagesserver "github.com/Zara1024/OpsPilot/internal/manager/server/pages"
@@ -14,6 +16,7 @@ import (
 	"github.com/Zara1024/OpsPilot/internal/pkg/config"
 	"github.com/Zara1024/OpsPilot/internal/pkg/httpserver"
 	"github.com/Zara1024/OpsPilot/internal/pkg/prom"
+	chi "github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
@@ -23,7 +26,7 @@ type httpModule struct {
 	metricsServer *httpserver.Server
 }
 
-func buildHTTPServers(cfg *config.Config, log *slog.Logger, reg *prometheus.Registry, storage *storageModule, iam *iamModule, settings *settingsModule, devices *devicesModule, telemetry *telemetryModule, tunnel *tunnelModule, aiops *aiopsModule, runtime *runtimeModule, imbridge *imbridgeModule, automation *automationModule, system *systemModule, extensions *extensionsModule, external *externalMCPModule, oncall *oncallModule) (*httpModule, error) {
+func buildHTTPServers(rootCtx context.Context, cfg *config.Config, log *slog.Logger, reg *prometheus.Registry, storage *storageModule, iam *iamModule, settings *settingsModule, devices *devicesModule, telemetry *telemetryModule, tunnel *tunnelModule, aiops *aiopsModule, runtime *runtimeModule, imbridge *imbridgeModule, automation *automationModule, system *systemModule, extensions *extensionsModule, external *externalMCPModule, oncall *oncallModule) (*httpModule, error) {
 	promProxySvc := managersvcprom.New(iam.signer)
 	// Wire the cloud-Prom query client into the proxy handler so the
 	// SPA's Monitor page can issue range queries through the same
@@ -128,9 +131,11 @@ func buildHTTPServers(cfg *config.Config, log *slog.Logger, reg *prometheus.Regi
 	mux.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	})
-	mux.Get("/readyz", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte("ready"))
-	})
+	var sqlDB *sql.DB
+	if storage != nil {
+		sqlDB = storage.sqlDB
+	}
+	mux.Get("/readyz", buildReadyHandler(rootCtx, sqlDB))
 	// Data plane auth verify lives outside /api so nginx can reach it
 	// without JWT. Network policy (docker-internal only) is the gate;
 	// nginx must NOT proxy_pass external traffic to /internal/auth/*.
@@ -191,4 +196,31 @@ func buildHTTPServers(cfg *config.Config, log *slog.Logger, reg *prometheus.Regi
 		apiServer:     apiServer,
 		metricsServer: metricsServer,
 	}, nil
+}
+
+// buildReadyHandler 返回 /readyz 就绪探针处理器：
+// 当实例处于优雅退出 draining 状态或底层数据库连接不可用时返回 503，摘除流量。
+func buildReadyHandler(rootCtx context.Context, sqlDB *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		if rootCtx != nil && rootCtx.Err() != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("draining"))
+			return
+		}
+		if sqlDB == nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("db_unavailable"))
+			return
+		}
+		pingCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := sqlDB.PingContext(pingCtx); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("db_unavailable"))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ready"))
+	}
 }

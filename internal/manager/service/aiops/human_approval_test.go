@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/glebarez/sqlite"
 	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/tools/decorators"
 	"github.com/Zara1024/OpsPilot/internal/manager/biz/approval"
 	"github.com/Zara1024/OpsPilot/internal/manager/data/approval/store"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 	"sync"
@@ -155,5 +155,110 @@ func TestHumanApprovalBrokerReturnsDecisionEvidenceAfterApproval(t *testing.T) {
 	}
 	if executions.Load() != 1 {
 		t.Fatal("execution count incorrect")
+	}
+}
+
+func TestHumanApprovalBrokerCrossReplicaApprovalExecutesOnOwnerExactlyOnce(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "approval_ha.db")), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := store.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+
+	// Replica A 发起审批提案并持有内存执行闭包。
+	ucA := approval.NewUsecase(store.NewRepo(db), nil)
+	ucA.RequireAuthorization(approval.AuthorizerFunc(func(context.Context, uint64) error { return nil }))
+	ucA.SetInstanceID("replica-a")
+	brokerA := NewHumanApprovalBroker()
+	brokerA.SetOwner("replica-a")
+	brokerA.SetUsecase(ucA)
+	ucA.RegisterRuntimeExecutor(GenericToolApprovalKind, "v3", brokerA.Execute)
+
+	// Replica B 作为独立 HTTP 副本仅在共享库中落库批准决策，不含对应本地闭包。
+	ucB := approval.NewUsecase(store.NewRepo(db), nil)
+	ucB.RequireAuthorization(approval.AuthorizerFunc(func(context.Context, uint64) error { return nil }))
+	ucB.SetInstanceID("replica-b")
+	brokerB := NewHumanApprovalBroker()
+	brokerB.SetOwner("replica-b")
+	brokerB.SetUsecase(ucB)
+	ucB.RegisterRuntimeExecutor(GenericToolApprovalKind, "v3", brokerB.Execute)
+
+	ctx, cancel := context.WithTimeout(contract.WithVersion(context.Background(), contract.V3), 10*time.Second)
+	defer cancel()
+	events := make(chan string, 1)
+	ctx = contract.WithEmit(ctx, func(e contract.Event) {
+		if e.Type == contract.EventApprovalPending {
+			events <- e.Approval.ApprovalID
+		}
+	})
+
+	var executions atomic.Int32
+	type outcome struct {
+		value string
+		err   error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		value, runErr := brokerA.ProposeAndAwait(ctx, decorators.HumanApprovalRequest{
+			ToolName:  "test_cross_replica",
+			ArgsJSON:  "{}",
+			SessionID: "test-session",
+			UserID:    42,
+		}, func(context.Context) (string, error) {
+			executions.Add(1)
+			return `{"ok":true,"replica":"a"}`, nil
+		})
+		done <- outcome{value, runErr}
+	}()
+
+	var id string
+	select {
+	case id = <-events:
+	case <-ctx.Done():
+		t.Fatal("approval not proposed")
+	}
+
+	// 从 Replica B 批准，Replica A 的 ProposeAndAwait 应接手执行并将终态写回共享库。
+	approved, err := ucB.Approve(ctx, 42, id)
+	if err != nil {
+		t.Fatalf("replica B approve: %v", err)
+	}
+	if approved.Status != "executed" || approved.ResultJSON == nil || !json.Valid([]byte(*approved.ResultJSON)) {
+		t.Fatalf("replica B got unexpected approval state: %+v", approved)
+	}
+
+	select {
+	case got := <-done:
+		if got.err != nil {
+			t.Fatalf("brokerA ProposeAndAwait err = %v", got.err)
+		}
+		var result struct {
+			OK       bool                                  `json:"ok"`
+			Replica  string                                `json:"replica"`
+			Approval struct{ ID, Decision, Status string } `json:"_ongrid_approval"`
+		}
+		if err := json.Unmarshal([]byte(got.value), &result); err != nil {
+			t.Fatalf("unmarshal result: %v (%q)", err, got.value)
+		}
+		if !result.OK || result.Replica != "a" || result.Approval.ID != id || result.Approval.Decision != "approved" || result.Approval.Status != "executed" {
+			t.Fatalf("unexpected cross-replica result: %+v", result)
+		}
+	case <-ctx.Done():
+		t.Fatal("brokerA did not complete cross-replica approval")
+	}
+	if executions.Load() != 1 {
+		t.Fatalf("execution count = %d, want 1", executions.Load())
 	}
 }

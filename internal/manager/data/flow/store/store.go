@@ -156,3 +156,33 @@ func (r *RunRepo) SweepStaleRunning(ctx context.Context, reason string) (int64, 
 		Updates(map[string]any{"status": model.RunStatusFailed, "error": reason})
 	return res.RowsAffected, res.Error
 }
+
+// RenewRunLease 仅当指定执行实例仍持有处于 pending/running 的运行行时延长租约截止时间。
+func (r *RunRepo) RenewRunLease(ctx context.Context, runID, owner string, until time.Time) error {
+	res := r.db.WithContext(ctx).Model(&model.FlowRun{}).
+		Where("id = ? AND execution_owner = ? AND status IN ?", runID, owner, []string{model.RunStatusPending, model.RunStatusRunning}).
+		Update("lease_until", until.UTC())
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected != 1 {
+		return errs.ErrConflict
+	}
+	return nil
+}
+
+// SweepExpiredRuns 仅清理租约已到期的遗留运行记录（以及无 owner 且超过 legacyCutoff 的历史行），
+// 绝不中断其他活跃副本正在执行中的运行实例。
+func (r *RunRepo) SweepExpiredRuns(ctx context.Context, now, legacyCutoff time.Time, reason string) (int64, error) {
+	nowUTC := now.UTC()
+	res := r.db.WithContext(ctx).Model(&model.FlowRun{}).
+		Where("status IN ?", []string{model.RunStatusPending, model.RunStatusRunning}).
+		Where("(execution_owner <> ? AND lease_until IS NOT NULL AND lease_until <= ?) OR (execution_owner = ? AND updated_at <= ?)",
+			"", nowUTC, "", legacyCutoff.UTC()).
+		Updates(map[string]any{
+			"status":      model.RunStatusFailed,
+			"error":       reason,
+			"finished_at": nowUTC,
+		})
+	return res.RowsAffected, res.Error
+}

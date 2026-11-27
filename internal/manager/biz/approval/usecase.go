@@ -50,6 +50,7 @@ type Usecase struct {
 	repo       Repo
 	log        *slog.Logger
 	executors  map[executorKey]Executor
+	instanceID string
 }
 
 // NewUsecase wires the repo.
@@ -58,6 +59,12 @@ func NewUsecase(repo Repo, log *slog.Logger) *Usecase {
 		log = slog.Default()
 	}
 	return &Usecase{repo: repo, log: log, executors: map[executorKey]Executor{}}
+}
+
+// SetInstanceID 绑定当前 Manager 副本标识；当批准发生在非 ExecutionOwner 副本时，
+// 仅落库 approved 状态并等待归属副本执行完成，避免无本地闭包触发误判失败。
+func (u *Usecase) SetInstanceID(id string) {
+	u.instanceID = strings.TrimSpace(id)
 }
 
 // RegisterExecutor wires the execute-on-approve handler for a Kind. Called
@@ -138,15 +145,13 @@ func (u *Usecase) Approve(ctx context.Context, approverID uint64, id string) (*m
 		return nil, err
 	}
 
-	if u.results != nil {
-		proposed, err := u.repo.Get(ctx, id)
-		if err != nil {
-			return nil, err
-		}
-		if proposed.Source == model.SourceAgent && proposed.SessionID != "" {
-			if err = u.results.Preflight(ctx, toolresult.Scope{SessionID: proposed.SessionID, UserID: proposed.ProposedBy}); err != nil {
-				return nil, fmt.Errorf("result storage unavailable; approval was not executed: %w", err)
-			}
+	proposed, err := u.repo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if u.results != nil && proposed.Source == model.SourceAgent && proposed.SessionID != "" {
+		if err = u.results.Preflight(ctx, toolresult.Scope{SessionID: proposed.SessionID, UserID: proposed.ProposedBy}); err != nil {
+			return nil, fmt.Errorf("result storage unavailable; approval was not executed: %w", err)
 		}
 	}
 	ctx = toolcapture.WithState(ctx)
@@ -160,6 +165,10 @@ func (u *Usecase) Approve(ctx context.Context, approverID uint64, id string) (*m
 	if err != nil {
 		return nil, err
 	}
+	// 若审批绑定的执行权属于另一活跃副本，交由持有内存闭包的原副本执行并轮询等待结果落库。
+	if proposed.ExecutionOwner != "" && u.instanceID != "" && proposed.ExecutionOwner != u.instanceID {
+		return u.waitOwnedExecution(ctx, id, a)
+	}
 	u.executorMu.RLock()
 	exec := u.executors[executorKey{kind: a.Kind, runtimeVersion: a.RuntimeVersion}]
 	u.executorMu.RUnlock()
@@ -170,6 +179,48 @@ func (u *Usecase) Approve(ctx context.Context, approverID uint64, id string) (*m
 	} else {
 		res, runErr = exec(ctx, a.PayloadJSON)
 	}
+	return u.finalizeExecution(ctx, a, res, runErr)
+}
+
+// RecordOwnedExecutionResult 由持有 ExecutionOwner 的副本在跨副本批准后写入执行终态与工具结果引用。
+func (u *Usecase) RecordOwnedExecutionResult(ctx context.Context, id, owner, res string, runErr error) (*model.Approval, error) {
+	owner = strings.TrimSpace(owner)
+	if owner == "" {
+		return nil, errs.ErrConflict
+	}
+	a, err := u.repo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if a.Status != model.StatusApproved || a.ExecutionOwner == "" || a.ExecutionOwner != owner {
+		return nil, errs.ErrConflict
+	}
+	return u.finalizeExecution(ctx, a, res, runErr)
+}
+
+func (u *Usecase) waitOwnedExecution(ctx context.Context, id string, latest *model.Approval) (*model.Approval, error) {
+	deadline := time.Now().Add(15 * time.Second)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if row, err := u.repo.Get(ctx, id); err == nil {
+			latest = row
+			if row.Status != model.StatusApproved {
+				return row, nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return latest, nil
+		}
+		select {
+		case <-ctx.Done():
+			return latest, nil
+		case <-ticker.C:
+		}
+	}
+}
+
+func (u *Usecase) finalizeExecution(ctx context.Context, a *model.Approval, res string, runErr error) (*model.Approval, error) {
 	status := model.StatusExecuted
 	if runErr != nil {
 		status = model.StatusFailed
@@ -193,18 +244,18 @@ func (u *Usecase) Approve(ctx context.Context, approverID uint64, id string) (*m
 	if writer, ok := u.repo.(interface {
 		SetStoredResult(context.Context, string, string, string, string, time.Time) error
 	}); ok {
-		saveErr = writer.SetStoredResult(writeCtx, id, status, res, a.ResultID, time.Now().UTC())
+		saveErr = writer.SetStoredResult(writeCtx, a.ID, status, res, a.ResultID, time.Now().UTC())
 	} else {
-		saveErr = u.repo.SetResult(writeCtx, id, status, res, time.Now().UTC())
+		saveErr = u.repo.SetResult(writeCtx, a.ID, status, res, time.Now().UTC())
 	}
 	if err := saveErr; err != nil {
 		return nil, fmt.Errorf("persist approval execution result: %w", err)
 	}
-	a, err = u.repo.Get(ctx, id)
+	updated, err := u.repo.Get(ctx, a.ID)
 	if err != nil {
 		return nil, fmt.Errorf("read completed approval: %w", err)
 	}
-	return a, nil
+	return updated, nil
 }
 
 // Reject marks the proposal rejected with a reason. No execution.

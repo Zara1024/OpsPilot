@@ -181,6 +181,8 @@ jobs:
         run: |
           go test -race -count=1 -v -run TestMySQLFullSchemaMigrations ./cmd/opspilot
           go test -race -count=1 \
+            ./internal/pkg/coord \
+            ./internal/manager/data/flow/store \
             ./internal/manager/data/aiops/store \
             ./internal/manager/data/alert/store \
             ./internal/manager/data/device/store \

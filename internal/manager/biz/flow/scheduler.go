@@ -45,16 +45,23 @@ func (s *Scheduler) Start(ctx context.Context) {
 	if s == nil || s.uc == nil {
 		return
 	}
-	go s.loop(ctx)
+	go func() {
+		// 异步兼容入口；阻塞语义统一收敛到 Run。
+		_ = s.Run(ctx)
+	}()
 }
 
-func (s *Scheduler) loop(ctx context.Context) {
+// Run 在当前 goroutine 内阻塞驱动 cron 触发器与历史运行清理，直至 ctx 取消。
+func (s *Scheduler) Run(ctx context.Context) error {
+	if s == nil || s.uc == nil {
+		return nil
+	}
 	t := time.NewTicker(s.interval)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return nil
 		case <-t.C:
 			now := time.Now().UTC()
 			s.tick(ctx, now)

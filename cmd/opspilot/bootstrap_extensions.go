@@ -44,15 +44,16 @@ import (
 )
 
 type extensionsModule struct {
-	approvalUC         *managerbizapproval.Usecase
-	skillHandler       *managerserverskill.Handler
-	operatorRunHandler *managerserveroperatorrun.Handler
-	marketplaceHandler *managerservermarketplace.Handler
-	secretHandler      *managerserversecret.Handler
-	mcpHandler         *managerservermcp.Handler
-	approvalHandler    *managerserverapproval.Handler
-	k8sHandler         *managerserverk8s.Handler
-	pageStore          pagesdata.FileStore
+	approvalUC           *managerbizapproval.Usecase
+	skillHandler         *managerserverskill.Handler
+	operatorRunHandler   *managerserveroperatorrun.Handler
+	marketplaceHandler   *managerservermarketplace.Handler
+	secretHandler        *managerserversecret.Handler
+	mcpHandler           *managerservermcp.Handler
+	approvalHandler      *managerserverapproval.Handler
+	k8sHandler           *managerserverk8s.Handler
+	pageStore            pagesdata.FileStore
+	networkPollScheduler *managerbizdevice.NetworkPollScheduler
 }
 
 func bootstrapExtensions(rootCtx context.Context, cfg *config.Config, log *slog.Logger, reg *prometheus.Registry, notifyRouter *notify.Router, storage *storageModule, settings *settingsModule, devices *devicesModule, alerts *alertsModule, tunnel *tunnelModule, aiops *aiopsModule, runtime *runtimeModule, automation *automationModule, iam *iamModule) *extensionsModule {
@@ -111,7 +112,7 @@ func bootstrapExtensions(rootCtx context.Context, cfg *config.Config, log *slog.
 	// The network device domain owns polling but resolves encrypted credentials
 	// through this narrow vault facade. Only the credential name is persisted.
 	devices.networkDiscoveryUC.SetCredentialResolver(storage.secretUC)
-	managerbizdevice.NewNetworkPollScheduler(devices.networkDiscoveryUC, log).Start(rootCtx)
+	networkPollScheduler := managerbizdevice.NewNetworkPollScheduler(devices.networkDiscoveryUC, log)
 	secretHandler := managerserversecret.NewHandler(storage.secretUC)
 	// HLD-018 MCP client: external MCP servers config + connect/list-tools.
 	// Reuses the credential vault (secretUC) for server auth injection.
@@ -132,13 +133,15 @@ func bootstrapExtensions(rootCtx context.Context, cfg *config.Config, log *slog.
 	// actions (agent cloud-shell, etc.). Additive — empty until a producer
 	// proposes; producers register their execute-on-approve executor.
 	approvalUC := managerbizapproval.NewUsecase(managerapprovaldata.NewRepo(storage.db), log.With(slog.String("comp", "approval")))
+	if storage != nil && storage.instanceID != "" {
+		approvalUC.SetInstanceID(storage.instanceID)
+	}
 	approvalUC.SetToolResults(aiops.toolsReg.ToolResults())
 	runtime.humanApprovalBroker.SetUsecase(approvalUC)
 	approvalUC.RegisterExecutor(managersvcaiops.GenericToolApprovalKind, runtime.humanApprovalBroker.Execute)
 	managersvcaiops.RegisterRuntimeApprovalExecutor(approvalUC, managersvcaiops.GenericToolApprovalKind, contract.V3, runtime.humanApprovalBroker.Execute)
 	managersvcaiops.RegisterRuntimeApprovalExecutor(approvalUC, managersvcaiops.GenericToolApprovalKind, contract.V2, runtime.humanApprovalBroker.Execute)
 	approvalUC.RequireAuthorization(iam.userUC)
-	go approvalUC.RunExecutionLeaseReconciler(rootCtx)
 	approvalHandler := managerserverapproval.NewHandler(approvalUC)
 	// HLD-017 cloud_bash producer: register the execute-on-approve executor
 	// (resolve the bound credential → inject into the Runner sandbox → run)
@@ -318,15 +321,16 @@ func bootstrapExtensions(rootCtx context.Context, cfg *config.Config, log *slog.
 	}
 
 	return &extensionsModule{
-		approvalUC:         approvalUC,
-		skillHandler:       skillHandler,
-		operatorRunHandler: operatorRunHandler,
-		marketplaceHandler: marketplaceHandler,
-		secretHandler:      secretHandler,
-		mcpHandler:         mcpHandler,
-		approvalHandler:    approvalHandler,
-		k8sHandler:         k8sHandler,
-		pageStore:          pageStore,
+		approvalUC:           approvalUC,
+		skillHandler:         skillHandler,
+		operatorRunHandler:   operatorRunHandler,
+		marketplaceHandler:   marketplaceHandler,
+		secretHandler:        secretHandler,
+		mcpHandler:           mcpHandler,
+		approvalHandler:      approvalHandler,
+		k8sHandler:           k8sHandler,
+		pageStore:            pageStore,
+		networkPollScheduler: networkPollScheduler,
 	}
 }
 

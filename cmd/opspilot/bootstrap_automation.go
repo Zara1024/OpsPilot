@@ -1,14 +1,12 @@
 package main
 
 import (
-	"context"
 	managersvcaiops "github.com/Zara1024/OpsPilot/internal/manager/service/aiops"
 	"log/slog"
 	"os"
 	"strconv"
 	"time"
 
-	"github.com/google/uuid"
 	aiopsinvestigator "github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/investigator"
 	managerbizalert "github.com/Zara1024/OpsPilot/internal/manager/biz/alert"
 	"github.com/Zara1024/OpsPilot/internal/manager/biz/alert/investigator"
@@ -20,22 +18,24 @@ import (
 	managerreportdata "github.com/Zara1024/OpsPilot/internal/manager/data/report/store"
 	managerserverflow "github.com/Zara1024/OpsPilot/internal/manager/server/flow"
 	managerserverreport "github.com/Zara1024/OpsPilot/internal/manager/server/report"
-	managersvcalert "github.com/Zara1024/OpsPilot/internal/manager/service/alert"
 	managersvcflow "github.com/Zara1024/OpsPilot/internal/manager/service/flow"
 	"github.com/Zara1024/OpsPilot/internal/pkg/config"
 	"github.com/Zara1024/OpsPilot/internal/pkg/notify"
+	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 type automationModule struct {
-	rcaInvConcrete *investigator.Usecase
-	reportHandler  *managerserverreport.Handler
-	flowInvoker    *managersvcflow.ToolInvoker
-	flowUC         *managerbizflow.Usecase
-	flowHandler    *managerserverflow.Handler
+	rcaInvConcrete  *investigator.Usecase
+	reportHandler   *managerserverreport.Handler
+	flowInvoker     *managersvcflow.ToolInvoker
+	flowUC          *managerbizflow.Usecase
+	flowHandler     *managerserverflow.Handler
+	reportScheduler *managerbizreport.Scheduler
+	flowScheduler   *managerbizflow.Scheduler
 }
 
-func bootstrapAutomation(rootCtx context.Context, cfg *config.Config, log *slog.Logger, reg *prometheus.Registry, notifyRouter *notify.Router, cleanup *startupCleanup, storage *storageModule, settings *settingsModule, models *modelsModule, alerts *alertsModule, telemetry *telemetryModule, aiops *aiopsModule, runtime *runtimeModule) *automationModule {
+func bootstrapAutomation(cfg *config.Config, log *slog.Logger, reg *prometheus.Registry, notifyRouter *notify.Router, cleanup *startupCleanup, storage *storageModule, settings *settingsModule, models *modelsModule, alerts *alertsModule, telemetry *telemetryModule, aiops *aiopsModule, runtime *runtimeModule) *automationModule {
 	// Two-tier proactive investigation wiring:
 	//
 	//   1. The ai_initial_diagnosis emitter (~3 paragraphs on
@@ -175,9 +175,10 @@ func bootstrapAutomation(rootCtx context.Context, cfg *config.Config, log *slog.
 	reportUC := managerbizreport.NewUsecase(reportRepo, reportGen, uuid.NewString).
 		WithReadRepo(reportRepo).
 		WithDefaultLocale(firstNonEmpty(os.Getenv("OPSPILOT_DEFAULT_LOCALE"), "en"))
+	var reportScheduler *managerbizreport.Scheduler
 	if reportSchedulerReady {
-		managerbizreport.NewScheduler(reportUC, log).Start(rootCtx)
-		log.Info("report: scheduler wired")
+		reportScheduler = managerbizreport.NewScheduler(reportUC, log)
+		log.Info("report: scheduler configured for leader execution")
 	}
 	reportHandler := managerserverreport.NewHandler(reportUC)
 
@@ -202,34 +203,25 @@ func bootstrapAutomation(rootCtx context.Context, cfg *config.Config, log *slog.
 		managerbizflow.NewEngine(flowExec, flowRunRepo, log), log).
 		WithToolCatalog(managersvcflow.ToolCatalog{Registry: aiops.toolsReg}).
 		WithLLM(managersvcflow.LLMRunner{Client: models.llmClient})
-	flowUC.HealStaleRuns(rootCtx)
+	if storage != nil && storage.instanceID != "" {
+		flowUC = flowUC.WithInstanceID(storage.instanceID)
+	}
 	// HLD-016 triggers: alert dispatcher (auto-start matching flows when an
 	// alert fires) + cron scheduler (time-based flows). Both nil-safe and
 	// independent of the LLM runtime — tool/notify/condition flows run
 	// regardless of whether agent nodes are usable.
 	alerts.alertUC.SetWorkflowDispatcher(managerbizflow.NewDispatcher(flowUC, log))
-	managerbizflow.NewScheduler(flowUC, log).Start(rootCtx)
+	flowScheduler := managerbizflow.NewScheduler(flowUC, log)
 	flowHandler := managerserverflow.NewHandler(flowUC)
-	log.Info("flow: orchestration wired (alert + cron triggers active)")
-
-	// Boot compensation pass for the structured RCA path: incidents that
-	// fired while no LLM provider was configured had their auto-investigation
-	// silently skipped (RecordFiring nil-checks the investigator), so the
-	// IncidentDetail page would show status=not_started forever. Now that
-	// the investigator is wired, re-enqueue any unstarted incidents in the
-	// last 24h through the normal severity / inflight / concurrency-cap
-	// gates. Bounded by limit=100 to cap the LLM burst (the global
-	// concurrency cap further damps it). Goroutine + brief detached ctx so
-	// boot doesn't block on the DB scan.
-	if rcaInvConcrete != nil {
-		go managersvcalert.BackfillInvestigations(rcaInvConcrete, alerts.alertUC, log)
-	}
+	log.Info("flow: orchestration wired (alert dispatcher active; cron scheduler awaiting leader)")
 
 	return &automationModule{
-		rcaInvConcrete: rcaInvConcrete,
-		reportHandler:  reportHandler,
-		flowInvoker:    flowInvoker,
-		flowUC:         flowUC,
-		flowHandler:    flowHandler,
+		rcaInvConcrete:  rcaInvConcrete,
+		reportHandler:   reportHandler,
+		flowInvoker:     flowInvoker,
+		flowUC:          flowUC,
+		flowHandler:     flowHandler,
+		reportScheduler: reportScheduler,
+		flowScheduler:   flowScheduler,
 	}
 }

@@ -41,10 +41,20 @@ func NewScheduler(uc *Usecase, log *slog.Logger) *Scheduler {
 // loop runs until ctx is cancelled (manager shutdown). Safe to call
 // once at startup.
 func (s *Scheduler) Start(ctx context.Context) {
-	go s.loop(ctx)
+	if s == nil || s.uc == nil {
+		return
+	}
+	go func() {
+		// 异步兼容入口；阻塞语义统一收敛到 Run。
+		_ = s.Run(ctx)
+	}()
 }
 
-func (s *Scheduler) loop(ctx context.Context) {
+// Run 在当前 goroutine 内阻塞执行报表定时调度循环，直至 ctx 取消。
+func (s *Scheduler) Run(ctx context.Context) error {
+	if s == nil || s.uc == nil {
+		return nil
+	}
 	t := time.NewTicker(s.tick)
 	defer t.Stop()
 	s.log.Info("report scheduler started", slog.Duration("tick", s.tick))
@@ -52,7 +62,7 @@ func (s *Scheduler) loop(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			s.log.Info("report scheduler stopped")
-			return
+			return nil
 		case now := <-t.C:
 			s.runOnce(ctx, now.UTC())
 		}

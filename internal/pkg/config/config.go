@@ -63,6 +63,7 @@ type Config struct {
 	Profiles       ProfilesConfig
 	PacketCapture  PacketCaptureConfig
 	Skills         SkillsConfig
+	HA             HAConfig
 }
 
 // ExternalMCPConfig controls the independent PAT-authenticated integration.
@@ -86,6 +87,25 @@ type SkillsConfig struct {
 	// line.
 	// env: OPSPILOT_SKILLS_EXTERNAL_DIRS; default empty.
 	ExternalDirs []string
+}
+
+// HAConfig 描述多副本高可用选主与租约回收参数。
+type HAConfig struct {
+	// InstanceID 为当前实例标识；留空时由 coord.NewInstanceID 自动生成。
+	// env: OPSPILOT_INSTANCE_ID
+	InstanceID string
+	// LeaseTTL 为分布式 Leader 租约有效期。
+	// env: OPSPILOT_LEASE_TTL; default 15s
+	LeaseTTL time.Duration
+	// LeaseRenewInterval 为 Leader 续租间隔，应明显小于 LeaseTTL。
+	// env: OPSPILOT_LEASE_RENEW_INTERVAL; default 5s
+	LeaseRenewInterval time.Duration
+	// LeaseRetryInterval 为备节点竞争租约的重试间隔。
+	// env: OPSPILOT_LEASE_RETRY_INTERVAL; default 2s
+	LeaseRetryInterval time.Duration
+	// StaleWorkerTimeout 为判定失效内部 Worker 会话与过时执行租约的宽限阈值。
+	// env: OPSPILOT_STALE_WORKER_TIMEOUT; default 2m
+	StaleWorkerTimeout time.Duration
 }
 
 // LogsConfig wires the manager-side Loki query proxy. When
@@ -633,6 +653,13 @@ func Load() (*Config, error) {
 	c.ExternalMCP.WritesEnabled = getEnvBool("OPSPILOT_EXTERNAL_MCP_WRITES_ENABLED", false)
 	c.ExternalMCP.AllowedOrigins = getEnvCSV("OPSPILOT_EXTERNAL_MCP_ALLOWED_ORIGINS", nil)
 	c.Skills.ExternalDirs = getEnvCSV("OPSPILOT_SKILLS_EXTERNAL_DIRS", nil)
+	c.HA = HAConfig{
+		InstanceID:         getEnv("OPSPILOT_INSTANCE_ID", ""),
+		LeaseTTL:           getEnvDuration("OPSPILOT_LEASE_TTL", 15*time.Second),
+		LeaseRenewInterval: getEnvDuration("OPSPILOT_LEASE_RENEW_INTERVAL", 5*time.Second),
+		LeaseRetryInterval: getEnvDuration("OPSPILOT_LEASE_RETRY_INTERVAL", 2*time.Second),
+		StaleWorkerTimeout: getEnvDuration("OPSPILOT_STALE_WORKER_TIMEOUT", 2*time.Minute),
+	}
 
 	return c, nil
 }

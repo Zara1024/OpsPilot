@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	managerbizalert "github.com/Zara1024/OpsPilot/internal/manager/biz/alert"
@@ -13,92 +14,116 @@ import (
 	managersvck8s "github.com/Zara1024/OpsPilot/internal/manager/service/k8s"
 	managersvctopology "github.com/Zara1024/OpsPilot/internal/manager/service/topology"
 	"github.com/Zara1024/OpsPilot/internal/pkg/config"
+	"github.com/Zara1024/OpsPilot/internal/pkg/coord"
 	"github.com/Zara1024/OpsPilot/internal/pkg/notify"
 	"github.com/Zara1024/OpsPilot/internal/pkg/prom"
 	"golang.org/x/sync/errgroup"
 )
 
-func runWorkers(rootCtx context.Context, cfg *config.Config, log *slog.Logger, notifyRouter *notify.Router, storage *storageModule, settings *settingsModule, devices *devicesModule, alerts *alertsModule, telemetry *telemetryModule, aiops *aiopsModule, runtime *runtimeModule, automation *automationModule, http *httpModule, external *externalMCPModule, oncall *oncallModule) error {
+func runWorkers(rootCtx context.Context, cfg *config.Config, log *slog.Logger, elector *coord.Elector, notifyRouter *notify.Router, storage *storageModule, settings *settingsModule, devices *devicesModule, alerts *alertsModule, telemetry *telemetryModule, aiops *aiopsModule, runtime *runtimeModule, automation *automationModule, extensions *extensionsModule, imbridge *imbridgeModule, http *httpModule, external *externalMCPModule, oncall *oncallModule) error {
+	if elector == nil {
+		return errors.New("coord elector is required")
+	}
+
 	eg, egCtx := errgroup.WithContext(rootCtx)
-	if external.engine != nil {
+	if external != nil && external.engine != nil {
 		eg.Go(func() error { return external.engine.Run(egCtx) })
 	}
-	// PR-F: legacy metricIngester.Start flush loop removed — no MySQL writes.
-	// eg.Go(func() error { return metricIngester.Start(egCtx) })
+	// 无状态接口、监控采样、规则本地缓存及值班路由仍随每个副本运行。
 	eg.Go(func() error { return http.apiServer.Start(egCtx) })
 	eg.Go(func() error { return http.metricsServer.Start(egCtx) })
-	if devices.edgeUpgradeJobUC != nil {
-		eg.Go(func() error {
-			devices.edgeUpgradeJobUC.Run(egCtx)
-			return nil
-		})
-	}
-
-	// ADR-026: DB pool sampler ticks every 10s. database/sql.DBStats is
-	// the canonical source for OpenConnections / InUse / Idle / WaitCount
-	// — same numbers the runtime would print under pprof. We pull through
-	// gorm's underlying *sql.DB. WaitCount is a monotone counter inside
-	// database/sql, so we expose the delta (DBStats already accumulates).
 	eg.Go(func() error { return prom.RunDBPoolSampler(egCtx, storage.sqlDB, storage.errDB, log) })
-
-	// HLD-010: audit retention sweep — drops audit_logs rows older than
-	// auditRetentionDays once a day at 03:00. Disabled when retention=0.
-	eg.Go(func() error { return settings.auditUC.RunRetention(egCtx, settings.auditRetentionDays) })
-	eg.Go(func() error { return managersvck8s.RunEventRetention(egCtx, devices.k8sUC, log) })
-	eg.Go(func() error { return managersvck8s.RunTopologyReconcile(egCtx, devices.k8sUC, log) })
-	if telemetry.apmProm != nil {
-		eg.Go(func() error {
-			return managersvctopology.RunServiceReconcile(egCtx, telemetry.apmService, devices.topologyUC, log)
-		})
-	}
-
-	// ADR-026: chatruntime worker session sampler — surfaces orphan
-	// worker accumulation as a gauge. The 161-orphan incident (v0.7.44)
-	// would have lit up here at running > 10 for hours. Interval is 15s
-	// because workers are short-lived and an orphan is unusual; faster
-	// polling would just thrash the mutex.
-	if runtime.aiopsRuntime != nil {
+	if runtime != nil && runtime.aiopsRuntime != nil {
 		eg.Go(func() error { return managersvcaiops.RunWorkerMetrics(egCtx, runtime.aiopsRuntime) })
 	}
-
-	// Packet captures outlive the HTTP/SSE turn that created them. Register
-	// their domain reconciler with the generic Operation coordinator; future
-	// operation kinds share this scheduler instead of adding another loop.
-	eg.Go(func() error {
-		return managersvcaiops.RunPacketCaptureOperations(egCtx, aiops.operationUC, aiops.packetCaptureUC, aiops.aiopsRepo, log)
-	})
-
-	// RCA investigator inflight gauge — samples concurrency cap usage.
-	// Same 15s cadence as the worker sampler; cheap channel-len read.
-	if automation.rcaInvConcrete != nil {
+	if automation != nil && automation.rcaInvConcrete != nil {
 		eg.Go(func() error { return managersvcalert.RunInvestigatorMetrics(egCtx, automation.rcaInvConcrete) })
 	}
 
-	// Edge/device presence reconciler: per-event MarkOnline/MarkOffline can't
-	// flip a device offline when its edge no longer exists (hard delete) or
-	// re-registered under a new fingerprint, and a manager restart while an
-	// edge is offline leaves the denormalised flag stale. Frontier can also
-	// miss a final disconnect event after an abrupt host deletion, so mark
-	// stale edge rows offline before syncing device presence. Runs once at
-	// boot, then every 60s. See #145.
+	// 全局单例定时调度器：通过数据库租约选主确保同一时刻仅由单副本执行。
+	if automation != nil && automation.flowScheduler != nil {
+		eg.Go(func() error {
+			return elector.RunWithLeadership(egCtx, "flow-scheduler", automation.flowScheduler.Run)
+		})
+	}
+	if automation != nil && automation.reportScheduler != nil {
+		eg.Go(func() error {
+			return elector.RunWithLeadership(egCtx, "report-scheduler", automation.reportScheduler.Run)
+		})
+	}
+	if imbridge != nil && imbridge.streamSupervisor != nil {
+		eg.Go(func() error {
+			return elector.RunWithLeadership(egCtx, "imbridge-stream", func(leaderCtx context.Context) error {
+				imbridge.streamSupervisor.Run(leaderCtx)
+				return nil
+			})
+		})
+	}
+	if extensions != nil && extensions.networkPollScheduler != nil {
+		eg.Go(func() error {
+			return elector.RunWithLeadership(egCtx, "network-poll", extensions.networkPollScheduler.Run)
+		})
+	}
+
+	// 集群级状态对账、保留清理与超期租约回收收敛至单一主控租约组。
+	var reconcilers []func(context.Context) error
+	if devices != nil && devices.edgeUpgradeJobUC != nil {
+		reconcilers = append(reconcilers, func(ctx context.Context) error {
+			devices.edgeUpgradeJobUC.Run(ctx)
+			return nil
+		})
+	}
+	if settings != nil && settings.auditUC != nil {
+		reconcilers = append(reconcilers, func(ctx context.Context) error {
+			return settings.auditUC.RunRetention(ctx, settings.auditRetentionDays)
+		})
+	}
+	if devices != nil && devices.k8sUC != nil {
+		reconcilers = append(reconcilers,
+			func(ctx context.Context) error { return managersvck8s.RunEventRetention(ctx, devices.k8sUC, log) },
+			func(ctx context.Context) error { return managersvck8s.RunTopologyReconcile(ctx, devices.k8sUC, log) },
+		)
+	}
+	if telemetry != nil && telemetry.apmProm != nil {
+		reconcilers = append(reconcilers, func(ctx context.Context) error {
+			return managersvctopology.RunServiceReconcile(ctx, telemetry.apmService, devices.topologyUC, log)
+		})
+	}
+	if aiops != nil && aiops.operationUC != nil {
+		reconcilers = append(reconcilers, func(ctx context.Context) error {
+			return managersvcaiops.RunPacketCaptureOperations(ctx, aiops.operationUC, aiops.packetCaptureUC, aiops.aiopsRepo, log)
+		})
+	}
+	if devices != nil && devices.edgeUC != nil && devices.deviceUC != nil {
+		reconcilers = append(reconcilers, func(ctx context.Context) error {
+			return managersvcedge.RunPresenceReconcile(ctx, devices.edgeUC, devices.deviceUC, devices.edgeOfflineThreshold, log)
+		})
+	}
+	if automation != nil && automation.flowUC != nil {
+		reconcilers = append(reconcilers, automation.flowUC.RunStaleRunReconciler)
+	}
+	if extensions != nil && extensions.approvalUC != nil {
+		reconcilers = append(reconcilers, func(ctx context.Context) error {
+			extensions.approvalUC.RunExecutionLeaseReconciler(ctx)
+			return nil
+		})
+	}
+	reconcilers = append(reconcilers, func(ctx context.Context) error {
+		return runClusterMaintenanceLoop(ctx, cfg, log, aiops, automation, alerts)
+	})
 	eg.Go(func() error {
-		return managersvcedge.RunPresenceReconcile(egCtx, devices.edgeUC, devices.deviceUC, devices.edgeOfflineThreshold, log)
+		return elector.RunWithLeadership(egCtx, "cluster-reconcilers", func(leaderCtx context.Context) error {
+			return runLeaderGroup(leaderCtx, reconcilers...)
+		})
 	})
 
-	// Pipeline evaluator: runs metric_raw / metric_anomaly /
-	// metric_forecast / metric_burn_rate rules on a ticker. Also refreshes
-	// the edge_last_seen_seconds_ago gauge (replacement
-	// for edge_absence). PromQuerier is nil-safe — deployments without
-	// cloud Prom skip every metric_* rule and just keep the gauge fresh.
+	// 告警评估与重试按租约互斥执行；rules 本地缓存保持每副本刷新。
 	var alertPromQuerier managerbizalert.PromQuerier
-	if telemetry.promQueryClient != nil {
+	if telemetry != nil && telemetry.promQueryClient != nil {
 		alertPromQuerier = telemetry.promQueryClient
 	}
 	if cfg.Alert.Enabled {
 		eg.Go(func() error { return alerts.alertRules.Loop(egCtx) })
-		// Legacy log_match / log_volume kinds still need a Loki client.
-		// New log_search rules use logsBackendSvc below and therefore follow
-		// the same Loki/Elasticsearch history plan as the Logs UI.
 		pipelineEval := managerbizalert.NewPipelineEvaluator(managerbizalert.PipelineEvaluatorOpts{
 			Usecase:                alerts.alertUC,
 			Rules:                  alerts.alertRules,
@@ -116,10 +141,15 @@ func runWorkers(rootCtx context.Context, cfg *config.Config, log *slog.Logger, n
 			ConsoleURL:             cfg.PublicURL,
 			Log:                    log.With(slog.String("comp", "alert-pipeline")),
 		})
-		eg.Go(func() error { return pipelineEval.Loop(egCtx) })
+		eg.Go(func() error {
+			return elector.RunWithLeadership(egCtx, "alert-evaluator", func(leaderCtx context.Context) error {
+				if alerts != nil && alerts.heartbeatWorker != nil {
+					return runLeaderGroup(leaderCtx, pipelineEval.Loop, alerts.heartbeatWorker.Loop)
+				}
+				return pipelineEval.Loop(leaderCtx)
+			})
+		})
 
-		// Delivery retry worker drains failed notification_deliveries with
-		// linear backoff (delivery_tracking).
 		retryWorker := managerbizalert.NewRetryWorker(managerbizalert.RetryWorkerOpts{
 			Repo:        alerts.alertRepo,
 			Notifier:    notifyRouter,
@@ -130,10 +160,9 @@ func runWorkers(rootCtx context.Context, cfg *config.Config, log *slog.Logger, n
 			ConsoleURL:  cfg.PublicURL,
 			Log:         log.With(slog.String("comp", "alert-retry")),
 		})
-		eg.Go(func() error { return retryWorker.Loop(egCtx) })
-		if alerts != nil && alerts.heartbeatWorker != nil {
-			eg.Go(func() error { return alerts.heartbeatWorker.Loop(egCtx) })
-		}
+		eg.Go(func() error {
+			return elector.RunWithLeadership(egCtx, "alert-retry", retryWorker.Loop)
+		})
 	}
 
 	if oncall != nil && oncall.worker != nil {
@@ -142,12 +171,6 @@ func runWorkers(rootCtx context.Context, cfg *config.Config, log *slog.Logger, n
 	if oncall != nil && oncall.handoffReminder != nil {
 		eg.Go(func() error { return oncall.handoffReminder.Loop(egCtx) })
 	}
-
-	// Optional crons: wire when ready to enable (leave commented for now).
-	// metricDownsampler := managerbizmetric.NewDownsampler(metricWriter, metricReader, log)
-	// eg.Go(func() error { return metricDownsampler.Loop(egCtx) })
-	// metricRetention := managerbizmetric.NewRetention(metricWriter, log)
-	// eg.Go(func() error { return metricRetention.Loop(egCtx) })
 
 	err := eg.Wait()
 
@@ -162,4 +185,86 @@ func runWorkers(rootCtx context.Context, cfg *config.Config, log *slog.Logger, n
 	log.Info("opspilot shutdown complete")
 
 	return nil
+}
+
+// runLeaderGroup 在单一 Leader 租约上下文下并发托管多个子循环，并在租约失去前确保全部子循环完全退出。
+func runLeaderGroup(ctx context.Context, runners ...func(context.Context) error) error {
+	if len(runners) == 0 {
+		<-ctx.Done()
+		return nil
+	}
+	subCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var (
+		wg       sync.WaitGroup
+		errMu    sync.Mutex
+		firstErr error
+	)
+	for _, fn := range runners {
+		if fn == nil {
+			continue
+		}
+		runFn := fn
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := runFn(subCtx); err != nil && !errors.Is(err, context.Canceled) {
+				errMu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				errMu.Unlock()
+				cancel()
+			}
+		}()
+	}
+	wg.Wait()
+	return firstErr
+}
+
+// runClusterMaintenanceLoop 由 cluster-reconcilers 主节点周期性清理超时 Worker、恢复溢出工具结果并执行 RCA 历史补偿。
+func runClusterMaintenanceLoop(ctx context.Context, cfg *config.Config, log *slog.Logger, aiops *aiopsModule, automation *automationModule, alerts *alertsModule) error {
+	if automation != nil && automation.rcaInvConcrete != nil && alerts != nil && alerts.alertUC != nil {
+		// 仅在接管对账主控权时异步补偿历史未开始调查的告警，防止多副本并发轰炸 LLM。
+		go managersvcalert.BackfillInvestigations(automation.rcaInvConcrete, alerts.alertUC, log)
+	}
+	staleTimeout := cfg.HA.StaleWorkerTimeout
+	if staleTimeout <= 0 {
+		staleTimeout = 2 * time.Minute
+	}
+	lastResultSweep := time.Time{}
+	runPass := func() {
+		passCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		now := time.Now().UTC()
+		if aiops != nil && aiops.aiopsRepo != nil {
+			if n, err := aiops.aiopsRepo.ReconcileInterruptedWorkers(passCtx, now.Add(-staleTimeout)); err != nil {
+				log.Error("stale worker reconciler failed", slog.Any("err", err))
+			} else if n > 0 {
+				log.Info("stale workers closed by cluster reconciler", slog.Int64("sessions", n))
+			}
+		}
+		if aiops != nil && aiops.resultRepo != nil && (lastResultSweep.IsZero() || now.Sub(lastResultSweep) >= 5*time.Minute) {
+			if _, err := aiops.resultRepo.Recover(passCtx); err != nil {
+				log.Error("tool results recovery failed", slog.Any("err", err))
+			}
+			if _, err := aiops.resultRepo.Cleanup(passCtx, now); err != nil {
+				log.Error("tool results cleanup failed", slog.Any("err", err))
+			}
+			lastResultSweep = now
+		}
+	}
+
+	runPass()
+	tick := time.NewTicker(time.Minute)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-tick.C:
+			runPass()
+		}
+	}
 }

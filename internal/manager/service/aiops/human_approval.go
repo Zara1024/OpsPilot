@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/Zara1024/OpsPilot/internal/pkg/toolcapture"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	aiopschatruntime "github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/runtime/contract"
 	aiopstoolsdec "github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/tools/decorators"
 	managerbizapproval "github.com/Zara1024/OpsPilot/internal/manager/biz/approval"
+	"github.com/google/uuid"
 )
 
 const GenericToolApprovalKind = "agent_tool"
@@ -50,6 +51,25 @@ func (b *HumanApprovalBroker) SetUsecase(uc *managerbizapproval.Usecase) {
 	b.uc = uc
 }
 
+// SetOwner 绑定当前副本的实例 ID，用于审批表 ExecutionOwner 归属与跨副本结果写回校验。
+func (b *HumanApprovalBroker) SetOwner(owner string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if trimmed := strings.TrimSpace(owner); trimmed != "" {
+		b.owner = trimmed
+	}
+}
+
+func (b *HumanApprovalBroker) takePending(token string) (pendingToolExecution, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	pending, ok := b.pending[token]
+	if ok {
+		delete(b.pending, token)
+	}
+	return pending, ok
+}
+
 func (b *HumanApprovalBroker) ProposeAndAwait(ctx context.Context, req aiopstoolsdec.HumanApprovalRequest, execute aiopstoolsdec.HumanApprovalExecutor) (string, error) {
 	if execute == nil {
 		return "", fmt.Errorf("human approval: executor is required")
@@ -57,6 +77,7 @@ func (b *HumanApprovalBroker) ProposeAndAwait(ctx context.Context, req aiopstool
 	token := uuid.NewString()
 	b.mu.Lock()
 	uc := b.uc
+	brokerOwner := b.owner
 	if uc != nil {
 		b.pending[token] = pendingToolExecution{version: aiopschatruntime.VersionFromContext(ctx), execute: execute}
 	}
@@ -74,7 +95,7 @@ func (b *HumanApprovalBroker) ProposeAndAwait(ctx context.Context, req aiopstool
 	if uc.SupportsExecutionLeases() {
 		until := time.Now().UTC().Add(time.Minute)
 		lease = &until
-		owner = b.owner
+		owner = brokerOwner
 	}
 	a, err := uc.Propose(ctx, managerbizapproval.ProposeInput{ExecutionOwner: owner, ExecutionLeaseUntil: lease,
 		RuntimeVersion: string(aiopschatruntime.VersionFromContext(ctx)),
@@ -121,6 +142,26 @@ func (b *HumanApprovalBroker) ProposeAndAwait(ctx context.Context, req aiopstool
 				continue
 			}
 			switch row.Status {
+			case "approved":
+				pending, ok := b.takePending(token)
+				if !ok {
+					// 本副本的 Approve 协程已取走执行权，等待其写回 executed/failed 终态。
+					continue
+				}
+				var res string
+				var runErr error
+				execCtx := toolcapture.WithState(ctx)
+				if pending.version != aiopschatruntime.VersionFromContext(ctx) {
+					runErr = fmt.Errorf("approved tool runtime mismatch; submit a new request")
+				} else {
+					res, runErr = pending.execute(execCtx)
+				}
+				completed, saveErr := uc.RecordOwnedExecutionResult(execCtx, a.ID, owner, res, runErr)
+				if saveErr != nil {
+					return "", saveErr
+				}
+				toolcapture.Link(ctx, completed.ResultID)
+				return approvalToolResult(completed)
 			case "executed", "failed":
 				cleanup()
 				toolcapture.Link(ctx, row.ResultID)
@@ -157,11 +198,8 @@ func (b *HumanApprovalBroker) Execute(ctx context.Context, payloadJSON string) (
 	if err := json.Unmarshal([]byte(payloadJSON), &payload); err != nil {
 		return "", fmt.Errorf("decode generic tool approval: %w", err)
 	}
-	b.mu.Lock()
-	pending := b.pending[payload.ExecutionToken]
-	delete(b.pending, payload.ExecutionToken)
-	b.mu.Unlock()
-	if pending.execute == nil {
+	pending, ok := b.takePending(payload.ExecutionToken)
+	if !ok || pending.execute == nil {
 		return "", fmt.Errorf("approved tool execution is no longer available; retry the request")
 	}
 	if pending.version != aiopschatruntime.VersionFromContext(ctx) {

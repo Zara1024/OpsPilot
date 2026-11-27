@@ -1,10 +1,10 @@
 package main
 
 import (
-	manageroncalldata "github.com/Zara1024/OpsPilot/internal/manager/data/oncall/store"
 	"context"
 	"database/sql"
 	externalmcpdata "github.com/Zara1024/OpsPilot/internal/manager/data/externalmcp"
+	manageroncalldata "github.com/Zara1024/OpsPilot/internal/manager/data/oncall/store"
 	resultdata "github.com/Zara1024/OpsPilot/internal/manager/data/toolresult/store"
 	"log/slog"
 
@@ -34,6 +34,7 @@ import (
 	managertopologydata "github.com/Zara1024/OpsPilot/internal/manager/data/topology/store"
 	managerwebshelldata "github.com/Zara1024/OpsPilot/internal/manager/data/webshell/store"
 	"github.com/Zara1024/OpsPilot/internal/pkg/config"
+	"github.com/Zara1024/OpsPilot/internal/pkg/coord"
 	"github.com/Zara1024/OpsPilot/internal/pkg/dbx"
 	"gorm.io/gorm"
 )
@@ -45,6 +46,8 @@ type storageModule struct {
 	secretUC                 *managerbizsecret.Usecase
 	sqlDB                    *sql.DB
 	errDB                    error
+	instanceID               string
+	leaseStore               *coord.GormStore
 }
 
 func bootstrapStorage(rootCtx context.Context, cfg *config.Config, log *slog.Logger) (*storageModule, error) {
@@ -87,6 +90,7 @@ func bootstrapStorage(rootCtx context.Context, cfg *config.Config, log *slog.Log
 		managerflowdata.Migrate,
 		managerpacketcapturedata.Migrate,
 		manageroncalldata.Migrate,
+		coord.Migrate,
 	); err != nil {
 		log.Error("run migrations", slog.Any("err", err))
 		return nil, err
@@ -111,6 +115,9 @@ func bootstrapStorage(rootCtx context.Context, cfg *config.Config, log *slog.Log
 	}
 
 	oncallStore := manageroncalldata.NewStore(db)
+	instanceID := coord.NewInstanceID(cfg.HA.InstanceID)
+	leaseStore := coord.NewGormStore(db)
+	log.Info("ha instance initialized", slog.String("instance_id", instanceID))
 	return &storageModule{
 		oncallStore:              oncallStore,
 		db:                       db,
@@ -118,5 +125,7 @@ func bootstrapStorage(rootCtx context.Context, cfg *config.Config, log *slog.Log
 		secretUC:                 secretUC,
 		sqlDB:                    sqlDB,
 		errDB:                    errDB,
+		instanceID:               instanceID,
+		leaseStore:               leaseStore,
 	}, nil
 }

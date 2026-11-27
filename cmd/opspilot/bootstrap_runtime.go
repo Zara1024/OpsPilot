@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"time"
 
-	einocallbacks "github.com/cloudwego/eino/callbacks"
 	"github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/runtime/contract"
 	v2 "github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/runtime/v2/chatruntime"
 	aiopschatruntime "github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/runtime/v3/chatruntime"
@@ -16,6 +15,7 @@ import (
 	managersvcaiops "github.com/Zara1024/OpsPilot/internal/manager/service/aiops"
 	managersvcalert "github.com/Zara1024/OpsPilot/internal/manager/service/alert"
 	"github.com/Zara1024/OpsPilot/internal/pkg/config"
+	einocallbacks "github.com/cloudwego/eino/callbacks"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -32,34 +32,25 @@ type runtimeModule struct {
 	aiopsHandler        *managerserveraiops.Handler
 }
 
-func bootstrapRuntime(rootCtx context.Context, cfg *config.Config, log *slog.Logger, reg *prometheus.Registry, tracing *tracingModule, models *modelsModule, devices *devicesModule, telemetry *telemetryModule, tunnel *tunnelModule, aiops *aiopsModule, settings *settingsModule) *runtimeModule {
-	// 在创建任何新 Worker 前收尾上一进程的内部会话，避免重启后永久显示运行中。
-	if n, err := aiops.aiopsRepo.ReconcileInterruptedWorkers(rootCtx, time.Now().UTC()); err != nil {
-		log.Error("interrupted worker recovery failed", slog.Any("err", err))
-	} else if n > 0 {
-		log.Info("interrupted workers closed on startup", slog.Int64("sessions", n))
+func bootstrapRuntime(rootCtx context.Context, cfg *config.Config, log *slog.Logger, reg *prometheus.Registry, storage *storageModule, tracing *tracingModule, models *modelsModule, devices *devicesModule, telemetry *telemetryModule, tunnel *tunnelModule, aiops *aiopsModule, settings *settingsModule) *runtimeModule {
+	// 仅在不存在其他活跃租约持有者时于启动期直接收尾中断会话；多副本并行或滚动发布时由 cluster-reconcilers 按超时温和回收。
+	runStartupWorkerCleanup := true
+	if storage != nil && storage.leaseStore != nil {
+		hasOther, err := storage.leaseStore.HasOtherActiveHolder(rootCtx, storage.instanceID)
+		if err != nil {
+			runStartupWorkerCleanup = false
+			log.Warn("check active peer leases before startup worker recovery failed; deferring to reconciler", slog.Any("err", err))
+		} else if hasOther {
+			runStartupWorkerCleanup = false
+			log.Info("active peer replica detected; skipping eager worker interruption recovery on boot")
+		}
 	}
-
-	if aiops.resultRepo != nil {
-		go func() {
-			tick := time.NewTicker(5 * time.Minute)
-			defer tick.Stop()
-			for {
-				pass, cancel := context.WithTimeout(rootCtx, 30*time.Second)
-				if _, err := aiops.resultRepo.Recover(pass); err != nil {
-					log.Error("tool results recovery failed", slog.Any("err", err))
-				}
-				if _, err := aiops.resultRepo.Cleanup(pass, time.Now().UTC()); err != nil {
-					log.Error("tool results cleanup failed", slog.Any("err", err))
-				}
-				cancel()
-				select {
-				case <-rootCtx.Done():
-					return
-				case <-tick.C:
-				}
-			}
-		}()
+	if runStartupWorkerCleanup {
+		if n, err := aiops.aiopsRepo.ReconcileInterruptedWorkers(rootCtx, time.Now().UTC()); err != nil {
+			log.Error("interrupted worker recovery failed", slog.Any("err", err))
+		} else if n > 0 {
+			log.Info("interrupted workers closed on startup", slog.Int64("sessions", n))
+		}
 	}
 	// AgentRegistry + SkillRegistry are loaded UNCONDITIONALLY from
 	// ./agents + configured skill roots + the marketplace root. These are
@@ -83,6 +74,9 @@ func bootstrapRuntime(rootCtx context.Context, cfg *config.Config, log *slog.Log
 		chatRT *aiopschatruntime.Runtime
 	)
 	humanApprovalBroker := managersvcaiops.NewHumanApprovalBroker()
+	if storage != nil && storage.instanceID != "" {
+		humanApprovalBroker.SetOwner(storage.instanceID)
+	}
 	{
 		rt, rterr := buildAIOpsRuntime(rootCtx, cfg, models.llmClient, models.llmRouter, aiops.toolsReg, aiops.aiopsRepo, aiops.mutatingProposalRepo, tunnel.fbClient, devices.edgeUC, devices.deviceUC, reg, log, bootstrapSkillReg, bootstrapAgentReg, models.llmSettingsResolver, humanApprovalBroker, tracing.agentTraceCallback)
 		if rterr != nil {

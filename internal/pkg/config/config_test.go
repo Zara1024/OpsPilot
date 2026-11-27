@@ -32,6 +32,8 @@ func TestLoadDefaults(t *testing.T) {
 		"OPSPILOT_NOTIFY_DINGTALK_ENABLED", "OPSPILOT_NOTIFY_DINGTALK_NAME", "OPSPILOT_NOTIFY_DINGTALK_WEBHOOK_URL", "OPSPILOT_NOTIFY_DINGTALK_SECRET",
 		"OPSPILOT_ALERT_ENABLED", "OPSPILOT_ALERT_COOLDOWN", "OPSPILOT_ALERT_CPU_PERCENT", "OPSPILOT_ALERT_MEM_PERCENT",
 		"OPSPILOT_ALERT_DISK_USED_PERCENT", "OPSPILOT_ALERT_LOAD1",
+		"OPSPILOT_INSTANCE_ID", "OPSPILOT_LEASE_TTL", "OPSPILOT_LEASE_RENEW_INTERVAL",
+		"OPSPILOT_LEASE_RETRY_INTERVAL", "OPSPILOT_STALE_WORKER_TIMEOUT",
 	}
 	for _, k := range vars {
 		t.Setenv(k, "")
@@ -393,5 +395,35 @@ func TestLoadDBPool(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestLoadHA(t *testing.T) {
+	t.Setenv("OPSPILOT_INSTANCE_ID", "")
+	t.Setenv("OPSPILOT_LEASE_TTL", "")
+	t.Setenv("OPSPILOT_LEASE_RENEW_INTERVAL", "")
+	t.Setenv("OPSPILOT_LEASE_RETRY_INTERVAL", "")
+	t.Setenv("OPSPILOT_STALE_WORKER_TIMEOUT", "")
+
+	def, err := Load()
+	if err != nil {
+		t.Fatalf("Load defaults: %v", err)
+	}
+	if def.HA.InstanceID != "" || def.HA.LeaseTTL != 15*time.Second || def.HA.LeaseRenewInterval != 5*time.Second || def.HA.LeaseRetryInterval != 2*time.Second || def.HA.StaleWorkerTimeout != 2*time.Minute {
+		t.Fatalf("unexpected HA defaults: %+v", def.HA)
+	}
+
+	t.Setenv("OPSPILOT_INSTANCE_ID", "opspilot-pod-a")
+	t.Setenv("OPSPILOT_LEASE_TTL", "30s")
+	t.Setenv("OPSPILOT_LEASE_RENEW_INTERVAL", "10s")
+	t.Setenv("OPSPILOT_LEASE_RETRY_INTERVAL", "3s")
+	t.Setenv("OPSPILOT_STALE_WORKER_TIMEOUT", "5m")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load overrides: %v", err)
+	}
+	if cfg.HA.InstanceID != "opspilot-pod-a" || cfg.HA.LeaseTTL != 30*time.Second || cfg.HA.LeaseRenewInterval != 10*time.Second || cfg.HA.LeaseRetryInterval != 3*time.Second || cfg.HA.StaleWorkerTimeout != 5*time.Minute {
+		t.Fatalf("unexpected HA overrides: %+v", cfg.HA)
 	}
 }

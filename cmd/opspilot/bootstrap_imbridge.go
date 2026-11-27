@@ -22,7 +22,8 @@ import (
 )
 
 type imbridgeModule struct {
-	imbridgeHandler *managerserverimbridge.Handler
+	imbridgeHandler  *managerserverimbridge.Handler
+	streamSupervisor *managerbizimbridge.StreamSupervisor
 }
 
 func bootstrapIMBridge(rootCtx context.Context, cfg *config.Config, log *slog.Logger, storage *storageModule, models *modelsModule, devices *devicesModule, alerts *alertsModule, telemetry *telemetryModule, aiops *aiopsModule, runtime *runtimeModule, extensions *extensionsModule, reg *prometheus.Registry) *imbridgeModule {
@@ -93,7 +94,6 @@ func bootstrapIMBridge(rootCtx context.Context, cfg *config.Config, log *slog.Lo
 	// enforced in the provider so a misconfigured open workspace can't
 	// turn the agent into an LLM toy for random members.
 	imbridgeStreamSupervisor.RegisterFactory("slack", managerbizimbridgeslack.NewStreamFactory(log))
-	go imbridgeStreamSupervisor.Run(rootCtx)
 
 	// @-mention search backend (HLD: ChatInput @-popover). The shared runtime
 	// Loki client follows integration URL, auth and TLS edits without restart.
@@ -141,6 +141,7 @@ func bootstrapIMBridge(rootCtx context.Context, cfg *config.Config, log *slog.Lo
 	}
 
 	return &imbridgeModule{
-		imbridgeHandler: imbridgeHandler,
+		imbridgeHandler:  imbridgeHandler,
+		streamSupervisor: imbridgeStreamSupervisor,
 	}
 }

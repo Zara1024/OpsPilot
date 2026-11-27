@@ -44,6 +44,7 @@ import (
 	resultdata "github.com/Zara1024/OpsPilot/internal/manager/data/toolresult/store"
 	managertopologydata "github.com/Zara1024/OpsPilot/internal/manager/data/topology/store"
 	managerwebshelldata "github.com/Zara1024/OpsPilot/internal/manager/data/webshell/store"
+	"github.com/Zara1024/OpsPilot/internal/pkg/coord"
 	"github.com/Zara1024/OpsPilot/internal/pkg/dbx"
 )
 
@@ -114,6 +115,7 @@ func TestMySQLFullSchemaMigrations(t *testing.T) {
 		manageroncalldata.Migrate,
 		managerimbridgedata.Migrate,
 		managerknowledgedata.Migrate,
+		coord.Migrate,
 	}
 
 	// 首次冷启动迁移 + 重启二次幂等迁移
@@ -137,6 +139,7 @@ func TestMySQLFullSchemaMigrations(t *testing.T) {
 		"chat_sessions",
 		"im_apps",
 		"knowledge_repos",
+		"cluster_leases",
 	} {
 		require.True(t, db.Migrator().HasTable(table), "expected table %q after full schema migration", table)
 	}
