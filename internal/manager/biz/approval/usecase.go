@@ -44,13 +44,15 @@ type executorKey struct{ kind, runtimeVersion string }
 
 // Usecase is the inbox facade.
 type Usecase struct {
-	results    *toolresult.Usecase
-	authorizer Authorizer
-	executorMu sync.RWMutex
-	repo       Repo
-	log        *slog.Logger
-	executors  map[executorKey]Executor
-	instanceID string
+	results        *toolresult.Usecase
+	authorizer     Authorizer
+	executorMu     sync.RWMutex
+	localMu        sync.Mutex
+	repo           Repo
+	log            *slog.Logger
+	executors      map[executorKey]Executor
+	localExecuting map[string]struct{}
+	instanceID     string
 }
 
 // NewUsecase wires the repo.
@@ -58,13 +60,26 @@ func NewUsecase(repo Repo, log *slog.Logger) *Usecase {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Usecase{repo: repo, log: log, executors: map[executorKey]Executor{}}
+	return &Usecase{
+		repo:           repo,
+		log:            log,
+		executors:      map[executorKey]Executor{},
+		localExecuting: map[string]struct{}{},
+	}
 }
 
 // SetInstanceID 绑定当前 Manager 副本标识；当批准发生在非 ExecutionOwner 副本时，
 // 仅落库 approved 状态并等待归属副本执行完成，避免无本地闭包触发误判失败。
 func (u *Usecase) SetInstanceID(id string) {
 	u.instanceID = strings.TrimSpace(id)
+}
+
+// IsLocallyExecuting 返回指定审批是否正由本副本的 Approve 调用同步执行，用于防止本副本等待协程抢占执行权。
+func (u *Usecase) IsLocallyExecuting(id string) bool {
+	u.localMu.Lock()
+	defer u.localMu.Unlock()
+	_, ok := u.localExecuting[id]
+	return ok
 }
 
 // RegisterExecutor wires the execute-on-approve handler for a Kind. Called
@@ -155,6 +170,21 @@ func (u *Usecase) Approve(ctx context.Context, approverID uint64, id string) (*m
 		}
 	}
 	ctx = toolcapture.WithState(ctx)
+	remoteOwned := proposed.ExecutionOwner != "" && u.instanceID != "" && proposed.ExecutionOwner != u.instanceID
+	if !remoteOwned {
+		// 在数据库状态落为 approved 前标记本地同步执行中，防止同副本轮询等待协程抢走执行闭包。
+		u.localMu.Lock()
+		if u.localExecuting == nil {
+			u.localExecuting = map[string]struct{}{}
+		}
+		u.localExecuting[id] = struct{}{}
+		u.localMu.Unlock()
+		defer func() {
+			u.localMu.Lock()
+			delete(u.localExecuting, id)
+			u.localMu.Unlock()
+		}()
+	}
 	now := time.Now().UTC()
 	if err := u.repo.Decide(ctx, id, map[string]any{
 		"status": model.StatusApproved, "approved_by": approverID, "decided_at": now,
@@ -166,7 +196,7 @@ func (u *Usecase) Approve(ctx context.Context, approverID uint64, id string) (*m
 		return nil, err
 	}
 	// 若审批绑定的执行权属于另一活跃副本，交由持有内存闭包的原副本执行并轮询等待结果落库。
-	if proposed.ExecutionOwner != "" && u.instanceID != "" && proposed.ExecutionOwner != u.instanceID {
+	if remoteOwned {
 		return u.waitOwnedExecution(ctx, id, a)
 	}
 	u.executorMu.RLock()

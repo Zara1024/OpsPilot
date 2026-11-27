@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/glebarez/sqlite"
 	"github.com/Zara1024/OpsPilot/internal/manager/biz/approval"
 	"github.com/Zara1024/OpsPilot/internal/manager/data/approval/store"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/approval"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -335,5 +335,105 @@ func TestAgentApprovalWaitExpiry(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestApproveLocalAndCrossReplicaOwnership(t *testing.T) {
+	ctx := context.Background()
+	repo := approvalRepo(t)
+	allowAll := approval.AuthorizerFunc(func(context.Context, uint64) error { return nil })
+
+	// 1. 同副本批准：Approve 同步执行期间 IsLocallyExecuting 返回 true，返回后释放标记。
+	ucA := approval.NewUsecase(repo, nil)
+	ucA.RequireAuthorization(allowAll)
+	ucA.SetInstanceID("replica-a")
+
+	lease := time.Now().UTC().Add(time.Minute)
+	localProp, err := ucA.Propose(ctx, approval.ProposeInput{
+		ExecutionOwner:      "replica-a",
+		ExecutionLeaseUntil: &lease,
+		Kind:                "action",
+		Title:               "local",
+		Payload:             map[string]any{"op": "local"},
+		ProposedBy:          7,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seenExecuting bool
+	ucA.RegisterExecutor("action", func(_ context.Context, _ string) (string, error) {
+		seenExecuting = ucA.IsLocallyExecuting(localProp.ID)
+		return `{"local":true}`, nil
+	})
+	localDone, err := ucA.Approve(ctx, 9, localProp.ID)
+	if err != nil {
+		t.Fatalf("same-replica Approve err = %v", err)
+	}
+	if !seenExecuting {
+		t.Fatalf("expected IsLocallyExecuting to be true during same-replica executor invocation")
+	}
+	if ucA.IsLocallyExecuting(localProp.ID) {
+		t.Fatalf("expected IsLocallyExecuting to be cleared after Approve returns")
+	}
+	if localDone.Status != model.StatusExecuted || localDone.ResultJSON == nil || *localDone.ResultJSON != `{"local":true}` {
+		t.Fatalf("unexpected local approval result: %+v", localDone)
+	}
+
+	// 2. 跨副本批准：由 replica-b 批准 replica-a 发起的操作，replica-b 不触发本地执行器并等待 replica-a 完成。
+	ucB := approval.NewUsecase(repo, nil)
+	ucB.RequireAuthorization(allowAll)
+	ucB.SetInstanceID("replica-b")
+	var remoteCalled atomic.Bool
+	ucB.RegisterExecutor("action", func(_ context.Context, _ string) (string, error) {
+		remoteCalled.Store(true)
+		return `{"wrong":true}`, nil
+	})
+
+	crossLease := time.Now().UTC().Add(time.Minute)
+	crossProp, err := ucA.Propose(ctx, approval.ProposeInput{
+		ExecutionOwner:      "replica-a",
+		ExecutionLeaseUntil: &crossLease,
+		Kind:                "action",
+		Title:               "cross",
+		Payload:             map[string]any{"op": "cross"},
+		ProposedBy:          7,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	approveCh := make(chan *model.Approval, 1)
+	approveErrCh := make(chan error, 1)
+	go func() {
+		got, err := ucB.Approve(ctx, 9, crossProp.ID)
+		approveCh <- got
+		approveErrCh <- err
+	}()
+
+	// 等待 replica-b 将记录流转为 approved，再由 replica-a 写入执行结果。
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		cur, err := repo.Get(ctx, crossProp.ID)
+		if err == nil && cur.Status == model.StatusApproved {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for approved status on %s", crossProp.ID)
+		}
+		time.Sleep(15 * time.Millisecond)
+	}
+
+	if _, err := ucA.RecordOwnedExecutionResult(ctx, crossProp.ID, "replica-a", `{"ok":true}`, nil); err != nil {
+		t.Fatalf("RecordOwnedExecutionResult err = %v", err)
+	}
+	if err := <-approveErrCh; err != nil {
+		t.Fatalf("cross-replica Approve err = %v", err)
+	}
+	crossDone := <-approveCh
+	if remoteCalled.Load() {
+		t.Fatalf("replica-b executor must not run for replica-a owned approval")
+	}
+	if crossDone == nil || crossDone.Status != model.StatusExecuted || crossDone.ResultJSON == nil || *crossDone.ResultJSON != `{"ok":true}` {
+		t.Fatalf("unexpected cross-replica result: %+v", crossDone)
 	}
 }

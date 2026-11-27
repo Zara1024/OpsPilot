@@ -104,7 +104,7 @@ type HAConfig struct {
 	// env: OPSPILOT_LEASE_RETRY_INTERVAL; default 2s
 	LeaseRetryInterval time.Duration
 	// StaleWorkerTimeout 为判定失效内部 Worker 会话与过时执行租约的宽限阈值。
-	// env: OPSPILOT_STALE_WORKER_TIMEOUT; default 2m
+	// env: OPSPILOT_STALE_WORKER_TIMEOUT; default 30m
 	StaleWorkerTimeout time.Duration
 }
 
@@ -658,7 +658,7 @@ func Load() (*Config, error) {
 		LeaseTTL:           getEnvDuration("OPSPILOT_LEASE_TTL", 15*time.Second),
 		LeaseRenewInterval: getEnvDuration("OPSPILOT_LEASE_RENEW_INTERVAL", 5*time.Second),
 		LeaseRetryInterval: getEnvDuration("OPSPILOT_LEASE_RETRY_INTERVAL", 2*time.Second),
-		StaleWorkerTimeout: getEnvDuration("OPSPILOT_STALE_WORKER_TIMEOUT", 2*time.Minute),
+		StaleWorkerTimeout: getEnvDuration("OPSPILOT_STALE_WORKER_TIMEOUT", 30*time.Minute),
 	}
 
 	return c, nil

@@ -409,7 +409,7 @@ func TestLoadHA(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load defaults: %v", err)
 	}
-	if def.HA.InstanceID != "" || def.HA.LeaseTTL != 15*time.Second || def.HA.LeaseRenewInterval != 5*time.Second || def.HA.LeaseRetryInterval != 2*time.Second || def.HA.StaleWorkerTimeout != 2*time.Minute {
+	if def.HA.InstanceID != "" || def.HA.LeaseTTL != 15*time.Second || def.HA.LeaseRenewInterval != 5*time.Second || def.HA.LeaseRetryInterval != 2*time.Second || def.HA.StaleWorkerTimeout != 30*time.Minute {
 		t.Fatalf("unexpected HA defaults: %+v", def.HA)
 	}
 

@@ -143,6 +143,10 @@ func (b *HumanApprovalBroker) ProposeAndAwait(ctx context.Context, req aiopstool
 			}
 			switch row.Status {
 			case "approved":
+				if uc.IsLocallyExecuting(a.ID) {
+					// 本副本的 Approve 正在同步执行该审批，等待其写入 executed/failed 终态。
+					continue
+				}
 				pending, ok := b.takePending(token)
 				if !ok {
 					// 本副本的 Approve 协程已取走执行权，等待其写回 executed/failed 终态。

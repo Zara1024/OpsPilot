@@ -231,9 +231,8 @@ func runClusterMaintenanceLoop(ctx context.Context, cfg *config.Config, log *slo
 	}
 	staleTimeout := cfg.HA.StaleWorkerTimeout
 	if staleTimeout <= 0 {
-		staleTimeout = 2 * time.Minute
+		staleTimeout = 30 * time.Minute
 	}
-	lastResultSweep := time.Time{}
 	runPass := func() {
 		passCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
@@ -245,19 +244,18 @@ func runClusterMaintenanceLoop(ctx context.Context, cfg *config.Config, log *slo
 				log.Info("stale workers closed by cluster reconciler", slog.Int64("sessions", n))
 			}
 		}
-		if aiops != nil && aiops.resultRepo != nil && (lastResultSweep.IsZero() || now.Sub(lastResultSweep) >= 5*time.Minute) {
+		if aiops != nil && aiops.resultRepo != nil {
 			if _, err := aiops.resultRepo.Recover(passCtx); err != nil {
 				log.Error("tool results recovery failed", slog.Any("err", err))
 			}
 			if _, err := aiops.resultRepo.Cleanup(passCtx, now); err != nil {
 				log.Error("tool results cleanup failed", slog.Any("err", err))
 			}
-			lastResultSweep = now
 		}
 	}
 
 	runPass()
-	tick := time.NewTicker(time.Minute)
+	tick := time.NewTicker(5 * time.Minute)
 	defer tick.Stop()
 	for {
 		select {
