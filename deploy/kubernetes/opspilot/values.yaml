@@ -1,0 +1,185 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  # Leave empty to let Kubernetes select nodes from the multi-arch image manifest.
+  # Set amd64 or arm64 only when intentionally pinning node architecture.
+  architecture: ""
+
+imagePullSecrets: []
+
+podSecurity:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+
+manager:
+  replicaCount: 2
+  serviceAccountName: ""
+  image:
+    repository: docker.cnb.cool/zara1024/opspilot
+    tag: ""
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8080
+    metricsPort: 9100
+  ha:
+    leaseTTL: "15s"
+    leaseRenewInterval: "5s"
+    leaseRetryInterval: "2s"
+    staleWorkerTimeout: "30m"
+    preStopSleepSeconds: 5
+    terminationGracePeriodSeconds: 45
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 75
+    targetMemoryUtilizationPercentage: 80
+    scaleDownStabilizationWindowSeconds: 300
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  persistence:
+    # Enable RWX shared storage when multiple replicas share workspace/skills/artifacts/tool-results.
+    enabled: false
+    existingClaim: ""
+    storageClassName: ""
+    accessModes:
+      - ReadWriteMany
+    size: 20Gi
+  extraEnv: []
+  extraEnvFrom: []
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+web:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: docker.cnb.cool/zara1024/opspilot/opspilot-web
+    tag: ""
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 80
+  podSecurity:
+    runAsNonRoot: true
+    runAsUser: 101
+    runAsGroup: 101
+    fsGroup: 101
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  preStopSleepSeconds: 5
+  terminationGracePeriodSeconds: 30
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+frontier:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: docker.cnb.cool/zara1024/opspilot/frontier
+    tag: "1.2.6"
+    pullPolicy: IfNotPresent
+  serviceName: "opspilot-manager"
+  podSecurity:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+  service:
+    serviceboundPort: 40011
+    edgebound:
+      type: ClusterIP
+      port: 40012
+      nodePort: null
+      annotations: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+database:
+  # Multi-replica HA requires external managed MySQL 8.0+.
+  dialect: mysql
+  dsn: ""
+  existingSecret: ""
+  existingSecretKey: "db-dsn"
+  maxOpenConns: 50
+  maxIdleConns: 10
+
+secrets:
+  existingSecret: ""
+  jwtSecret: ""
+  jwtSecretKey: "jwt-secret"
+  secretKey: ""
+  secretKeyKey: "secret-key"
+  packetParserTokenSecret: ""
+  packetParserTokenSecretKey: "packet-parser-token-secret"
+  adminEmail: ""
+  adminPassword: ""
+
+externalServices:
+  publicURL: ""
+  prometheus:
+    enabled: false
+    url: ""
+    queryURL: ""
+    remoteWriteURL: ""
+    tlsInsecure: false
+  loki:
+    url: ""
+  tempo:
+    url: ""
+    otelEndpoint: ""
+    otelSamplingRatio: "1"
+  pyroscope:
+    url: ""
+  qdrant:
+    url: ""
+  grafana:
+    internalURL: ""
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+  tls: []
+
+metrics:
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+  prometheusRule:
+    enabled: false
+    labels: {}
+    runbookBaseURL: "https://github.com/Zara1024/OpsPilot/blob/main/docs/runbooks"

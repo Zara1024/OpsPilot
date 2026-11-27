@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "opspilot.managerName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "opspilot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
+spec:
+  type: {{ default "ClusterIP" .Values.manager.service.type }}
+  selector:
+    {{- include "opspilot.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
+  ports:
+    - name: http
+      port: {{ .Values.manager.service.port }}
+      targetPort: http
+      protocol: TCP
+    - name: metrics
+      port: {{ .Values.manager.service.metricsPort }}
+      targetPort: metrics
+      protocol: TCP

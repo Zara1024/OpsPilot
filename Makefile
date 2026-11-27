@@ -55,6 +55,7 @@ CNB_API_ENDPOINT ?= https://api.cnb.cool
 CNB_RELEASE_TARGET_COMMITISH ?= main
 K8S_CHART_VERSION ?= $(patsubst v%,%,$(VERSION))
 K8S_CHART_PACKAGE ?= $(BIN_DIR)/k8s/opspilot-edge.tgz
+K8S_CONTROLPLANE_CHART_PACKAGE ?= $(BIN_DIR)/k8s/opspilot.tgz
 K8S_CHART_REF ?= oci://helm.cnb.cool/zara1024/opspilot-edge
 K8S_CHART_PUSH_TARGET ?= oci://helm.cnb.cool/zara1024
 CNB_HELM_REGISTRY ?= helm.cnb.cool
@@ -691,6 +692,14 @@ publish-k8s-chart: package-k8s-chart ## [release] 发布 Kubernetes Helm chart �
 
 test-k8s-chart: package-k8s-chart ## [test] 校验 Kubernetes Helm Chart 的兼容、拆分、暂停与非法配置
 	bash scripts/test-k8s-chart.sh deploy/kubernetes/opspilot-edge $(K8S_CHART_PACKAGE) $(K8S_EDGE_IMAGE_REF)
+
+.PHONY: package-controlplane-chart test-controlplane-chart
+package-controlplane-chart: ## [dev/release] 打控制面高可用 Kubernetes Helm chart 到 bin/k8s/opspilot.tgz
+	@mkdir -p bin/k8s
+	bash dist/package-k8s-chart.sh deploy/kubernetes/opspilot $(K8S_CONTROLPLANE_CHART_PACKAGE) $(VERSION) $(VERSION)
+
+test-controlplane-chart: package-controlplane-chart ## [test] 校验控制面高可用 Kubernetes Helm Chart 的多副本、安全上下文、探测、外部密钥与参数阻断
+	bash scripts/test-opspilot-chart.sh deploy/kubernetes/opspilot $(K8S_CONTROLPLANE_CHART_PACKAGE) $(CLOUD_MANAGER_IMAGE_REF) $(CLOUD_WEB_IMAGE_REF)
 
 test-publish-k8s-chart: ## [test] 校验 Helm Chart 幂等发布
 	bash scripts/test-publish-helm-chart.sh

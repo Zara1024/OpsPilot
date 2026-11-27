@@ -1,0 +1,46 @@
+{{- if .Values.frontier.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "opspilot.frontierName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "opspilot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontier
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "opspilot.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: frontier
+  ports:
+    - name: servicebound
+      port: {{ .Values.frontier.service.serviceboundPort }}
+      targetPort: servicebound
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "opspilot.frontierEdgeServiceName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "opspilot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontier
+  {{- with .Values.frontier.service.edgebound.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ default "ClusterIP" .Values.frontier.service.edgebound.type }}
+  selector:
+    {{- include "opspilot.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: frontier
+  ports:
+    - name: edgebound
+      port: {{ default 40012 .Values.frontier.service.edgebound.port }}
+      targetPort: edgebound
+      protocol: TCP
+      {{- if and (eq (default "ClusterIP" .Values.frontier.service.edgebound.type) "NodePort") .Values.frontier.service.edgebound.nodePort }}
+      nodePort: {{ .Values.frontier.service.edgebound.nodePort }}
+      {{- end }}
+{{- end }}

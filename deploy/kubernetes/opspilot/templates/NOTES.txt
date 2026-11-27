@@ -1,0 +1,12 @@
+OpsPilot HA Control Plane has been deployed to namespace {{ .Release.Namespace }}.
+
+1. Verify Pod readiness (/readyz checks graceful drain state and DB reachability):
+   kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+
+2. Inspect active distributed leader leases across manager replicas:
+   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "opspilot.managerName" . }} 9100:{{ .Values.manager.service.metricsPort }}
+   curl -s http://127.0.0.1:9100/metrics | grep opspilot_cluster_lease_held
+
+3. Emergency rollback:
+   helm -n {{ .Release.Namespace }} history {{ .Release.Name }}
+   helm -n {{ .Release.Namespace }} rollback {{ .Release.Name }} <REVISION>

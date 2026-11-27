@@ -226,6 +226,19 @@ services:
       OPSPILOT_NOTIFY_DINGTALK_NAME: ${OPSPILOT_NOTIFY_DINGTALK_NAME:-dingtalk}
       OPSPILOT_NOTIFY_DINGTALK_WEBHOOK_URL: ${OPSPILOT_NOTIFY_DINGTALK_WEBHOOK_URL:-}
       OPSPILOT_NOTIFY_DINGTALK_SECRET: ${OPSPILOT_NOTIFY_DINGTALK_SECRET:-}
+      # HA distributed leases & rolling-upgrade safety (v1.2+).
+      OPSPILOT_INSTANCE_ID: ${OPSPILOT_INSTANCE_ID:-}
+      OPSPILOT_LEASE_TTL: ${OPSPILOT_LEASE_TTL:-15s}
+      OPSPILOT_LEASE_RENEW_INTERVAL: ${OPSPILOT_LEASE_RENEW_INTERVAL:-5s}
+      OPSPILOT_LEASE_RETRY_INTERVAL: ${OPSPILOT_LEASE_RETRY_INTERVAL:-2s}
+      OPSPILOT_STALE_WORKER_TIMEOUT: ${OPSPILOT_STALE_WORKER_TIMEOUT:-30m}
+    stop_grace_period: 35s
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/readyz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 45s
     # ADR-008: HTTP API (8080) is no longer published to host — only the
     # nginx service (in this same compose network) talks to it. Metrics
     # port stays exposed so the host's Prometheus can scrape it.

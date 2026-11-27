@@ -1,0 +1,21 @@
+{{- if .Values.frontier.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "opspilot.frontierName" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "opspilot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontier
+data:
+  frontier.yaml: |
+    edgebound:
+      listen:
+        network: tcp
+        addr: 0.0.0.0:40012
+      edgeid_alloc_when_no_idservice_on: false
+    servicebound:
+      listen:
+        network: tcp
+        addr: 0.0.0.0:{{ .Values.frontier.service.serviceboundPort }}
+{{- end }}

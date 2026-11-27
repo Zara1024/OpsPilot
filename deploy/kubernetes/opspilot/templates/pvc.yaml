@@ -1,0 +1,19 @@
+{{- if and .Values.manager.persistence.enabled (empty .Values.manager.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "opspilot.pvcName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "opspilot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
+spec:
+  accessModes:
+    {{- toYaml .Values.manager.persistence.accessModes | nindent 4 }}
+  {{- if not (empty .Values.manager.persistence.storageClassName) }}
+  storageClassName: {{ .Values.manager.persistence.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.manager.persistence.size | quote }}
+{{- end }}

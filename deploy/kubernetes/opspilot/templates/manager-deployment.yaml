@@ -1,0 +1,203 @@
+{{- include "opspilot.validate" . -}}
+{{- $dbSecret := default (include "opspilot.secretName" .) .Values.database.existingSecret -}}
+{{- $dbSecretKey := ternary .Values.database.existingSecretKey "db-dsn" (not (empty .Values.database.existingSecret)) -}}
+{{- $appSecret := default (include "opspilot.secretName" .) .Values.secrets.existingSecret -}}
+{{- $hasExternalAppSecret := not (empty .Values.secrets.existingSecret) -}}
+{{- $jwtSecretKey := ternary .Values.secrets.jwtSecretKey "jwt-secret" $hasExternalAppSecret -}}
+{{- $vaultSecretKey := ternary .Values.secrets.secretKeyKey "secret-key" $hasExternalAppSecret -}}
+{{- $pcapSecretKey := ternary .Values.secrets.packetParserTokenSecretKey "packet-parser-token-secret" $hasExternalAppSecret -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "opspilot.managerName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "opspilot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
+spec:
+  {{- if not .Values.manager.autoscaling.enabled }}
+  replicas: {{ .Values.manager.replicaCount }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "opspilot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: manager
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+      labels:
+        {{- include "opspilot.labels" . | nindent 8 }}
+        app.kubernetes.io/component: manager
+    spec:
+      serviceAccountName: {{ include "opspilot.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if or .Values.image.architecture .Values.manager.nodeSelector }}
+      nodeSelector:
+        {{- with .Values.image.architecture }}
+        kubernetes.io/arch: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.manager.nodeSelector }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.manager.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.manager.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.manager.ha.terminationGracePeriodSeconds }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "opspilot.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: manager
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "opspilot.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: manager
+      securityContext:
+        runAsNonRoot: {{ .Values.podSecurity.runAsNonRoot }}
+        runAsUser: {{ .Values.podSecurity.runAsUser }}
+        runAsGroup: {{ .Values.podSecurity.runAsGroup }}
+        fsGroup: {{ .Values.podSecurity.fsGroup }}
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: manager
+          image: {{ include "opspilot.managerImage" . | quote }}
+          imagePullPolicy: {{ default "IfNotPresent" .Values.manager.image.pullPolicy }}
+          workingDir: /
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: {{ .Values.manager.service.port }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.manager.service.metricsPort }}
+              protocol: TCP
+          env:
+            - name: OPSPILOT_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.namespace=opspilot,deployment.environment.name=production,service.instance.id=$(POD_UID)"
+            {{- if eq (default "mysql" .Values.database.dialect) "mysql" }}
+            - name: OPSPILOT_DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $dbSecret | quote }}
+                  key: {{ $dbSecretKey | quote }}
+            {{- end }}
+            - name: OPSPILOT_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $appSecret | quote }}
+                  key: {{ $jwtSecretKey | quote }}
+            {{- if or $hasExternalAppSecret (not (empty .Values.secrets.secretKey)) }}
+            - name: OPSPILOT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $appSecret | quote }}
+                  key: {{ $vaultSecretKey | quote }}
+                  {{- if $hasExternalAppSecret }}
+                  optional: true
+                  {{- end }}
+            {{- end }}
+            {{- if or $hasExternalAppSecret (not (empty .Values.secrets.packetParserTokenSecret)) }}
+            - name: OPSPILOT_PACKET_PARSER_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $appSecret | quote }}
+                  key: {{ $pcapSecretKey | quote }}
+                  {{- if $hasExternalAppSecret }}
+                  optional: true
+                  {{- end }}
+            {{- end }}
+            {{- if or $hasExternalAppSecret (not (empty .Values.secrets.adminPassword)) }}
+            - name: OPSPILOT_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $appSecret | quote }}
+                  key: admin-password
+                  {{- if $hasExternalAppSecret }}
+                  optional: true
+                  {{- end }}
+            {{- end }}
+            {{- with .Values.manager.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "opspilot.managerName" . }}-config
+            {{- with .Values.manager.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - {{ printf "sleep %d" (int (default 5 .Values.manager.ha.preStopSleepSeconds)) | quote }}
+          resources:
+            {{- toYaml .Values.manager.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/opspilot
+      volumes:
+        - name: data
+          {{- if .Values.manager.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default (include "opspilot.pvcName" .) .Values.manager.persistence.existingClaim | quote }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}

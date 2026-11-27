@@ -1,0 +1,39 @@
+{{- if .Values.ingress.enabled }}
+{{- $backendService := ternary (include "opspilot.webName" .) (include "opspilot.managerName" .) .Values.web.enabled -}}
+{{- $backendPort := ternary .Values.web.service.port .Values.manager.service.port .Values.web.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "opspilot.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "opspilot.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- $paths := .paths | default (list (dict "path" "/" "pathType" "Prefix")) }}
+          {{- range $paths }}
+          - path: {{ .path }}
+            pathType: {{ default "Prefix" .pathType }}
+            backend:
+              service:
+                name: {{ $backendService }}
+                port:
+                  number: {{ $backendPort }}
+          {{- end }}
+    {{- end }}
+{{- end }}

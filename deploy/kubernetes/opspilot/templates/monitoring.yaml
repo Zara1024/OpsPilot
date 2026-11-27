@@ -1,0 +1,125 @@
+{{- $runbookBase := trimSuffix "/" (default "https://github.com/Zara1024/OpsPilot/blob/main/docs/runbooks" .Values.metrics.prometheusRule.runbookBaseURL) -}}
+{{- if .Values.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "opspilot.managerName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "opspilot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
+    {{- with .Values.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "opspilot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: manager
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ default "30s" .Values.metrics.serviceMonitor.interval }}
+      scrapeTimeout: {{ default "10s" .Values.metrics.serviceMonitor.scrapeTimeout }}
+{{- end }}
+{{- if and .Values.metrics.serviceMonitor.enabled .Values.metrics.prometheusRule.enabled }}
+---
+{{- end }}
+{{- if .Values.metrics.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "opspilot.managerName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "opspilot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
+    {{- with .Values.metrics.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: opspilot-self-ha
+      interval: 30s
+      rules:
+        - alert: OpsPilotClusterLeaseNoLeader
+          expr: sum by (lease) (opspilot_cluster_lease_held) == 0
+          for: 2m
+          labels:
+            severity: critical
+            source: self
+          annotations:
+            summary: "Distributed lease {{`{{ $labels.lease }}`}} has no active leader for 2m"
+            description: "All OpsPilot manager replicas failed to acquire or renew lease {{`{{ $labels.lease }}`}}. Check MySQL connectivity, manager /readyz, and coord logs."
+            runbook_url: {{ printf "%s/ha-control-plane.md#opspilotclusterleasenoleader" $runbookBase | quote }}
+
+        - alert: OpsPilotClusterLeaseSplitBrain
+          expr: sum by (lease) (opspilot_cluster_lease_held) > 1
+          for: 1m
+          labels:
+            severity: critical
+            source: self
+          annotations:
+            summary: "Distributed lease {{`{{ $labels.lease }}`}} held by >1 replica simultaneously"
+            description: "Multiple OpsPilot replicas report holding the same distributed lease {{`{{ $labels.lease }}`}}. Inspect DB clock skew and coord lease transitions immediately."
+            runbook_url: {{ printf "%s/ha-control-plane.md#opspilotclusterleasesplitbrain" $runbookBase | quote }}
+
+        - alert: OpsPilotClusterLeaseFlapping
+          expr: sum by (lease) (increase(opspilot_cluster_lease_transitions_total{event="acquired"}[15m])) >= 4
+          for: 5m
+          labels:
+            severity: warning
+            source: self
+          annotations:
+            summary: "Distributed lease {{`{{ $labels.lease }}`}} flapping (>=4 acquisitions in 15m)"
+            description: "Frequent leadership handoffs indicate DB pool contention, CPU throttling, or pod restarts under load."
+            runbook_url: {{ printf "%s/ha-control-plane.md#opspilotclusterleaseflapping" $runbookBase | quote }}
+
+        - alert: OpsPilotOrphanWorkerSessions
+          expr: sum(opspilot_chatruntime_worker_sessions{status="running"}) > 20
+          for: 5m
+          labels:
+            severity: warning
+            source: self
+          annotations:
+            summary: "> 20 chatruntime worker sessions running for 5m"
+            description: "Inspect running worker sessions and OPSPILOT_STALE_WORKER_TIMEOUT reconciliation."
+            runbook_url: {{ printf "%s/ha-control-plane.md#opspilotorphanworkersessions" $runbookBase | quote }}
+
+        - alert: OpsPilotDBPoolSaturated
+          expr: max(opspilot_db_pool_in_use / (opspilot_db_pool_open_connections > 0)) > 0.9
+          for: 5m
+          labels:
+            severity: warning
+            source: self
+          annotations:
+            summary: "Manager DB connection pool > 90% utilized for 5m"
+            description: "Tune database.maxOpenConns or inspect slow MySQL queries."
+            runbook_url: {{ printf "%s/ha-control-plane.md#opspilotdbpoolsaturated" $runbookBase | quote }}
+
+        - alert: OpsPilotAlertEvaluatorStalled
+          expr: sum(rate(opspilot_alert_eval_ticks_total[5m])) == 0
+          for: 10m
+          labels:
+            severity: critical
+            source: self
+          annotations:
+            summary: "Alert evaluator hasn't ticked for 10m across the cluster"
+            description: "Alert evaluation has stopped cluster-wide. Verify alert-evaluator lease and MySQL reachability."
+            runbook_url: {{ printf "%s/ha-control-plane.md#opspilotalertevaluatorstalled" $runbookBase | quote }}
+
+        - alert: OpsPilotHTTP5xxRateHigh
+          expr: |
+            sum(rate(opspilot_http_requests_total{status="5xx"}[5m]))
+              /
+            sum(rate(opspilot_http_requests_total[5m]))
+              > 0.05
+          for: 5m
+          labels:
+            severity: warning
+            source: self
+          annotations:
+            summary: "Control-plane API 5xx rate > 5% for 5m"
+            description: "Inspect failing routes and downstream MySQL/Prometheus/Loki/Tempo dependencies."
+            runbook_url: {{ printf "%s/ha-control-plane.md#opspilothttp5xxratehigh" $runbookBase | quote }}
+{{- end }}

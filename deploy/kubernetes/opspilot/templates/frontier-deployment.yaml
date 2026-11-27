@@ -1,0 +1,99 @@
+{{- if .Values.frontier.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "opspilot.frontierName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "opspilot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontier
+spec:
+  replicas: {{ default 1 .Values.frontier.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "opspilot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: frontier
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/frontier-configmap.yaml") . | sha256sum }}
+      labels:
+        {{- include "opspilot.labels" . | nindent 8 }}
+        app.kubernetes.io/component: frontier
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if or .Values.image.architecture .Values.frontier.nodeSelector }}
+      nodeSelector:
+        {{- with .Values.image.architecture }}
+        kubernetes.io/arch: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.frontier.nodeSelector }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.frontier.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.frontier.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: {{ .Values.frontier.podSecurity.runAsNonRoot }}
+        runAsUser: {{ .Values.frontier.podSecurity.runAsUser }}
+        runAsGroup: {{ .Values.frontier.podSecurity.runAsGroup }}
+        fsGroup: {{ .Values.frontier.podSecurity.fsGroup }}
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: frontier
+          image: {{ include "opspilot.frontierImage" . | quote }}
+          imagePullPolicy: {{ default "IfNotPresent" .Values.frontier.image.pullPolicy }}
+          args:
+            - "--config"
+            - "/usr/conf/frontier.yaml"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: servicebound
+              containerPort: {{ .Values.frontier.service.serviceboundPort }}
+              protocol: TCP
+            - name: edgebound
+              containerPort: 40012
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: servicebound
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: servicebound
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.frontier.resources | nindent 12 }}
+          volumeMounts:
+            - name: frontier-conf
+              mountPath: /usr/conf/frontier.yaml
+              subPath: frontier.yaml
+              readOnly: true
+      volumes:
+        - name: frontier-conf
+          configMap:
+            name: {{ include "opspilot.frontierName" . }}-config
+{{- end }}

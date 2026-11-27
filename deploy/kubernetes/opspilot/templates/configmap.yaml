@@ -1,0 +1,49 @@
+{{- $ext := default dict .Values.externalServices -}}
+{{- $prom := default dict $ext.prometheus -}}
+{{- $loki := default dict $ext.loki -}}
+{{- $tempo := default dict $ext.tempo -}}
+{{- $pyroscope := default dict $ext.pyroscope -}}
+{{- $qdrant := default dict $ext.qdrant -}}
+{{- $grafana := default dict $ext.grafana -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "opspilot.managerName" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "opspilot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
+data:
+  OPSPILOT_HTTP_ADDR: ":{{ .Values.manager.service.port }}"
+  OPSPILOT_METRICS_ADDR: ":{{ .Values.manager.service.metricsPort }}"
+  OPSPILOT_DB_DIALECT: {{ .Values.database.dialect | quote }}
+  OPSPILOT_DB_MAX_OPEN_CONNS: {{ .Values.database.maxOpenConns | quote }}
+  OPSPILOT_DB_MAX_IDLE_CONNS: {{ .Values.database.maxIdleConns | quote }}
+  OPSPILOT_LEASE_TTL: {{ .Values.manager.ha.leaseTTL | quote }}
+  OPSPILOT_LEASE_RENEW_INTERVAL: {{ .Values.manager.ha.leaseRenewInterval | quote }}
+  OPSPILOT_LEASE_RETRY_INTERVAL: {{ .Values.manager.ha.leaseRetryInterval | quote }}
+  OPSPILOT_STALE_WORKER_TIMEOUT: {{ .Values.manager.ha.staleWorkerTimeout | quote }}
+  {{- if .Values.frontier.enabled }}
+  OPSPILOT_FRONTIER_ADDR: {{ printf "%s:%v" (include "opspilot.frontierName" .) .Values.frontier.service.serviceboundPort | quote }}
+  OPSPILOT_FRONTIER_SERVICE_NAME: {{ .Values.frontier.serviceName | quote }}
+  {{- end }}
+  {{- if not (empty $ext.publicURL) }}
+  OPSPILOT_PUBLIC_URL: {{ $ext.publicURL | quote }}
+  {{- end }}
+  {{- if not (empty .Values.secrets.adminEmail) }}
+  OPSPILOT_ADMIN_EMAIL: {{ .Values.secrets.adminEmail | quote }}
+  {{- end }}
+  OPSPILOT_PROM_ENABLED: {{ default false $prom.enabled | quote }}
+  OPSPILOT_PROM_URL: {{ default "" $prom.url | quote }}
+  OPSPILOT_PROM_QUERY_URL: {{ default "" $prom.queryURL | quote }}
+  OPSPILOT_PROM_REMOTE_WRITE_URL: {{ default "" $prom.remoteWriteURL | quote }}
+  OPSPILOT_PROM_TLS_INSECURE: {{ default false $prom.tlsInsecure | quote }}
+  OPSPILOT_LOG_QUERY_URL: {{ default "none" $loki.url | quote }}
+  OPSPILOT_TRACE_QUERY_URL: {{ default "none" $tempo.url | quote }}
+  OPSPILOT_OTEL_ENDPOINT: {{ default "" $tempo.otelEndpoint | quote }}
+  OPSPILOT_OTEL_SAMPLING_RATIO: {{ default "1" $tempo.otelSamplingRatio | quote }}
+  OPSPILOT_PROFILE_QUERY_URL: {{ default "none" $pyroscope.url | quote }}
+  OPSPILOT_QDRANT_URL: {{ default "" $qdrant.url | quote }}
+  {{- if not (empty $grafana.internalURL) }}
+  OPSPILOT_GRAFANA_INTERNAL_URL: {{ $grafana.internalURL | quote }}
+  {{- end }}

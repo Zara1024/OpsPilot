@@ -18,6 +18,40 @@ groups:
         annotations:
           summary: "opspilot manager unreachable for 2m"
           description: "Prometheus can't scrape /metrics on the manager. Check `docker logs opspilot -n 200`, disk space on the data dir, and DB reachability."
+          runbook_url: "https://github.com/Zara1024/OpsPilot/blob/main/docs/runbooks/ha-control-plane.md#opspilotmanagerdown"
+
+      - alert: OpsPilotClusterLeaseNoLeader
+        expr: sum by (lease) (opspilot_cluster_lease_held) == 0
+        for: 2m
+        labels:
+          severity: critical
+          source: self
+        annotations:
+          summary: "distributed lease {{ $labels.lease }} has no active leader for 2m"
+          description: "All OpsPilot manager replicas failed to acquire or renew lease {{ $labels.lease }}. Check MySQL connectivity, /readyz, and coord logs."
+          runbook_url: "https://github.com/Zara1024/OpsPilot/blob/main/docs/runbooks/ha-control-plane.md#opspilotclusterleasenoleader"
+
+      - alert: OpsPilotClusterLeaseSplitBrain
+        expr: sum by (lease) (opspilot_cluster_lease_held) > 1
+        for: 1m
+        labels:
+          severity: critical
+          source: self
+        annotations:
+          summary: "distributed lease {{ $labels.lease }} held by >1 replica simultaneously"
+          description: "Multiple OpsPilot replicas report holding the same distributed lease {{ $labels.lease }}. Inspect DB clock skew and coord lease transitions immediately."
+          runbook_url: "https://github.com/Zara1024/OpsPilot/blob/main/docs/runbooks/ha-control-plane.md#opspilotclusterleasesplitbrain"
+
+      - alert: OpsPilotClusterLeaseFlapping
+        expr: sum by (lease) (increase(opspilot_cluster_lease_transitions_total{event="acquired"}[15m])) >= 4
+        for: 5m
+        labels:
+          severity: warning
+          source: self
+        annotations:
+          summary: "distributed lease {{ $labels.lease }} flapping (>=4 acquisitions in 15m)"
+          description: "Frequent leadership handoffs indicate DB pool contention, CPU throttling, or pod restarts under load."
+          runbook_url: "https://github.com/Zara1024/OpsPilot/blob/main/docs/runbooks/ha-control-plane.md#opspilotclusterleaseflapping"
 
       - alert: OpsPilotOrphanWorkerSessions
         expr: opspilot_chatruntime_worker_sessions{status="running"} > 20
@@ -28,6 +62,7 @@ groups:
         annotations:
           summary: "> 20 chatruntime worker sessions running for 5m — possible leak"
           description: "Likely the same shape as the 161-orphan incident on 2026-05-19 (v0.7.44). Inspect /api/v1/aiops/sessions?kind=investigation; if status looks stuck investigate goroutine leak in chatruntime.SpawnWorker."
+          runbook_url: "https://github.com/Zara1024/OpsPilot/blob/main/docs/runbooks/ha-control-plane.md#opspilotorphanworkersessions"
 
       - alert: OpsPilotLLMErrorRateHigh
         expr: |
@@ -42,6 +77,7 @@ groups:
         annotations:
           summary: "LLM error rate > 10% for 10m"
           description: "Common causes: provider/model mismatch in system_settings, missing API key, upstream rate-limit. Check `/admin/llm` and inspect manager logs for `llm chat completion failed`."
+          runbook_url: "https://github.com/Zara1024/OpsPilot/blob/main/docs/runbooks/ha-control-plane.md#opspilotllmerrorratehigh"
 
       - alert: OpsPilotDBPoolSaturated
         expr: opspilot_db_pool_in_use / opspilot_db_pool_open_connections > 0.9
@@ -52,6 +88,7 @@ groups:
         annotations:
           summary: "DB pool > 90% utilised for 5m"
           description: "Tune OPSPILOT_DB_MAX_OPEN_CONNS upward, or investigate slow queries. Check opspilot_db_pool_wait_count_total rate to see if requests are queueing."
+          runbook_url: "https://github.com/Zara1024/OpsPilot/blob/main/docs/runbooks/ha-control-plane.md#opspilotdbpoolsaturated"
 
       - alert: OpsPilotAlertEvaluatorStalled
         expr: sum(rate(opspilot_alert_eval_ticks_total[5m])) == 0
@@ -62,6 +99,7 @@ groups:
         annotations:
           summary: "Alert evaluator hasn't ticked for 10m — alerts silently lost"
           description: "Pipeline evaluator goroutine is dead or stuck. Check `docker logs opspilot -n 200 | grep alert-pipeline`."
+          runbook_url: "https://github.com/Zara1024/OpsPilot/blob/main/docs/runbooks/ha-control-plane.md#opspilotalertevaluatorstalled"
 
       - alert: OpsPilotHTTP5xxRateHigh
         expr: |
@@ -76,3 +114,4 @@ groups:
         annotations:
           summary: "API 5xx rate > 5% for 5m"
           description: "Check which route(s) by `topk(5, sum by (route) (rate(opspilot_http_requests_total{status=\"5xx\"}[5m])))`."
+          runbook_url: "https://github.com/Zara1024/OpsPilot/blob/main/docs/runbooks/ha-control-plane.md#opspilothttp5xxratehigh"
