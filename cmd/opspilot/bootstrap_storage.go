@@ -17,6 +17,7 @@ import (
 	managerbizsecret "github.com/Zara1024/OpsPilot/internal/manager/biz/secret"
 	managerbizskill "github.com/Zara1024/OpsPilot/internal/manager/biz/skill"
 	manageraiopsdata "github.com/Zara1024/OpsPilot/internal/manager/data/aiops/store"
+	manageraicostdata "github.com/Zara1024/OpsPilot/internal/manager/data/aicost/store"
 	manageralertdata "github.com/Zara1024/OpsPilot/internal/manager/data/alert/store"
 	managerapprovaldata "github.com/Zara1024/OpsPilot/internal/manager/data/approval/store"
 	manageraudtdata "github.com/Zara1024/OpsPilot/internal/manager/data/audit/store"
@@ -79,6 +80,7 @@ func bootstrapStorage(rootCtx context.Context, cfg *config.Config, log *slog.Log
 		managertopologydata.Migrate,
 		managermetricdata.Migrate,
 		manageraiopsdata.Migrate,
+		manageraicostdata.Migrate,
 		resultdata.Migrate,
 		externalmcpdata.Migrate,
 		managerbizskill.Migrate,

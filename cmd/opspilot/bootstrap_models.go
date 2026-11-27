@@ -4,8 +4,12 @@ import (
 	"context"
 	"log/slog"
 
+	iambizmembership "github.com/Zara1024/OpsPilot/internal/iam/biz/membership"
+	managerbizaicost "github.com/Zara1024/OpsPilot/internal/manager/biz/aicost"
 	managerbizsetting "github.com/Zara1024/OpsPilot/internal/manager/biz/setting"
+	manageraicostdata "github.com/Zara1024/OpsPilot/internal/manager/data/aicost/store"
 	settingmodel "github.com/Zara1024/OpsPilot/internal/manager/model/setting"
+	managerserveraicost "github.com/Zara1024/OpsPilot/internal/manager/server/aicost"
 	"github.com/Zara1024/OpsPilot/internal/pkg/config"
 	"github.com/Zara1024/OpsPilot/internal/pkg/llm"
 	"github.com/prometheus/client_golang/prometheus"
@@ -16,9 +20,29 @@ type modelsModule struct {
 	llmEnvDefaults      map[string]managerbizsetting.EnvProviderDefaults
 	llmSettingsResolver *managerbizsetting.LLMSettingsResolver
 	llmClient           llm.Client
+	aiCostHandler       *managerserveraicost.Handler
 }
 
-func bootstrapModels(rootCtx context.Context, cfg *config.Config, log *slog.Logger, reg *prometheus.Registry, settings *settingsModule) *modelsModule {
+type aicostOrgAdapter struct {
+	memberships *iambizmembership.Service
+}
+
+func (a *aicostOrgAdapter) ListOrgIDsByUser(ctx context.Context, userID uint64) ([]uint64, error) {
+	if a == nil || a.memberships == nil || userID == 0 {
+		return nil, nil
+	}
+	list, err := a.memberships.ListByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]uint64, 0, len(list))
+	for _, m := range list {
+		out = append(out, m.OrgID)
+	}
+	return out, nil
+}
+
+func bootstrapModels(rootCtx context.Context, cfg *config.Config, log *slog.Logger, reg *prometheus.Registry, storage *storageModule, iam *iamModule, settings *settingsModule) *modelsModule {
 	// LLM client. Resolver lets admin edits to system_settings take effect
 	// on the next Chat call (cache TTL = 60s) without a manager restart.
 	// Empty resolver fields fall back to cfg.OpenAI.
@@ -262,11 +286,23 @@ func bootstrapModels(rootCtx context.Context, cfg *config.Config, log *slog.Logg
 	// (workflows/tools) keep their narrower or specialised deadlines.
 	llmClient := llm.WithDefaultTimeout(llmRouter, settings.settingSvc.AgentLLMTimeout)
 
+	var aiCostHandler *managerserveraicost.Handler
+	if storage != nil && storage.db != nil {
+		var orgReader managerbizaicost.OrgMembershipReader
+		if iam != nil && iam.membershipSvc != nil {
+			orgReader = &aicostOrgAdapter{memberships: iam.membershipSvc}
+		}
+		aiCostSvc := managerbizaicost.New(manageraicostdata.New(storage.db), orgReader, log.With(slog.String("comp", "aicost")))
+		llmClient = llm.WithCostGuard(llmClient, aiCostSvc)
+		aiCostHandler = managerserveraicost.NewHandler(aiCostSvc)
+	}
+
 	return &modelsModule{
 		llmRouter:           llmRouter,
 		llmEnvDefaults:      llmEnvDefaults,
 		llmSettingsResolver: llmSettingsResolver,
 		llmClient:           llmClient,
+		aiCostHandler:       aiCostHandler,
 	}
 }
 

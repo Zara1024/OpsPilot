@@ -349,6 +349,35 @@ func (m *MultiClient) HasProvider(id string) bool {
 	return ok
 }
 
+// ResolveTarget returns the effective (provider, model) pair for req without
+// issuing a network call.
+func (m *MultiClient) ResolveTarget(ctx context.Context, req ChatReq) (string, string) {
+	_, infos, defID, allowFallback := m.activeSubs(ctx)
+	provider := strings.TrimSpace(req.Provider)
+	if provider == "" {
+		provider = defID
+	}
+	model := strings.TrimSpace(req.Model)
+	if model == "" && provider != "" {
+		for _, info := range infos {
+			if info.ID == provider {
+				model = strings.TrimSpace(info.Model)
+				break
+			}
+		}
+	}
+	if model == "" && allowFallback {
+		if tr, ok := m.fallback.(TargetResolver); ok {
+			fp, fm := tr.ResolveTarget(ctx, req)
+			if provider == "" {
+				provider = fp
+			}
+			model = fm
+		}
+	}
+	return provider, model
+}
+
 // Chat routes the request to the sub-client matching req.Provider; an
 // empty provider falls back to the default sub-client, then to the
 // constructor-supplied fallback. Returns an error if neither is
@@ -360,12 +389,20 @@ func (m *MultiClient) HasProvider(id string) bool {
 // 2026-05-16 was invisible because the legacy metrics inside the sub
 // client tagged everything as "model=..." with no provider label).
 func (m *MultiClient) Chat(ctx context.Context, req ChatReq) (*ChatResp, error) {
-	subs, _, defID, allowFallback := m.activeSubs(ctx)
+	subs, infos, defID, allowFallback := m.activeSubs(ctx)
 	id := strings.TrimSpace(req.Provider)
 	if id == "" {
 		id = defID
 	}
 	req.Provider = id
+
+	defaultModel := ""
+	for _, info := range infos {
+		if info.ID == id {
+			defaultModel = strings.TrimSpace(info.Model)
+			break
+		}
+	}
 
 	start := time.Now()
 	var (
@@ -394,6 +431,17 @@ func (m *MultiClient) Chat(ctx context.Context, req ChatReq) (*ChatResp, error) 
 		providerLabel = "fallback"
 	}
 	modelLabel := strings.TrimSpace(req.Model)
+	if modelLabel == "" {
+		modelLabel = defaultModel
+	}
+	if resp != nil {
+		if resp.Model != "" {
+			modelLabel = resp.Model
+		}
+		if resp.Provider == "" && id != "" {
+			resp.Provider = id
+		}
+	}
 	if modelLabel == "" {
 		modelLabel = "(default)"
 	}

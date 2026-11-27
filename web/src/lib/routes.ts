@@ -54,6 +54,7 @@ const ROUTE_DEFS: RouteDef[] = [
 
   { path: '/admin/users', zh: '用户管理 / 用户', en: 'Admin / Users', keywords: ['users', 'yonghu', 'admin'], group: '用户管理' },
   { path: '/admin/orgs', zh: '用户管理 / 组织', en: 'Admin / Orgs', keywords: ['orgs', 'org', 'team', 'zuzhi'], group: '用户管理' },
+  { path: '/admin/ai-cost', zh: '安全与治理 / AI 成本与熔断', en: 'Admin / AI Cost & Quotas', keywords: ['ai', 'token', 'cost', 'quota', 'budget', 'circuit', 'chengben', 'rongduan'], group: '用户管理' },
   { path: '/edges/shell-sessions', zh: '设备 / WebSSH 会话', en: 'Devices / WebSSH sessions', keywords: ['webssh', 'shell', 'sessions', 'huihua'], group: '基础设施' },
 ];
 

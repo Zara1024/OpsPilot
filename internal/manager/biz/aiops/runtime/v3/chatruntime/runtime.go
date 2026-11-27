@@ -745,6 +745,15 @@ func (rt *Runtime) Handle(ctx context.Context, req *Request) (result *Reply, ret
 	// the "user closed browser mid-tool-batch" case the in-session
 	// ChatModel.OnStart flush can't reach. Defer with a background-rooted
 	// ctx so a cancelled request ctx doesn't block the stub inserts.
+	metaSrc := llm.CallMetaFrom(ctx).Source
+	if metaSrc == "" {
+		metaSrc = llm.SourceChat
+	}
+	ctx = llm.WithCallMeta(ctx, llm.CallMeta{
+		Source:    metaSrc,
+		UserID:    req.UserID,
+		SessionID: sess.ID,
+	})
 	defer func() {
 		flushCtx := context.WithoutCancel(ctx)
 		callbacks.FinalizeBatches(flushCtx, handlers)

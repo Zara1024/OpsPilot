@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
+	"github.com/Zara1024/OpsPilot/internal/pkg/llm"
 )
 
 // GenLLM is the one-shot completion seam used for generation (reuses the same
@@ -33,6 +34,7 @@ func (u *Usecase) GenerateGraph(ctx context.Context, prompt string) (CreateInput
 	if prompt == "" {
 		return CreateInput{}, fmt.Errorf("%w: prompt required", errs.ErrInvalid)
 	}
+	ctx = llm.WithCallMeta(ctx, llm.CallMeta{Source: llm.SourceFlow, RefID: "generate_graph"})
 	out, err := u.llm.RunLLM(ctx, genSystemPrompt(u.ListTools()), prompt)
 	if err != nil {
 		return CreateInput{}, err

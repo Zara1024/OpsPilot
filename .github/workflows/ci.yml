@@ -100,6 +100,7 @@ jobs:
           src/pages/settings/CommunicationProviders.test.tsx
           src/pages/settings/Security.test.tsx
           src/pages/settings/Roles.test.tsx
+          src/pages/settings/AICost.test.tsx
           src/pages/Login.test.tsx
           src/pages/AccountSecurity.test.tsx
           src/lib/qrcode.test.ts
@@ -194,6 +195,7 @@ jobs:
             ./internal/iam/data/rbac/store \
             ./internal/manager/data/flow/store \
             ./internal/manager/data/aiops/store \
+            ./internal/manager/data/aicost/store \
             ./internal/manager/data/alert/store \
             ./internal/manager/data/device/store \
             ./internal/manager/data/k8s/store \

@@ -86,6 +86,11 @@ func (a *AiopsServiceAdapter) EnsureSession(ctx context.Context, ownerUserID uin
 // caller's goroutine — the bridge calls this from its own goroutine
 // (the webhook handler returns 200 immediately).
 func (a *AiopsServiceAdapter) StreamMessage(ctx context.Context, sessionID string, userContent string, emit chatprotocol.Emit) error {
+	ctx = llm.WithCallMeta(ctx, llm.CallMeta{
+		Source:    llm.SourceIMBridge,
+		UserID:    a.serviceUserID,
+		SessionID: sessionID,
+	})
 	opts := a.runOptions(ctx)
 	_, err := a.svc.PostMessageStreamWithOpts(ctx, a.caller(), sessionID, userContent, emit, opts)
 	return err

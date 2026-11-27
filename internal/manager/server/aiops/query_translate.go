@@ -146,6 +146,10 @@ func (h *Handler) queryTranslate(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), queryTranslateTimeout)
 	defer cancel()
+	ctx = llm.WithCallMeta(ctx, llm.CallMeta{
+		Source: llm.SourceQueryTranslate,
+		RefID:  dialect,
+	})
 
 	resp, err := h.llmClient.Chat(ctx, llm.ChatReq{
 		Messages: []llm.Message{

@@ -173,5 +173,16 @@
   {"method":"POST","path":"/v1/iam/rbac/grants","reason":"Resource-level RBAC management remains admin-only in the console."},
   {"method":"PUT","path":"/v1/iam/rbac/grants/{id}","reason":"Resource-level RBAC management remains admin-only in the console."},
   {"method":"DELETE","path":"/v1/iam/rbac/grants/{id}","reason":"Resource-level RBAC management remains admin-only in the console."},
-  {"method":"POST","path":"/v1/iam/rbac/check","reason":"Resource-level RBAC simulation remains admin-only in the console."}
+  {"method":"POST","path":"/v1/iam/rbac/check","reason":"Resource-level RBAC simulation remains admin-only in the console."},
+  {"method":"GET","path":"/v1/ai-cost/summary","reason":"AI token cost governance remains admin-only in the console."},
+  {"method":"GET","path":"/v1/ai-cost/logs","reason":"AI token usage ledger remains admin-only in the console."},
+  {"method":"GET","path":"/v1/ai-cost/quotas","reason":"AI cost quota management remains admin-only in the console."},
+  {"method":"POST","path":"/v1/ai-cost/quotas","reason":"AI cost quota management remains admin-only in the console."},
+  {"method":"PUT","path":"/v1/ai-cost/quotas/{id}","reason":"AI cost quota management remains admin-only in the console."},
+  {"method":"DELETE","path":"/v1/ai-cost/quotas/{id}","reason":"AI cost quota management remains admin-only in the console."},
+  {"method":"POST","path":"/v1/ai-cost/quotas/{id}/trip","reason":"AI quota circuit breaker control remains admin-only in the console."},
+  {"method":"POST","path":"/v1/ai-cost/quotas/{id}/reset","reason":"AI quota circuit breaker control remains admin-only in the console."},
+  {"method":"GET","path":"/v1/ai-cost/prices","reason":"AI model price catalog management remains admin-only in the console."},
+  {"method":"PUT","path":"/v1/ai-cost/prices","reason":"AI model price catalog management remains admin-only in the console."},
+  {"method":"DELETE","path":"/v1/ai-cost/prices/{id}","reason":"AI model price catalog management remains admin-only in the console."}
 ]

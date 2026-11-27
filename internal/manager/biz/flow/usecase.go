@@ -19,6 +19,7 @@ import (
 
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/flow"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
+	"github.com/Zara1024/OpsPilot/internal/pkg/llm"
 )
 
 // Repo is the flow-definition persistence contract.
@@ -369,8 +370,16 @@ func (u *Usecase) triggerRun(ctx context.Context, id uint64, entryType string, e
 	// Detach from the request context — the run must outlive it (same
 	// rationale as the chat workCtx fix: a closed connection must not
 	// cancel in-flight work).
+	var flowUserID uint64
+	if by != nil {
+		flowUserID = *by
+	}
 	go func() {
-		bg := context.Background()
+		bg := llm.WithCallMeta(context.Background(), llm.CallMeta{
+			Source: llm.SourceFlow,
+			UserID: flowUserID,
+			RefID:  run.ID,
+		})
 		renewCtx, stopRenew := context.WithCancel(bg)
 		var renewWG sync.WaitGroup
 		if lr, ok := u.runs.(RunLeaseRepo); ok && u.instanceID != "" {

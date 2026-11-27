@@ -28,6 +28,7 @@ import (
 	chatruntime "github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/runtime/contract"
 	aiopsmodel "github.com/Zara1024/OpsPilot/internal/manager/model/aiops"
 	alertmodel "github.com/Zara1024/OpsPilot/internal/manager/model/alert"
+	"github.com/Zara1024/OpsPilot/internal/pkg/llm"
 )
 
 // Repo is the persistence contract — implemented by
@@ -602,6 +603,10 @@ func (uc *Usecase) run(reportID string, incident alertmodel.Incident, dedupKeyVa
 
 	ctx, cancel := context.WithTimeout(context.Background(), uc.cfg.WorkerTimeout)
 	defer cancel()
+	ctx = llm.WithCallMeta(ctx, llm.CallMeta{
+		Source: llm.SourceAlertRCA,
+		RefID:  strconv.FormatUint(incident.ID, 10),
+	})
 
 	start := time.Now()
 	prompt := renderAlertPrompt(&incident, locale)

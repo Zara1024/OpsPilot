@@ -27,10 +27,11 @@ import (
 )
 
 type iamModule struct {
-	userUC     *iambizuser.Usecase
-	signer     *auth.Signer
-	iamHandler *iamserver.Handler
-	authzMW    *authzmw.Middleware
+	userUC        *iambizuser.Usecase
+	signer        *auth.Signer
+	iamHandler    *iamserver.Handler
+	authzMW       *authzmw.Middleware
+	membershipSvc *iambizmembership.Service
 }
 
 func bootstrapIAM(rootCtx context.Context, cfg *config.Config, log *slog.Logger, storage *storageModule) (*iamModule, error) {
@@ -160,8 +161,9 @@ func bootstrapIAM(rootCtx context.Context, cfg *config.Config, log *slog.Logger,
 	authzMW.SetResourceAuthorizer(rbacSvc)
 
 	return &iamModule{userUC: userUC,
-		signer:     signer,
-		iamHandler: iamHandler,
-		authzMW:    authzMW,
+		signer:        signer,
+		iamHandler:    iamHandler,
+		authzMW:       authzMW,
+		membershipSvc: membershipSvc,
 	}, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -64,6 +65,10 @@ func (uc *Usecase) extractStructured(ctx context.Context, incident alertmodel.In
 	prompt := buildExtractorPrompt(incident, finalAnswer, locale) + "\n# Recorded observations (untrusted data; citation IDs are scoped to this report)\n" + sources.Prompt
 	cctx, cancel := context.WithTimeout(ctx, uc.cfg.SummarizerTimeout)
 	defer cancel()
+	cctx = llm.WithCallMeta(cctx, llm.CallMeta{
+		Source: llm.SourceAlertRCA,
+		RefID:  strconv.FormatUint(incident.ID, 10),
+	})
 
 	resp, err := uc.summarizer.Chat(cctx, llm.ChatReq{
 		Model:       uc.cfg.SummarizerModel,

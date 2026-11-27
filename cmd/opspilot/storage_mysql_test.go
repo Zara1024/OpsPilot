@@ -23,6 +23,7 @@ import (
 	iamdatauser "github.com/Zara1024/OpsPilot/internal/iam/data/user/sqlite"
 	managerbizskill "github.com/Zara1024/OpsPilot/internal/manager/biz/skill"
 	manageraiopsdata "github.com/Zara1024/OpsPilot/internal/manager/data/aiops/store"
+	manageraicostdata "github.com/Zara1024/OpsPilot/internal/manager/data/aicost/store"
 	manageralertdata "github.com/Zara1024/OpsPilot/internal/manager/data/alert/store"
 	managerapprovaldata "github.com/Zara1024/OpsPilot/internal/manager/data/approval/store"
 	manageraudtdata "github.com/Zara1024/OpsPilot/internal/manager/data/audit/store"
@@ -102,6 +103,7 @@ func TestMySQLFullSchemaMigrations(t *testing.T) {
 		managertopologydata.Migrate,
 		managermetricdata.Migrate,
 		manageraiopsdata.Migrate,
+		manageraicostdata.Migrate,
 		resultdata.Migrate,
 		externalmcpdata.Migrate,
 		managerbizskill.Migrate,
@@ -148,6 +150,9 @@ func TestMySQLFullSchemaMigrations(t *testing.T) {
 		"oncall_escalation_tasks",
 		"devices",
 		"chat_sessions",
+		"ai_usage_logs",
+		"ai_cost_quotas",
+		"ai_model_prices",
 		"im_apps",
 		"knowledge_repos",
 		"cluster_leases",

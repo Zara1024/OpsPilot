@@ -81,6 +81,7 @@ const AdminUsers = lazy(() => import('@/pages/settings/Users'));
 const AdminOrgs = lazy(() => import('@/pages/settings/Orgs'));
 const AdminRoles = lazy(() => import('@/pages/settings/Roles'));
 const AdminSecurity = lazy(() => import('@/pages/settings/Security'));
+const AdminAICost = lazy(() => import('@/pages/settings/AICost'));
 const AdminAuditLog = lazy(() => import('@/pages/settings/AuditLog'));
 const AdminWebshell = lazy(() => import('@/pages/settings/Webshell'));
 
@@ -244,6 +245,7 @@ export default function App() {
           <Route path="orgs" element={<AdminOrgs />} />
           <Route path="roles" element={<AdminRoles />} />
           <Route path="security" element={<AdminSecurity />} />
+          <Route path="ai-cost" element={<AdminAICost />} />
           <Route path="audit" element={<AdminAuditLog />} />
         </Route>
         <Route path="/account/security" element={<AccountSecurityPage />} />

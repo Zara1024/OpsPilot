@@ -85,7 +85,7 @@ func run() (runErr error) {
 	notifyRouter := notify.NewFromConfig(cfg.Notification, log.With(slog.String("comp", "notify")))
 
 	settings := bootstrapSettings(rootCtx, cfg, log, storage)
-	models := bootstrapModels(rootCtx, cfg, log, reg, settings)
+	models := bootstrapModels(rootCtx, cfg, log, reg, storage, iam, settings)
 	devices := bootstrapDevices(rootCtx, cfg, log, storage, iam, settings)
 	alerts := bootstrapAlerts(rootCtx, cfg, log, storage)
 	oncall := bootstrapOncall(cfg, log, reg, notifyRouter, storage, alerts)
@@ -108,7 +108,7 @@ func run() (runErr error) {
 	if err != nil {
 		return err
 	}
-	http, err := buildHTTPServers(rootCtx, cfg, log, reg, storage, iam, settings, devices, telemetry, tunnel, aiops, runtime, imbridge, automation, system, extensions, external, oncall)
+	http, err := buildHTTPServers(rootCtx, cfg, log, reg, storage, iam, settings, models, devices, telemetry, tunnel, aiops, runtime, imbridge, automation, system, extensions, external, oncall)
 	if err != nil {
 		return err
 	}

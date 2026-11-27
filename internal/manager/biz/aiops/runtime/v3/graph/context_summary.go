@@ -77,6 +77,7 @@ func transientSummaryError(err error) string {
 
 // The summary has no executable tools. Retry only this fragment inside one deadline.
 func (m *windowModel) generateSummary(ctx context.Context, messages []*schema.Message, opts []model.Option) (*schema.Message, error) {
+	ctx = llm.WithCallMeta(ctx, llm.CallMeta{Source: llm.SourceCompaction, SessionID: m.window.SessionID})
 	ctx, cancel := context.WithTimeout(ctx, 105*time.Second)
 	defer cancel()
 	for attempt := 1; ; attempt++ {

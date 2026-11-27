@@ -132,6 +132,15 @@ type ChatReq struct {
 type ChatResp struct {
 	Assistant Message // role=assistant; may have empty Content + non-empty ToolCalls
 	Usage     Usage
+	Provider  string
+	Model     string
+}
+
+// TargetResolver optionally resolves the concrete (provider, model) pair before
+// Client.Chat sends the wire request, allowing cost/quota guards to check
+// model-scoped rules even when req.Provider or req.Model is omitted.
+type TargetResolver interface {
+	ResolveTarget(ctx context.Context, req ChatReq) (provider, model string)
 }
 
 // BudgetChecker gates Chat requests against a token budget. Called with an
@@ -178,6 +187,13 @@ func (c timeoutClient) Chat(ctx context.Context, req ChatReq) (*ChatResp, error)
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return c.inner.Chat(callCtx, req)
+}
+
+func (c timeoutClient) ResolveTarget(ctx context.Context, req ChatReq) (string, string) {
+	if tr, ok := c.inner.(TargetResolver); ok {
+		return tr.ResolveTarget(ctx, req)
+	}
+	return strings.TrimSpace(req.Provider), strings.TrimSpace(req.Model)
 }
 
 // Resolver supplies the LLM credentials at call time. The seam exists so
@@ -555,7 +571,32 @@ func (c *openaiClient) Chat(ctx context.Context, req ChatReq) (result *ChatResp,
 	if !callbackOwned && len(sdkResp.Choices) > 0 {
 		tracing.RecordAgentContent(span, "output.value", sdkResp.Choices[0].Message)
 	}
-	return &ChatResp{Assistant: assistant, Usage: usage}, nil
+	resolvedModel := strings.TrimSpace(sdkResp.Model)
+	if resolvedModel == "" {
+		resolvedModel = model
+	}
+	resolvedProvider := strings.TrimSpace(req.Provider)
+	if resolvedProvider == "" {
+		resolvedProvider = strings.TrimSpace(c.cfg.Provider)
+	}
+	return &ChatResp{
+		Assistant: assistant,
+		Usage:     usage,
+		Provider:  resolvedProvider,
+		Model:     resolvedModel,
+	}, nil
+}
+
+func (c *openaiClient) ResolveTarget(_ context.Context, req ChatReq) (string, string) {
+	provider := strings.TrimSpace(req.Provider)
+	if provider == "" {
+		provider = strings.TrimSpace(c.cfg.Provider)
+	}
+	model := strings.TrimSpace(req.Model)
+	if model == "" {
+		model = strings.TrimSpace(c.cfg.Model)
+	}
+	return provider, model
 }
 
 // toOpenAIReq translates the public ChatReq to the SDK request shape.

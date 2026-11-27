@@ -10,6 +10,7 @@ import (
 
 	chatruntime "github.com/Zara1024/OpsPilot/internal/manager/biz/aiops/runtime/contract"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/report"
+	"github.com/Zara1024/OpsPilot/internal/pkg/llm"
 )
 
 // WorkerSpawner is the narrow seam onto chatruntime.Runtime that the
@@ -131,6 +132,11 @@ func (g *workerGenerator) Generate(ctx context.Context, reportID string) {
 func (g *workerGenerator) generate(ctx context.Context, rpt *model.Report) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), g.timeout(ctx))
 	defer cancel()
+	ctx = llm.WithCallMeta(ctx, llm.CallMeta{
+		Source: llm.SourceReport,
+		UserID: rpt.CreatedBy,
+		RefID:  rpt.ID,
+	})
 
 	period := Period{Start: rpt.PeriodStart, End: rpt.PeriodEnd}
 	prev := previousPeriod(period)

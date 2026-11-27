@@ -596,6 +596,28 @@ func (rt *Runtime) runWorker(ctx context.Context, agentDef *Agent, sessID, userT
 	// "AgentTool unavailable" and gives up. InitCallbacks installs a fresh
 	// manager; the worker's own handlers are registered via WithCallbacks below.
 	workerCtx := einocallbacks.InitCallbacks(ctx, nil)
+	src := llm.CallMetaFrom(workerCtx).Source
+	if src == "" {
+		switch req.SessionKind {
+		case aiopsmodel.SessionKindInvestigation:
+			src = llm.SourceAlertRCA
+		case "report":
+			src = llm.SourceReport
+		case "flow":
+			src = llm.SourceFlow
+		default:
+			src = llm.SourceChat
+		}
+	}
+	var metaUserID uint64
+	if session != nil {
+		metaUserID = session.UserID
+	}
+	workerCtx = llm.WithCallMeta(workerCtx, llm.CallMeta{
+		Source:    src,
+		UserID:    metaUserID,
+		SessionID: sessID,
+	})
 
 	// Autoheal any tool batch still open when the worker exits — same
 	// rationale as the parent runtime defer. context.WithoutCancel
@@ -997,6 +1019,9 @@ func detachedWorkerContext(ctx context.Context) context.Context {
 	parent = basetool.WithAgentWriteAllowed(parent, basetool.AgentWriteAllowedFromContext(ctx))
 	if tenant, ok := tenantctx.From(ctx); ok {
 		parent = tenantctx.With(parent, tenant)
+	}
+	if meta := llm.CallMetaFrom(ctx); meta != (llm.CallMeta{}) {
+		parent = llm.WithCallMeta(parent, meta)
 	}
 	return parent
 }

@@ -37,6 +37,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"sync"
 	"time"
 
@@ -227,6 +228,10 @@ func (i *Investigator) workerLoop() {
 func (i *Investigator) runOne(incident *model.Incident) {
 	ctx, cancel := context.WithTimeout(context.Background(), i.cfg.LLMTimeout)
 	defer cancel()
+	ctx = llm.WithCallMeta(ctx, llm.CallMeta{
+		Source: llm.SourceAlertRCA,
+		RefID:  strconv.FormatUint(incident.ID, 10),
+	})
 
 	logCtx := i.log.With(
 		slog.Uint64("incident_id", incident.ID),

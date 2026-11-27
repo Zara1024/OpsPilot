@@ -26,7 +26,7 @@ type httpModule struct {
 	metricsServer *httpserver.Server
 }
 
-func buildHTTPServers(rootCtx context.Context, cfg *config.Config, log *slog.Logger, reg *prometheus.Registry, storage *storageModule, iam *iamModule, settings *settingsModule, devices *devicesModule, telemetry *telemetryModule, tunnel *tunnelModule, aiops *aiopsModule, runtime *runtimeModule, imbridge *imbridgeModule, automation *automationModule, system *systemModule, extensions *extensionsModule, external *externalMCPModule, oncall *oncallModule) (*httpModule, error) {
+func buildHTTPServers(rootCtx context.Context, cfg *config.Config, log *slog.Logger, reg *prometheus.Registry, storage *storageModule, iam *iamModule, settings *settingsModule, models *modelsModule, devices *devicesModule, telemetry *telemetryModule, tunnel *tunnelModule, aiops *aiopsModule, runtime *runtimeModule, imbridge *imbridgeModule, automation *automationModule, system *systemModule, extensions *extensionsModule, external *externalMCPModule, oncall *oncallModule) (*httpModule, error) {
 	promProxySvc := managersvcprom.New(iam.signer)
 	// Wire the cloud-Prom query client into the proxy handler so the
 	// SPA's Monitor page can issue range queries through the same
@@ -94,6 +94,9 @@ func buildHTTPServers(rootCtx context.Context, cfg *config.Config, log *slog.Log
 		}
 		settings.settingHandler.Register(protected)
 		telemetry.integrationHandler.Register(protected)
+		if models != nil && models.aiCostHandler != nil {
+			models.aiCostHandler.RegisterProtected(protected)
+		}
 		extensions.marketplaceHandler.Register(protected)
 		extensions.secretHandler.Register(protected)
 		extensions.mcpHandler.Register(protected)
