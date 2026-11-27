@@ -17,6 +17,7 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/host"
 	"github.com/shirou/gopsutil/v3/mem"
@@ -162,7 +163,7 @@ func (s *Scraper) scrapeOnce(ctx context.Context, t ScrapeTarget) {
 		return
 	}
 
-	var p expfmt.TextParser
+	p := expfmt.NewTextParser(model.LegacyValidation)
 	families, err := p.TextToMetricFamilies(resp.Body)
 	if err != nil {
 		s.log.Warn("scrape: parse failed",

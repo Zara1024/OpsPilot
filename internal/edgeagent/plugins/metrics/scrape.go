@@ -15,6 +15,7 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 
 	"github.com/Zara1024/OpsPilot/internal/edgeagent/collector"
 	"github.com/Zara1024/OpsPilot/internal/edgeagent/plugins"
@@ -185,7 +186,7 @@ func scrapeOnce(ctx context.Context, spec specView, targetURL string) ([]tunnel.
 		return nil, spec.SourceLabel, fmt.Errorf("http status %d", resp.StatusCode)
 	}
 
-	var p expfmt.TextParser
+	p := expfmt.NewTextParser(model.LegacyValidation)
 	families, err := p.TextToMetricFamilies(resp.Body)
 	if err != nil {
 		return nil, spec.SourceLabel, fmt.Errorf("parse: %w", err)

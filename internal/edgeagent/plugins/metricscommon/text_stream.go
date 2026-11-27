@@ -85,7 +85,7 @@ func parseTextSample(line []byte, defaultTimestamp int64, extraLabels map[string
 		return tunnel.PromSample{}, false, fmt.Errorf("metric name required")
 	}
 	name := string(line[:nameEnd])
-	if !model.IsValidMetricName(model.LabelValue(name)) {
+	if !model.LegacyValidation.IsValidMetricName(name) {
 		return tunnel.PromSample{}, false, fmt.Errorf("invalid metric name %q", name)
 	}
 
@@ -160,7 +160,7 @@ func parseTextLabels(line []byte, position int, labels map[string]string) (int, 
 			position++
 		}
 		labelName := string(line[nameStart:position])
-		if !model.LabelName(labelName).IsValid() || labelName == string(model.MetricNameLabel) {
+		if !model.LegacyValidation.IsValidLabelName(labelName) || labelName == string(model.MetricNameLabel) {
 			return position, fmt.Errorf("invalid label name %q", labelName)
 		}
 		if _, exists := labels[labelName]; exists {
