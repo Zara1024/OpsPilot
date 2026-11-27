@@ -18,6 +18,8 @@ import (
 	iamdatatoken "github.com/Zara1024/OpsPilot/internal/iam/data/integrationtoken"
 	iamdatamembership "github.com/Zara1024/OpsPilot/internal/iam/data/membership/store"
 	iamdataorg "github.com/Zara1024/OpsPilot/internal/iam/data/org/store"
+	iamdatarbac "github.com/Zara1024/OpsPilot/internal/iam/data/rbac/store"
+	iamdatasecurity "github.com/Zara1024/OpsPilot/internal/iam/data/security/store"
 	iamdatauser "github.com/Zara1024/OpsPilot/internal/iam/data/user/sqlite"
 	managerbizskill "github.com/Zara1024/OpsPilot/internal/manager/biz/skill"
 	manageraiopsdata "github.com/Zara1024/OpsPilot/internal/manager/data/aiops/store"
@@ -90,6 +92,8 @@ func TestMySQLFullSchemaMigrations(t *testing.T) {
 		iamdatatoken.Migrate,
 		iamdataorg.Migrate,
 		iamdatamembership.Migrate,
+		iamdatasecurity.Migrate,
+		iamdatarbac.Migrate,
 		manageralertdata.Migrate,
 		managerdevicedata.Migrate,
 		manageredgedata.Migrate,
@@ -130,6 +134,13 @@ func TestMySQLFullSchemaMigrations(t *testing.T) {
 	for _, table := range []string{
 		"users",
 		"iam_integration_tokens",
+		"iam_login_attempts",
+		"iam_user_mfa",
+		"iam_sso_providers",
+		"iam_sso_identities",
+		"iam_sso_states",
+		"iam_auth_policies",
+		"iam_resource_grants",
 		"alert_incidents",
 		"alert_ingest_sources",
 		"alert_heartbeats",

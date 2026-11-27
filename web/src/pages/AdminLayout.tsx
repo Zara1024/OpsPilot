@@ -19,9 +19,11 @@ import { Suspense } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   Building2,
+  KeyRound,
   Loader2,
   ScrollText,
   Shield,
+  ShieldCheck,
   Users as UsersIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
@@ -41,6 +43,8 @@ function railItems(): RailItem[] {
   return [
     { to: 'users', icon: UsersIcon, label: tr('用户', 'Users'), hint: tr('系统用户与系统角色', 'System users and system role') },
     { to: 'orgs', icon: Building2, label: tr('组织', 'Orgs'), hint: tr('组织与组织成员管理', 'Orgs and org memberships') },
+    { to: 'roles', icon: ShieldCheck, label: tr('资源权限', 'Resource RBAC'), hint: tr('设备 / 集群 / 服务访问控制', 'Scoped access grants & simulator') },
+    { to: 'security', icon: KeyRound, label: tr('登录与安全', 'SSO & Security'), hint: tr('企业 SSO 与 MFA 强制策略', 'Enterprise SSO, MFA & throttling') },
     { to: 'audit', icon: ScrollText, label: tr('审计日志', 'Audit log'), hint: tr('谁在何时做了什么', 'Who did what, when') },
   ];
 }
@@ -67,7 +71,7 @@ export default function AdminLayout() {
   }
   return (
     <main className="anim-fade flex flex-1 flex-col overflow-hidden">
-      <PageHeader title={tr('用户管理', 'Admin')} subtitle={tr('用户 / 组织 / 审计；platform governance', 'Users / orgs / audit — platform governance')} />
+      <PageHeader title={tr('安全与治理', 'Admin & Governance')} subtitle={tr('用户 / 组织 / 资源权限 / SSO & MFA / 审计', 'Users / orgs / RBAC / SSO & MFA / audit')} />
 
       <div className="flex-1 overflow-hidden">
         <div className="grid h-full grid-cols-1 lg:grid-cols-[240px_1fr]">

@@ -36,6 +36,8 @@ export type Me = {
   phone: string;
   role: SystemRole;
   status: UserStatus;
+  mfa_enabled?: boolean;
+  mfa_required?: boolean;
   memberships: OrgMembership[];
 };
 
@@ -47,6 +49,7 @@ export type User = {
   phone: string;
   role: SystemRole;
   status: UserStatus;
+  mfa_enabled?: boolean;
   created_at: string;
   updated_at: string;
 };

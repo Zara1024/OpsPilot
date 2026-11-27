@@ -151,6 +151,13 @@ func NewHandler(svc *service.Service, log *slog.Logger) *Handler {
 func (h *Handler) RegisterPublic(r chi.Router) {
 	r.Post("/v1/auth/login", h.login)
 	r.Post("/v1/auth/refresh", h.refresh)
+	r.Post("/v1/auth/mfa/verify", h.verifyMFAChallenge)
+	r.Post("/v1/auth/mfa/enroll/start", h.enrollMFAStart)
+	r.Post("/v1/auth/mfa/enroll/confirm", h.enrollMFAConfirm)
+	r.Get("/v1/auth/sso/providers", h.listPublicSSOProviders)
+	r.Get("/v1/auth/sso/{slug}/start", h.startSSOLogin)
+	r.Post("/v1/auth/sso/{slug}/exchange", h.exchangeSSOLogin)
+	r.Get("/v1/auth/sso/{slug}/callback", h.callbackSSORedirect)
 }
 
 // RegisterProtected attaches routes that require a valid JWT. Caller must
@@ -159,6 +166,14 @@ func (h *Handler) RegisterProtected(r chi.Router) {
 	r.Post("/v1/auth/register", h.register)
 	r.Get("/v1/self", h.self)
 	r.Get("/v1/me", h.me) // Phase-1: enriched self with memberships.
+	r.Get("/v1/auth/mfa/status", h.mfaStatus)
+	r.Post("/v1/auth/mfa/setup", h.mfaSetup)
+	r.Post("/v1/auth/mfa/confirm", h.mfaConfirm)
+	r.Post("/v1/auth/mfa/disable", h.mfaDisable)
+	r.Post("/v1/auth/mfa/recovery-codes/regenerate", h.mfaRegenerateRecoveryCodes)
+	r.Get("/v1/auth/identities", h.listMyIdentities)
+	r.Delete("/v1/auth/identities/{id}", h.unlinkMyIdentity)
+
 	r.Get("/v1/users", h.listUsers)
 	r.Post("/v1/users", h.createUser)
 	r.Patch("/v1/users/{id}", h.updateUser)
@@ -167,6 +182,7 @@ func (h *Handler) RegisterProtected(r chi.Router) {
 	// system now has a single privilege tier (role=admin). DB column
 	// is_superuser is kept for back-compat but no longer exposed.
 	r.Patch("/v1/users/{id}/password", h.resetPassword)
+	r.Post("/v1/users/{id}/mfa/reset", h.adminResetUserMFA)
 	r.Delete("/v1/users/{id}", h.deleteUser)
 
 	// Org CRUD (superuser-only writes; everyone authenticated can read
@@ -179,6 +195,20 @@ func (h *Handler) RegisterProtected(r chi.Router) {
 	r.Post("/v1/orgs/{id}/members", h.addOrgMember)
 	r.Patch("/v1/orgs/{id}/members/{user_id}", h.updateOrgMember)
 	r.Delete("/v1/orgs/{id}/members/{user_id}", h.removeOrgMember)
+
+	// Enterprise auth policy + SSO providers + Resource RBAC (admin only).
+	r.Get("/v1/iam/auth-policy", h.getAuthPolicy)
+	r.Put("/v1/iam/auth-policy", h.updateAuthPolicy)
+	r.Get("/v1/iam/sso/providers", h.adminListSSOProviders)
+	r.Post("/v1/iam/sso/providers", h.adminCreateSSOProvider)
+	r.Put("/v1/iam/sso/providers/{id}", h.adminUpdateSSOProvider)
+	r.Delete("/v1/iam/sso/providers/{id}", h.adminDeleteSSOProvider)
+
+	r.Get("/v1/iam/rbac/grants", h.listRBACGrants)
+	r.Post("/v1/iam/rbac/grants", h.createRBACGrant)
+	r.Put("/v1/iam/rbac/grants/{id}", h.updateRBACGrant)
+	r.Delete("/v1/iam/rbac/grants/{id}", h.deleteRBACGrant)
+	r.Post("/v1/iam/rbac/check", h.checkRBACAccess)
 }
 
 // ---- DTOs ----
@@ -201,10 +231,15 @@ type loginReq struct {
 }
 
 type loginResp struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	ExpiresIn    int64  `json:"expires_in"`
-	Role         string `json:"role"`
+	AccessToken      string `json:"access_token,omitempty"`
+	RefreshToken     string `json:"refresh_token,omitempty"`
+	ExpiresIn        int64  `json:"expires_in,omitempty"`
+	Role             string `json:"role,omitempty"`
+	Email            string `json:"email,omitempty"`
+	MFARequired      bool   `json:"mfa_required,omitempty"`
+	MFASetupRequired bool   `json:"mfa_setup_required,omitempty"`
+	MFAToken         string `json:"mfa_token,omitempty"`
+	RedirectTo       string `json:"redirect_to,omitempty"`
 }
 
 type refreshReq struct {
@@ -230,7 +265,21 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	}
 	ip := clientIP(r)
 	emailKey := strings.ToLower(strings.TrimSpace(in.Email))
-	if err := h.throttle.check(ip, emailKey); err != nil {
+	if tSvc := h.svc.Throttle(); tSvc != nil {
+		if allowed, err := tSvc.LocalLoginAllowed(r.Context()); err == nil && !allowed {
+			auditctx.SetAuditEvent(r, auditctx.Event{
+				Action:       auditctx.ActionAuthLoginFailed,
+				ResourceType: auditctx.ResourceAuth,
+				ResourceID:   emailKey,
+				UserEmail:    emailKey,
+				Status:       auditctx.StatusDenied,
+				ErrorMessage: "local password login disabled by auth policy",
+			})
+			writeErr(w, fmt.Errorf("%w: local password login is disabled; sign in with enterprise SSO", errs.ErrForbidden))
+			return
+		}
+	}
+	if err := h.checkLoginThrottle(r, ip, emailKey); err != nil {
 		auditctx.SetAuditEvent(r, auditctx.Event{
 			Action:       auditctx.ActionAuthLoginFailed,
 			ResourceType: auditctx.ResourceAuth,
@@ -242,9 +291,9 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	pair, err := h.svc.Login(r.Context(), in.Email, in.Password)
+	u, err := h.svc.User().Authenticate(r.Context(), in.Email, in.Password)
 	if err != nil {
-		h.throttle.recordFailure(ip, emailKey)
+		h.recordLoginFailure(r, ip, emailKey)
 		// HLD-010: record failed login. UserID stays nil; email comes
 		// from request body so we can spot password-spraying patterns.
 		auditctx.SetAuditEvent(r, auditctx.Event{
@@ -258,18 +307,8 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	h.throttle.recordSuccess(emailKey)
-	// Successful login no longer audited (operator flagged the row
-	// volume — auth_login_failed below stays for security). The
-	// resulting JWT carries user_id + email; subsequent mutating
-	// actions land audit rows attributed to the right caller via
-	// the tenantctx slot.
-	writeJSON(w, http.StatusOK, loginResp{
-		AccessToken:  pair.AccessToken,
-		RefreshToken: pair.RefreshToken,
-		ExpiresIn:    pair.ExpiresIn,
-		Role:         pair.Role,
-	})
+	h.recordLoginSuccess(r, emailKey)
+	h.completeAuthenticatedLogin(w, r, u, "")
 }
 
 func (h *Handler) refresh(w http.ResponseWriter, r *http.Request) {
@@ -339,9 +378,19 @@ func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	var mfaEnabled map[uint64]bool
+	if mfaSvc := h.svc.MFA(); mfaSvc != nil {
+		if m, err := mfaSvc.EnabledMap(r.Context()); err == nil {
+			mfaEnabled = m
+		}
+	}
 	out := make([]fullUserDTO, 0, len(users))
 	for _, u := range users {
-		out = append(out, toFullUserDTO(u))
+		dto := toFullUserDTO(u)
+		if mfaEnabled != nil {
+			dto.MFAEnabled = mfaEnabled[u.ID]
+		}
+		out = append(out, dto)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out, "total": len(out)})
 }

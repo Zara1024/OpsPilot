@@ -37,6 +37,7 @@ import {
   Network,
   PinOff,
   Settings2,
+  ShieldCheck,
 } from 'lucide-react';
 import { Avatar } from './Avatar';
 import { OpsPilotLogo } from './OpsPilotLogo';
@@ -130,6 +131,16 @@ export function Sidebar() {
         </div>
       </div>
       <div className="my-1 h-px bg-zinc-800" />
+      <DropdownMenuItem
+        onClick={() => {
+          setUserMenuOpen(false);
+          navigate('/account/security');
+        }}
+        className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-[13px] text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+      >
+        <ShieldCheck size={14} />
+        <span>{tr('账号安全', 'Account security')}</span>
+      </DropdownMenuItem>
       {/* Language toggle — zh-CN ↔ en-US. tr() updates everywhere
           immediately because components subscribe via useI18n(). */}
       <DropdownMenuItem

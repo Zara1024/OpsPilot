@@ -362,3 +362,58 @@ func TestCreate_EmailAndPhoneValidation(t *testing.T) {
 		t.Errorf("phone = %q, want empty string", updated.Phone)
 	}
 }
+
+func TestRefreshRejectsAccessAndMFATokens(t *testing.T) {
+	uc := newTestUsecase(t)
+	ctx := context.Background()
+
+	u, err := uc.Create(ctx, CreateInput{
+		Email:    "tokenuser@example.com",
+		Password: "password123",
+		Role:     model.RoleUser,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	pair, err := uc.IssueTokens(u)
+	if err != nil {
+		t.Fatalf("issue tokens: %v", err)
+	}
+	if _, err := uc.Refresh(ctx, pair.AccessToken); !errors.Is(err, errs.ErrUnauthorized) {
+		t.Fatalf("refresh with access token: want ErrUnauthorized, got %v", err)
+	}
+	mfaTok, err := uc.IssueMFAToken(u, false, 5*time.Minute)
+	if err != nil {
+		t.Fatalf("issue mfa token: %v", err)
+	}
+	if _, err := uc.Refresh(ctx, mfaTok); !errors.Is(err, errs.ErrUnauthorized) {
+		t.Fatalf("refresh with mfa token: want ErrUnauthorized, got %v", err)
+	}
+	refreshed, err := uc.Refresh(ctx, pair.RefreshToken)
+	if err != nil {
+		t.Fatalf("refresh with refresh token: %v", err)
+	}
+	if refreshed.AccessToken == "" || refreshed.RefreshToken == "" {
+		t.Fatalf("expected refreshed tokens")
+	}
+}
+
+func TestEnsureSSOUser_JITAndExisting(t *testing.T) {
+	uc := newTestUsecase(t)
+	ctx := context.Background()
+
+	if _, _, err := uc.EnsureSSOUser(ctx, "new.sso@example.com", "New SSO", model.RoleUser, false); !errors.Is(err, errs.ErrForbidden) {
+		t.Fatalf("autoCreate=false: want ErrForbidden, got %v", err)
+	}
+	created, isNew, err := uc.EnsureSSOUser(ctx, "new.sso@example.com", "New SSO", model.RoleUser, true)
+	if err != nil {
+		t.Fatalf("autoCreate=true: %v", err)
+	}
+	if !isNew || created.Email != "new.sso@example.com" || created.Role != model.RoleUser {
+		t.Fatalf("unexpected created sso user: isNew=%v user=%+v", isNew, created)
+	}
+	again, isNew2, err := uc.EnsureSSOUser(ctx, "new.sso@example.com", "Ignored", model.RoleAdmin, true)
+	if err != nil || isNew2 || again.ID != created.ID {
+		t.Fatalf("second lookup mismatch: isNew=%v user=%+v err=%v", isNew2, again, err)
+	}
+}

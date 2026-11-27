@@ -14,6 +14,7 @@ import (
 
 	biz "github.com/Zara1024/OpsPilot/internal/manager/biz/k8s"
 	model "github.com/Zara1024/OpsPilot/internal/manager/model/k8s"
+	"github.com/Zara1024/OpsPilot/internal/pkg/authzmw"
 	"github.com/Zara1024/OpsPilot/internal/pkg/autoapm"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 	"github.com/Zara1024/OpsPilot/internal/pkg/tenantctx"
@@ -61,6 +62,7 @@ type ActionAuditReader interface {
 type Handler struct {
 	svc         Service
 	actionAudit ActionAuditReader
+	authz       *authzmw.Middleware
 	enrollSlots chan struct{}
 }
 
@@ -70,6 +72,25 @@ func NewHandler(s Service, actionAudits ...ActionAuditReader) *Handler {
 		h.actionAudit = actionAudits[0]
 	}
 	return h
+}
+
+// SetAuthz 注入资源级 RBAC 中间件。
+func (h *Handler) SetAuthz(a *authzmw.Middleware) { h.authz = a }
+
+func (h *Handler) ensureClusterAccess(w http.ResponseWriter, r *http.Request, clusterID uint64, action string) bool {
+	if h.authz == nil {
+		return true
+	}
+	c, err := h.svc.GetCluster(r.Context(), clusterID)
+	if err != nil {
+		writeErr(w, err)
+		return false
+	}
+	if !h.authz.AllowResource(r.Context(), authzmw.ResourceK8sCluster, []string{strconv.FormatUint(c.ID, 10), c.Name}, action) {
+		writeErr(w, errs.ErrForbidden)
+		return false
+	}
+	return true
 }
 
 func (h *Handler) RegisterProtected(r chi.Router) {
@@ -151,6 +172,9 @@ func (h *Handler) getClusterHealth(w http.ResponseWriter, r *http.Request) {
 	id, err := parseClusterID(r)
 	if err != nil {
 		writeErr(w, err)
+		return
+	}
+	if !h.ensureClusterAccess(w, r, id, authzmw.ActionRead) {
 		return
 	}
 	out, err := h.svc.GetClusterHealth(r.Context(), id)
@@ -237,11 +261,19 @@ func (h *Handler) listClusters(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dto := make([]clusterDTO, 0, len(items))
+	filteredCount := 0
 	for _, item := range items {
+		if h.authz != nil && !h.authz.AllowResource(r.Context(), authzmw.ResourceK8sCluster, []string{strconv.FormatUint(item.ID, 10), item.Name}, authzmw.ActionRead) {
+			filteredCount++
+			continue
+		}
 		coverage := coverageByCluster[item.ID]
 		clusterDTO := clusterDTOFromModelWithCoverage(item, &coverage)
 		clusterDTO.UpgradeCommand = h.svc.UpgradeCommand(item)
 		dto = append(dto, clusterDTO)
+	}
+	if filteredCount > 0 {
+		total = int64(len(dto))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items":  dto,
@@ -265,6 +297,10 @@ func (h *Handler) getCluster(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	if h.authz != nil && !h.authz.AllowResource(r.Context(), authzmw.ResourceK8sCluster, []string{strconv.FormatUint(c.ID, 10), c.Name}, authzmw.ActionRead) {
+		writeErr(w, errs.ErrForbidden)
+		return
+	}
 	coverage, err := h.svc.GetNodeCoverage(r.Context(), id)
 	if err != nil {
 		writeErr(w, err)
@@ -282,6 +318,9 @@ func (h *Handler) listNodes(w http.ResponseWriter, r *http.Request) {
 	id, err := parseClusterID(r)
 	if err != nil {
 		writeErr(w, err)
+		return
+	}
+	if !h.ensureClusterAccess(w, r, id, authzmw.ActionRead) {
 		return
 	}
 	limit := parseListLimit(r.URL.Query().Get("limit"), 100)
@@ -316,6 +355,9 @@ func (h *Handler) listWorkloads(w http.ResponseWriter, r *http.Request) {
 	id, err := parseClusterID(r)
 	if err != nil {
 		writeErr(w, err)
+		return
+	}
+	if !h.ensureClusterAccess(w, r, id, authzmw.ActionRead) {
 		return
 	}
 	limit := parseListLimit(r.URL.Query().Get("limit"), 100)
@@ -364,6 +406,9 @@ func (h *Handler) listPods(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	if !h.ensureClusterAccess(w, r, id, authzmw.ActionRead) {
+		return
+	}
 	limit := parseListLimit(r.URL.Query().Get("limit"), 100)
 	offset := parseListOffset(r.URL.Query().Get("offset"))
 	filter := biz.ListPodsFilter{
@@ -409,6 +454,9 @@ func (h *Handler) listEvents(w http.ResponseWriter, r *http.Request) {
 	id, err := parseClusterID(r)
 	if err != nil {
 		writeErr(w, err)
+		return
+	}
+	if !h.ensureClusterAccess(w, r, id, authzmw.ActionRead) {
 		return
 	}
 	limit := parseListLimit(r.URL.Query().Get("limit"), 100)
@@ -1259,6 +1307,9 @@ func (h *Handler) getAutoAPM(w http.ResponseWriter, r *http.Request) {
 	id, err := parseClusterID(r)
 	if err != nil {
 		writeErr(w, err)
+		return
+	}
+	if !h.ensureClusterAccess(w, r, id, authzmw.ActionRead) {
 		return
 	}
 	result, err := h.svc.GetAutoAPM(r.Context(), id)

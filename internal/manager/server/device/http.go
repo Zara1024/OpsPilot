@@ -20,6 +20,7 @@ import (
 
 	devicebiz "github.com/Zara1024/OpsPilot/internal/manager/biz/device"
 	devicemodel "github.com/Zara1024/OpsPilot/internal/manager/model/device"
+	"github.com/Zara1024/OpsPilot/internal/pkg/authzmw"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 	"github.com/Zara1024/OpsPilot/internal/pkg/tenantctx"
 	"github.com/Zara1024/OpsPilot/internal/pkg/tunnel"
@@ -31,11 +32,38 @@ const roleAdmin = "admin"
 
 // Handler exposes /v1/devices.
 type Handler struct {
-	uc *devicebiz.Usecase
+	uc    *devicebiz.Usecase
+	authz *authzmw.Middleware
 }
 
 // NewHandler builds the handler around a device biz Usecase.
 func NewHandler(uc *devicebiz.Usecase) *Handler { return &Handler{uc: uc} }
+
+// SetAuthz 注入资源级 RBAC 中间件。
+func (h *Handler) SetAuthz(a *authzmw.Middleware) { h.authz = a }
+
+func (h *Handler) canAccessDevice(ctx context.Context, d *devicemodel.Device, action string) bool {
+	if h.authz == nil || d == nil {
+		return true
+	}
+	devKeys := []string{strconv.FormatUint(d.ID, 10), d.Name, d.Hostname}
+	if !h.authz.AllowResource(ctx, authzmw.ResourceDevice, devKeys, action) {
+		return false
+	}
+	env := ""
+	if d.Environment != nil {
+		env = strings.TrimSpace(*d.Environment)
+	}
+	if env == "" {
+		if resolved, err := h.uc.ResolveEnvironment(ctx, d.ID); err == nil && resolved != nil {
+			env = strings.TrimSpace(resolved.EffectiveEnvironment)
+		}
+	}
+	if env == "" {
+		env = "unassigned"
+	}
+	return h.authz.AllowResource(ctx, authzmw.ResourceDeviceEnv, []string{env}, action)
+}
 
 // Register attaches the device routes on r.
 //
@@ -263,6 +291,9 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]deviceItem, 0, len(rows))
 	for _, d := range rows {
+		if !h.canAccessDevice(r.Context(), d, authzmw.ActionRead) {
+			continue
+		}
 		item, err := h.itemForDevice(r.Context(), d)
 		if err != nil {
 			writeErr(w, err)
@@ -286,6 +317,10 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	d, err := h.uc.Get(r.Context(), id)
 	if err != nil {
 		writeErr(w, err)
+		return
+	}
+	if !h.canAccessDevice(r.Context(), d, authzmw.ActionRead) {
+		writeErr(w, errs.ErrForbidden)
 		return
 	}
 	item, err := h.itemForDevice(r.Context(), d)
@@ -368,6 +403,13 @@ func (h *Handler) listEdges(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	if d, err := h.uc.Get(r.Context(), id); err != nil {
+		writeErr(w, err)
+		return
+	} else if !h.canAccessDevice(r.Context(), d, authzmw.ActionRead) {
+		writeErr(w, errs.ErrForbidden)
+		return
+	}
 	links := h.uc.Links()
 	if links == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"items": []edgeLinkRow{}})
@@ -398,6 +440,13 @@ func (h *Handler) getNetworkDevice(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r)
 	if err != nil {
 		writeErr(w, err)
+		return
+	}
+	if d, err := h.uc.Get(r.Context(), id); err != nil {
+		writeErr(w, err)
+		return
+	} else if !h.canAccessDevice(r.Context(), d, authzmw.ActionRead) {
+		writeErr(w, errs.ErrForbidden)
 		return
 	}
 	discovery := h.uc.NetworkDiscovery()

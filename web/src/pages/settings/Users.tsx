@@ -3,6 +3,7 @@ import { Input, Label } from '@/components/ui';
 import { Hint } from '@/components/ui/Tooltip';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/DropdownMenu';
 import { Select } from '@/components/ui/Select';
+import { useDialogs } from '@/components/ui/useDialogs';
 import { useCallback, useEffect, useState } from 'react';
 import {
   KeyRound,
@@ -13,12 +14,14 @@ import {
   Power,
   RefreshCw,
   Shield,
+  ShieldOff,
   Trash2,
   UserCog,
   UserPlus,
   Users as UsersIcon,
 } from 'lucide-react';
 import { ApiError } from '@/api/client';
+import { resetUserMfa } from '@/api/security';
 import {
   createUser,
   deleteUser,
@@ -48,6 +51,7 @@ import { tr as trInline, useI18n } from '@/i18n/locale';
 export default function SettingsUsers() {
   const { tr } = useI18n();
   const { me, loading: meLoading } = useMe();
+  const { confirmAction, dialog } = useDialogs();
   const isAdmin = me?.role === 'admin';
 
   const [items, setItems] = useState<User[]>([]);
@@ -137,6 +141,23 @@ export default function SettingsUsers() {
     }
   };
 
+  const doResetMfa = async (u: User) => {
+    const ok = await confirmAction(
+      tr(
+        `确认清除 ${u.email} 的 TOTP 多因素认证与恢复码？下次登录时该用户需重新绑定（若策略要求）。`,
+        `Reset TOTP MFA and recovery codes for ${u.email}?`,
+      ),
+    );
+    if (!ok) return;
+    try {
+      await resetUserMfa(u.id);
+      replaceRow({ ...u, mfa_enabled: false });
+      setToast({ kind: 'ok', text: tr(`已重置 ${u.email} 的 MFA`, `Reset MFA for ${u.email}`) });
+    } catch (e) {
+      setToast({ kind: 'err', text: errMsg(e) });
+    }
+  };
+
   useAssistantPage('用户管理', 'Users', {
     user_count: items.length,
     loading,
@@ -210,6 +231,7 @@ export default function SettingsUsers() {
             meId={me?.id ?? -1}
             onEdit={setEditTarget}
             onPassword={setPwTarget}
+            onResetMfa={doResetMfa}
             onChangeRole={changeRole}
             onToggleStatus={toggleStatus}
             onDelete={setDelTarget}
@@ -280,6 +302,7 @@ export default function SettingsUsers() {
           {toast.text}
         </div>
       )}
+      {dialog}
     </div>
   );
 }
@@ -291,6 +314,7 @@ function UserTable({
   meId,
   onEdit,
   onPassword,
+  onResetMfa,
   onChangeRole,
   onToggleStatus,
   onDelete,
@@ -299,6 +323,7 @@ function UserTable({
   meId: number;
   onEdit: (u: User) => void;
   onPassword: (u: User) => void;
+  onResetMfa: (u: User) => void;
   onChangeRole: (u: User, next: SystemRole) => void;
   onToggleStatus: (u: User) => void;
   onDelete: (u: User) => void;
@@ -313,6 +338,7 @@ function UserTable({
             <th className="px-4 py-2.5 font-medium">{tr('邮箱', 'Email')}</th>
             <th className="px-4 py-2.5 font-medium">{tr('手机', 'Phone')}</th>
             <th className="px-4 py-2.5 font-medium">{tr('系统角色', 'System role')}</th>
+            <th className="px-4 py-2.5 font-medium">MFA</th>
             <th className="px-4 py-2.5 font-medium">{tr('状态', 'Status')}</th>
             <th className="px-4 py-2.5 font-medium">{tr('操作', 'Actions')}</th>
           </tr>
@@ -343,6 +369,11 @@ function UserTable({
                   )}
                 </td>
                 <td className="px-4 py-2.5">
+                  <Chip tone={u.mfa_enabled ? 'success' : 'default'}>
+                    {u.mfa_enabled ? tr('已开启', 'On') : tr('未开启', 'Off')}
+                  </Chip>
+                </td>
+                <td className="px-4 py-2.5">
                   <Chip tone={u.status === 'active' ? 'success' : 'warning'}>{u.status}</Chip>
                 </td>
                 <td className="px-4 py-2.5">
@@ -355,6 +386,7 @@ function UserTable({
                       user={u}
                       isSelf={isSelf}
                       onPassword={() => onPassword(u)}
+                      onResetMfa={() => onResetMfa(u)}
                       onChangeRole={(next) => onChangeRole(u, next)}
                       onToggleStatus={() => onToggleStatus(u)}
                       onDelete={() => onDelete(u)}
@@ -381,6 +413,7 @@ function RowActionsMenu({
   user,
   isSelf,
   onPassword,
+  onResetMfa,
   onChangeRole,
   onToggleStatus,
   onDelete,
@@ -388,6 +421,7 @@ function RowActionsMenu({
   user: User;
   isSelf: boolean;
   onPassword(): void;
+  onResetMfa(): void;
   onChangeRole(next: SystemRole): void;
   onToggleStatus(): void;
   onDelete(): void;
@@ -402,6 +436,20 @@ function RowActionsMenu({
     <DropdownMenuContent align="end" className="w-44">
           <MenuItem onClick={run(onPassword)} icon={<KeyRound size={12} />}>
             {tr('重置密码', 'Reset password')}
+          </MenuItem>
+          <MenuItem
+            onClick={run(onResetMfa)}
+            disabled={isSelf || !user.mfa_enabled}
+            icon={<ShieldOff size={12} />}
+            title={
+              isSelf
+                ? tr('请在个人“账号安全”管理自己的 MFA', 'Manage your own MFA in Account Security')
+                : !user.mfa_enabled
+                  ? tr('该用户尚未启用 MFA', 'User has not enabled MFA')
+                  : undefined
+            }
+          >
+            {tr('重置 MFA', 'Reset MFA')}
           </MenuItem>
           {(['admin', 'user', 'viewer'] as SystemRole[]).map((r) => (
             <MenuItem

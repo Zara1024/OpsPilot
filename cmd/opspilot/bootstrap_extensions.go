@@ -175,6 +175,7 @@ func bootstrapExtensions(rootCtx context.Context, cfg *config.Config, log *slog.
 	// The Actions page is a read-only projection over two immutable audit
 	// sources: graph ReviewGate decisions and legacy human approvals.
 	k8sHandler := managerserverk8s.NewHandler(devices.k8sSvc, managersvck8s.NewActionAuditReader(aiops.mutatingProposalRepo, approvalUC))
+	k8sHandler.SetAuthz(iam.authzMW)
 	// send_notification: the assistant can proactively push to a configured
 	// channel (飞书/钉钉/…), reusing the same BuildSenderFromChannel path the
 	// alert notifier + flow notify node use.

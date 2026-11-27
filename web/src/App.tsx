@@ -8,6 +8,8 @@ import { ChatLayout } from '@/components/ChatLayout';
 import { useAuth } from '@/store/auth';
 import LoginPage from '@/pages/Login';
 
+const SSOCallbackPage = lazy(() => import('@/pages/SSOCallback'));
+const AccountSecurityPage = lazy(() => import('@/pages/AccountSecurity'));
 const AgentSidePanel = lazy(() =>
   import('@/components/AgentSidePanel').then((m) => ({ default: m.AgentSidePanel })),
 );
@@ -77,6 +79,8 @@ const SettingsUpgrade = lazy(() => import('@/pages/settings/Upgrade'));
 const AdminLayout = lazy(() => import('@/pages/AdminLayout'));
 const AdminUsers = lazy(() => import('@/pages/settings/Users'));
 const AdminOrgs = lazy(() => import('@/pages/settings/Orgs'));
+const AdminRoles = lazy(() => import('@/pages/settings/Roles'));
+const AdminSecurity = lazy(() => import('@/pages/settings/Security'));
 const AdminAuditLog = lazy(() => import('@/pages/settings/AuditLog'));
 const AdminWebshell = lazy(() => import('@/pages/settings/Webshell'));
 
@@ -126,6 +130,8 @@ export default function App() {
           </PublicOnly>
         }
       />
+      <Route path="/login/sso/callback" element={<SSOCallbackPage />} />
+      <Route path="/login/sso/callback/:slug" element={<SSOCallbackPage />} />
       <Route
         element={
           <RequireAuth>
@@ -236,8 +242,11 @@ export default function App() {
           <Route index element={<Navigate to="users" replace />} />
           <Route path="users" element={<AdminUsers />} />
           <Route path="orgs" element={<AdminOrgs />} />
+          <Route path="roles" element={<AdminRoles />} />
+          <Route path="security" element={<AdminSecurity />} />
           <Route path="audit" element={<AdminAuditLog />} />
         </Route>
+        <Route path="/account/security" element={<AccountSecurityPage />} />
         {/* Audit log lives under the Admin (Users & Orgs) section — it's
             platform governance ("who did what"), grouped with users/orgs,
             not in the always-visible sidebar footer. Old /audit links

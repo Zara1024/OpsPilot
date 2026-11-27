@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 
+	managerbizdevice "github.com/Zara1024/OpsPilot/internal/manager/biz/device"
 	managerbizoperatorrun "github.com/Zara1024/OpsPilot/internal/manager/biz/operatorrun"
 	managerwebshellbiz "github.com/Zara1024/OpsPilot/internal/manager/biz/webshell"
 	manageragenttracedata "github.com/Zara1024/OpsPilot/internal/manager/data/agenttrace"
@@ -131,12 +132,34 @@ func bootstrapTunnel(rootCtx context.Context, cfg *config.Config, log *slog.Logg
 		log.With(slog.String("comp", "webshell")),
 	)
 	webshellHandler.SetAuthz(iam.authzMW)
+	webshellHandler.SetDeviceScopeResolver(webshellDeviceScopeAdapter{uc: devices.deviceUC})
 
 	return &tunnelModule{
 		fbClient:        fbClient,
 		operatorRunSvc:  operatorRunSvc,
 		webshellHandler: webshellHandler,
 	}, nil
+}
+
+type webshellDeviceScopeAdapter struct {
+	uc *managerbizdevice.Usecase
+}
+
+func (a webshellDeviceScopeAdapter) DeviceScopeKeys(ctx context.Context, deviceID uint64) (string, string, string, error) {
+	d, err := a.uc.Get(ctx, deviceID)
+	if err != nil {
+		return "", "", "", err
+	}
+	env := ""
+	if d.Environment != nil {
+		env = *d.Environment
+	}
+	if env == "" {
+		if resolved, rErr := a.uc.ResolveEnvironment(ctx, deviceID); rErr == nil && resolved != nil {
+			env = resolved.EffectiveEnvironment
+		}
+	}
+	return d.Name, d.Hostname, env, nil
 }
 
 type webshellStreamerAdapter struct {

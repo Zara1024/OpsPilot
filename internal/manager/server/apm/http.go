@@ -9,10 +9,12 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	biz "github.com/Zara1024/OpsPilot/internal/manager/biz/apm"
+	"github.com/Zara1024/OpsPilot/internal/pkg/authzmw"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 	"github.com/Zara1024/OpsPilot/internal/pkg/tenantctx"
 	"github.com/Zara1024/OpsPilot/internal/pkg/tracing"
@@ -20,9 +22,13 @@ import (
 
 type Handler struct {
 	svc   *biz.Service
+	authz *authzmw.Middleware
 	log   *slog.Logger
 	slots chan struct{}
 }
+
+// SetAuthz 注入资源级 RBAC 中间件。
+func (h *Handler) SetAuthz(a *authzmw.Middleware) { h.authz = a }
 
 func NewHandler(svc *biz.Service, log *slog.Logger) *Handler {
 	if log == nil {
@@ -52,7 +58,26 @@ func (h *Handler) Register(r chi.Router) {
 // @Router /api/v1/apm/services [get]
 // @Success 200 {object} apm.ListResult
 func (h *Handler) services(w http.ResponseWriter, r *http.Request) {
-	h.serve(w, r, false, func(ctx context.Context, q biz.Query) (any, error) { return h.svc.List(ctx, q, false) })
+	h.serve(w, r, false, func(ctx context.Context, q biz.Query) (any, error) {
+		res, err := h.svc.List(ctx, q, false)
+		if err != nil || res == nil || h.authz == nil {
+			return res, err
+		}
+		allowed := make([]biz.Summary, 0, len(res.Items))
+		filtered := 0
+		for _, item := range res.Items {
+			if h.authz.AllowResource(ctx, authzmw.ResourceService, []string{item.Identity.ServiceName}, authzmw.ActionRead) {
+				allowed = append(allowed, item)
+			} else {
+				filtered++
+			}
+		}
+		if filtered > 0 {
+			res.Items = allowed
+			res.Total = len(allowed)
+		}
+		return res, nil
+	})
 }
 
 // @Summary Query application request trends
@@ -154,6 +179,12 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request, detail bool, fn 
 	if err != nil {
 		h.respond(w, r, nil, err)
 		return
+	}
+	if h.authz != nil && strings.TrimSpace(q.ServiceName) != "" {
+		if !h.authz.AllowResource(r.Context(), authzmw.ResourceService, []string{q.ServiceName}, authzmw.ActionRead) {
+			h.respond(w, r, nil, errs.ErrForbidden)
+			return
+		}
 	}
 	select {
 	case h.slots <- struct{}{}:

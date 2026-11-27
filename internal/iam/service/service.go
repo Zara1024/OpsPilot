@@ -9,19 +9,27 @@ import (
 
 	"github.com/Zara1024/OpsPilot/internal/iam/biz/authz"
 	"github.com/Zara1024/OpsPilot/internal/iam/biz/membership"
+	"github.com/Zara1024/OpsPilot/internal/iam/biz/mfa"
 	"github.com/Zara1024/OpsPilot/internal/iam/biz/org"
+	"github.com/Zara1024/OpsPilot/internal/iam/biz/rbac"
+	"github.com/Zara1024/OpsPilot/internal/iam/biz/sso"
+	"github.com/Zara1024/OpsPilot/internal/iam/biz/throttle"
 	biz "github.com/Zara1024/OpsPilot/internal/iam/biz/user"
 	"github.com/Zara1024/OpsPilot/internal/iam/model"
 )
 
 // Service wraps the iam/user biz usecase plus (Phase-1 additions) the
-// org / membership / authz biz services. The HTTP router in
-// internal/iam/server is the only consumer.
+// org / membership / authz / throttle / mfa / sso biz services. The HTTP
+// router in internal/iam/server is the only consumer.
 type Service struct {
 	user        *biz.Usecase
 	orgs        *org.Service
 	memberships *membership.Service
 	authz       *authz.Enforcer
+	throttle    *throttle.Service
+	mfa         *mfa.Service
+	sso         *sso.Service
+	rbac        *rbac.Service
 	log         *slog.Logger
 }
 
@@ -41,6 +49,18 @@ func (s *Service) SetMemberships(m *membership.Service) { s.memberships = m }
 // SetAuthz wires the casbin Enforcer post-construction.
 func (s *Service) SetAuthz(a *authz.Enforcer) { s.authz = a }
 
+// SetThrottle 注入共享登录限流与认证策略服务。
+func (s *Service) SetThrottle(t *throttle.Service) { s.throttle = t }
+
+// SetMFA 注入 TOTP MFA 服务。
+func (s *Service) SetMFA(m *mfa.Service) { s.mfa = m }
+
+// SetSSO 注入企业 SSO 服务。
+func (s *Service) SetSSO(v *sso.Service) { s.sso = v }
+
+// SetRBAC 注入资源级 RBAC 服务。
+func (s *Service) SetRBAC(r *rbac.Service) { s.rbac = r }
+
 // Orgs returns the Org service (may be nil).
 func (s *Service) Orgs() *org.Service { return s.orgs }
 
@@ -49,6 +69,18 @@ func (s *Service) Memberships() *membership.Service { return s.memberships }
 
 // Authz returns the casbin Enforcer (may be nil).
 func (s *Service) Authz() *authz.Enforcer { return s.authz }
+
+// Throttle 返回共享登录限流服务（未装配时为 nil）。
+func (s *Service) Throttle() *throttle.Service { return s.throttle }
+
+// MFA 返回 TOTP MFA 服务（未装配时为 nil）。
+func (s *Service) MFA() *mfa.Service { return s.mfa }
+
+// SSO 返回企业 SSO 服务（未装配时为 nil）。
+func (s *Service) SSO() *sso.Service { return s.sso }
+
+// RBAC 返回资源级 RBAC 服务（未装配时为 nil）。
+func (s *Service) RBAC() *rbac.Service { return s.rbac }
 
 // User returns the user biz usecase — exposed so the HTTP layer can
 // reach the new profile / superuser / pass-hash mutations without

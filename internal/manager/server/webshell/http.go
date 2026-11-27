@@ -38,6 +38,8 @@ import (
 	bizwebshell "github.com/Zara1024/OpsPilot/internal/manager/biz/webshell"
 	edgemodel "github.com/Zara1024/OpsPilot/internal/manager/model/edge"
 	wsmodel "github.com/Zara1024/OpsPilot/internal/manager/model/webshell"
+	"github.com/Zara1024/OpsPilot/internal/pkg/auditctx"
+	"github.com/Zara1024/OpsPilot/internal/pkg/authzmw"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 	"github.com/Zara1024/OpsPilot/internal/pkg/tenantctx"
 	"github.com/Zara1024/OpsPilot/internal/pkg/tunnel"
@@ -46,6 +48,16 @@ import (
 // AuthzMW is the narrow casbin middleware contract.
 type AuthzMW interface {
 	Require(obj, act string) func(http.Handler) http.Handler
+}
+
+// ResourceAuthorizer 定义资源级权限判定接口，由 *authzmw.Middleware 实现。
+type ResourceAuthorizer interface {
+	AllowResource(ctx context.Context, resourceType string, resourceKeys []string, action string) bool
+}
+
+// DeviceScopeResolver 解析设备的名称、主机名与生效环境标签用于资源级 RBAC 检查。
+type DeviceScopeResolver interface {
+	DeviceScopeKeys(ctx context.Context, deviceID uint64) (name, hostname, env string, err error)
 }
 
 // Streamer is the narrow OpenStream surface. *managersvcfb.Client
@@ -60,14 +72,16 @@ type DeviceRepo = devicebiz.Repo
 
 // Handler bundles dependencies. *Handler is constructed once at boot.
 type Handler struct {
-	streamer Streamer
-	router   *bizwebshell.Router
-	audit    bizwebshell.Recorder
-	access   *bizwebshell.Access
-	devices  DeviceRepo
-	edges    edgebiz.Repo
-	authz    AuthzMW
-	log      *slog.Logger
+	streamer      Streamer
+	router        *bizwebshell.Router
+	audit         bizwebshell.Recorder
+	access        *bizwebshell.Access
+	devices       DeviceRepo
+	edges         edgebiz.Repo
+	authz         AuthzMW
+	resAuthz      ResourceAuthorizer
+	scopeResolver DeviceScopeResolver
+	log           *slog.Logger
 	upgrader websocket.Upgrader
 	mu       sync.Mutex
 	tickets  map[string]shellTicket
@@ -101,7 +115,68 @@ func NewHandler(streamer Streamer, router *bizwebshell.Router, audit bizwebshell
 }
 
 // SetAuthz wires the casbin middleware post-construction.
-func (h *Handler) SetAuthz(a AuthzMW) { h.authz = a }
+func (h *Handler) SetAuthz(a AuthzMW) {
+	h.authz = a
+	if ra, ok := a.(ResourceAuthorizer); ok {
+		h.resAuthz = ra
+	}
+}
+
+// SetDeviceScopeResolver 注入设备资源范围解析器。
+func (h *Handler) SetDeviceScopeResolver(r DeviceScopeResolver) { h.scopeResolver = r }
+
+func (h *Handler) enforceDeviceExecScope(w http.ResponseWriter, r *http.Request, deviceID uint64) bool {
+	if h.resAuthz == nil {
+		return true
+	}
+	var name, hostname, env string
+	if h.scopeResolver != nil {
+		var err error
+		name, hostname, env, err = h.scopeResolver.DeviceScopeKeys(r.Context(), deviceID)
+		if err != nil {
+			if errors.Is(err, errs.ErrNotFound) {
+				writeErr(w, err)
+				return false
+			}
+			// 查找设备作用域失败时按 fail-closed 拒绝，避免绕过环境隔离。
+			writeErr(w, errs.ErrForbidden)
+			return false
+		}
+	} else if h.devices != nil {
+		d, err := h.devices.Get(r.Context(), deviceID)
+		if err != nil {
+			if errors.Is(err, errs.ErrNotFound) {
+				writeErr(w, err)
+				return false
+			}
+			writeErr(w, errs.ErrForbidden)
+			return false
+		}
+		name, hostname = d.Name, d.Hostname
+		if d.Environment != nil {
+			env = strings.TrimSpace(*d.Environment)
+		}
+	}
+	if env == "" {
+		env = "unassigned"
+	}
+	devOK := h.resAuthz.AllowResource(r.Context(), authzmw.ResourceDevice, []string{strconv.FormatUint(deviceID, 10), name, hostname}, authzmw.ActionExec)
+	envOK := h.resAuthz.AllowResource(r.Context(), authzmw.ResourceDeviceEnv, []string{env}, authzmw.ActionExec)
+	if !devOK || !envOK {
+		auditctx.SetAuditEvent(r, auditctx.Event{
+			Action:       "webshell_exec",
+			ResourceType: auditctx.ResourceDevice,
+			ResourceID:   strconv.FormatUint(deviceID, 10),
+			ResourceName: name,
+			Status:       auditctx.StatusDenied,
+			ErrorMessage: "denied by resource RBAC policy",
+			Payload:      map[string]any{"environment": env},
+		})
+		writeErr(w, errs.ErrForbidden)
+		return false
+	}
+	return true
+}
 
 // MaxSessionsPerUser caps how many concurrent shells one user may have.
 const MaxSessionsPerUser = 5
@@ -200,6 +275,9 @@ func (h *Handler) issueTicket(w http.ResponseWriter, r *http.Request) {
 	deviceID, err := parseUintParam(r, "device_id")
 	if err != nil {
 		writeErr(w, err)
+		return
+	}
+	if !h.enforceDeviceExecScope(w, r, deviceID) {
 		return
 	}
 	if h.tooManyAuthFailures(tenant.UserID, deviceID, clientIP(r)) {

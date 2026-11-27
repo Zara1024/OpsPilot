@@ -31,6 +31,11 @@ func Middleware(signer *Signer) func(http.Handler) http.Handler {
 				http.Error(w, "invalid token", http.StatusUnauthorized)
 				return
 			}
+			// 兼容旧版未带 token_use 的 access token；新版 refresh/MFA 临时凭证禁止直接调用业务 API。
+			if claims.TokenUse != "" && claims.TokenUse != TokenUseAccess {
+				http.Error(w, "invalid token use", http.StatusUnauthorized)
+				return
+			}
 			// IsSuperuser comes from the JWT claim when present; old
 			// tokens (pre-claim) fall back to Role=="admin" so an
 			// existing session still has full system privileges after

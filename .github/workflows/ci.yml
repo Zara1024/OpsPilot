@@ -98,6 +98,11 @@ jobs:
           src/pages/settings/Upgrade.test.tsx
           src/pages/settings/LLM.test.tsx
           src/pages/settings/CommunicationProviders.test.tsx
+          src/pages/settings/Security.test.tsx
+          src/pages/settings/Roles.test.tsx
+          src/pages/Login.test.tsx
+          src/pages/AccountSecurity.test.tsx
+          src/lib/qrcode.test.ts
           src/components/icons/Provider.test.tsx
           src/pages/kubernetes/edgeAttachments.test.ts
           src/pages/kubernetes/registryCommands.test.ts
@@ -185,6 +190,8 @@ jobs:
           go test -race -count=1 -v -run TestMySQLFullSchemaMigrations ./cmd/opspilot
           go test -race -count=1 \
             ./internal/pkg/coord \
+            ./internal/iam/data/security/store \
+            ./internal/iam/data/rbac/store \
             ./internal/manager/data/flow/store \
             ./internal/manager/data/aiops/store \
             ./internal/manager/data/alert/store \

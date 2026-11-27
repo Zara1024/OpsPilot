@@ -64,6 +64,8 @@ type meDTO struct {
 	Phone       string                    `json:"phone,omitempty"`
 	Role        string                    `json:"role"`
 	Status      string                    `json:"status"`
+	MFAEnabled  bool                      `json:"mfa_enabled"`
+	MFARequired bool                      `json:"mfa_required"`
 	Memberships []orgMembershipForUserDTO `json:"memberships"`
 }
 
@@ -74,6 +76,7 @@ type fullUserDTO struct {
 	Phone       string    `json:"phone,omitempty"`
 	Role        string    `json:"role"`
 	Status      string    `json:"status"`
+	MFAEnabled  bool      `json:"mfa_enabled"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -192,6 +195,16 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
 		Role:        u.Role,
 		Status:      u.Status,
 		Memberships: []orgMembershipForUserDTO{},
+	}
+	if mfaSvc := h.svc.MFA(); mfaSvc != nil {
+		if enabled, err := mfaSvc.IsEnabled(r.Context(), u.ID); err == nil {
+			out.MFAEnabled = enabled
+		}
+	}
+	if tSvc := h.svc.Throttle(); tSvc != nil {
+		if req, err := tSvc.RequiresMFAForRole(r.Context(), u.Role); err == nil {
+			out.MFARequired = req
+		}
 	}
 	if rows, err := h.svc.MembershipsByUser(r.Context(), t.UserID); err == nil {
 		for _, m := range rows {

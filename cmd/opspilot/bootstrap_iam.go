@@ -7,10 +7,16 @@ import (
 
 	iambizauthz "github.com/Zara1024/OpsPilot/internal/iam/biz/authz"
 	iambizmembership "github.com/Zara1024/OpsPilot/internal/iam/biz/membership"
+	iambizmfa "github.com/Zara1024/OpsPilot/internal/iam/biz/mfa"
 	iambizorg "github.com/Zara1024/OpsPilot/internal/iam/biz/org"
+	iambizrbac "github.com/Zara1024/OpsPilot/internal/iam/biz/rbac"
+	iambizsso "github.com/Zara1024/OpsPilot/internal/iam/biz/sso"
+	iambizthrottle "github.com/Zara1024/OpsPilot/internal/iam/biz/throttle"
 	iambizuser "github.com/Zara1024/OpsPilot/internal/iam/biz/user"
 	iamdatamembership "github.com/Zara1024/OpsPilot/internal/iam/data/membership/store"
 	iamdataorg "github.com/Zara1024/OpsPilot/internal/iam/data/org/store"
+	iamdatarbac "github.com/Zara1024/OpsPilot/internal/iam/data/rbac/store"
+	iamdatasecurity "github.com/Zara1024/OpsPilot/internal/iam/data/security/store"
 	iamdatauser "github.com/Zara1024/OpsPilot/internal/iam/data/user/sqlite"
 	iammodel "github.com/Zara1024/OpsPilot/internal/iam/model"
 	iamserver "github.com/Zara1024/OpsPilot/internal/iam/server"
@@ -133,11 +139,25 @@ func bootstrapIAM(rootCtx context.Context, cfg *config.Config, log *slog.Logger,
 	iamSvc.SetMemberships(membershipSvc)
 	iamSvc.SetAuthz(authzEnf)
 
-	// Manager-side casbin middleware. Built once, injected into each
-	// handler that wants RBAC on its mutating routes. Superuser short-
-	// circuit happens inside the middleware so corrupt policies can't
-	// lock the system administrator out.
+	securityStore := iamdatasecurity.New(storage.db)
+	throttleSvc := iambizthrottle.New(securityStore)
+	mfaSvc := iambizmfa.New(securityStore)
+	ssoSvc := iambizsso.New(securityStore, userUC)
+	ssoSvc.SetOrgWiring(membershipSvc, orgSvc)
+
+	rbacStore := iamdatarbac.New(storage.db)
+	rbacSvc := iambizrbac.New(rbacStore, membershipSvc, userRepo)
+
+	iamSvc.SetThrottle(throttleSvc)
+	iamSvc.SetMFA(mfaSvc)
+	iamSvc.SetSSO(ssoSvc)
+	iamSvc.SetRBAC(rbacSvc)
+
+	// Manager-side casbin + resource-RBAC middleware. Built once, injected into each
+	// handler that wants RBAC. Superuser short-circuit happens inside the
+	// middleware so corrupt policies can't lock the system administrator out.
 	authzMW := authzmw.New(authzEnf, log.With(slog.String("comp", "authzmw")))
+	authzMW.SetResourceAuthorizer(rbacSvc)
 
 	return &iamModule{userUC: userUC,
 		signer:     signer,

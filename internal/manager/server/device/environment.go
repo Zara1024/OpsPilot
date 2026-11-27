@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/Zara1024/OpsPilot/internal/pkg/authzmw"
 	"github.com/Zara1024/OpsPilot/internal/pkg/errs"
 	"github.com/Zara1024/OpsPilot/internal/pkg/tenantctx"
 )
@@ -20,6 +21,13 @@ func (h *Handler) getEnvironment(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r)
 	if err != nil {
 		writeErr(w, err)
+		return
+	}
+	if d, err := h.uc.Get(r.Context(), id); err != nil {
+		writeErr(w, err)
+		return
+	} else if !h.canAccessDevice(r.Context(), d, authzmw.ActionRead) {
+		writeErr(w, errs.ErrForbidden)
 		return
 	}
 	value, err := h.uc.ResolveEnvironment(r.Context(), id)

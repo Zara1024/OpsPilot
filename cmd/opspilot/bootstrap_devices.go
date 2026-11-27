@@ -127,6 +127,7 @@ func bootstrapDevices(rootCtx context.Context, cfg *config.Config, log *slog.Log
 			slog.String("dir", edgeBundleDir), slog.Any("err", err))
 	}
 	deviceHandler := managerserverdevice.NewHandler(deviceUC)
+	deviceHandler.SetAuthz(iam.authzMW)
 
 	// topology layer: nodes / relations / relation types. PR-1
 	// stands up CRUD + 6 built-in relation type seeds; later PRs hook

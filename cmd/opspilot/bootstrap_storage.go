@@ -11,6 +11,8 @@ import (
 	iamdatatoken "github.com/Zara1024/OpsPilot/internal/iam/data/integrationtoken"
 	iamdatamembership "github.com/Zara1024/OpsPilot/internal/iam/data/membership/store"
 	iamdataorg "github.com/Zara1024/OpsPilot/internal/iam/data/org/store"
+	iamdatarbac "github.com/Zara1024/OpsPilot/internal/iam/data/rbac/store"
+	iamdatasecurity "github.com/Zara1024/OpsPilot/internal/iam/data/security/store"
 	iamdatauser "github.com/Zara1024/OpsPilot/internal/iam/data/user/sqlite"
 	managerbizsecret "github.com/Zara1024/OpsPilot/internal/manager/biz/secret"
 	managerbizskill "github.com/Zara1024/OpsPilot/internal/manager/biz/skill"
@@ -67,6 +69,8 @@ func bootstrapStorage(rootCtx context.Context, cfg *config.Config, log *slog.Log
 		iamdatatoken.Migrate,
 		iamdataorg.Migrate,
 		iamdatamembership.Migrate,
+		iamdatasecurity.Migrate,
+		iamdatarbac.Migrate,
 		manageralertdata.Migrate,
 		managerdevicedata.Migrate,
 		manageredgedata.Migrate,

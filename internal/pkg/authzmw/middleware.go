@@ -40,9 +40,10 @@ type Authorizer interface {
 	AllowAnyOrg(ctx context.Context, userID uint64, obj, act string) bool
 }
 
-// Middleware bundles an Authorizer with a logger.
+// Middleware bundles an Authorizer and optional ResourceAuthorizer with a logger.
 type Middleware struct {
 	z   Authorizer
+	ra  ResourceAuthorizer
 	log *slog.Logger
 }
 

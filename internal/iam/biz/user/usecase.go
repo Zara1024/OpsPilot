@@ -2,6 +2,8 @@ package user
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -106,8 +108,8 @@ func (u *Usecase) Register(ctx context.Context, email, password, role string) (*
 	return user, nil
 }
 
-// Login verifies credentials and returns a fresh access/refresh pair.
-func (u *Usecase) Login(ctx context.Context, email, password string) (*TokenPair, error) {
+// Authenticate 仅校验邮箱与密码并检查账号状态，成功时返回清零 PassHash 的用户对象（供登录后 MFA 分流）。
+func (u *Usecase) Authenticate(ctx context.Context, email, password string) (*model.User, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	if email == "" || password == "" {
 		return nil, fmt.Errorf("%w: email and password required", errs.ErrInvalid)
@@ -138,17 +140,31 @@ func (u *Usecase) Login(ctx context.Context, email, password string) (*TokenPair
 	if !verifyPassword(password, user.PassHash) {
 		return nil, errs.ErrUnauthorized
 	}
+	user.PassHash = ""
+	return user, nil
+}
+
+// Login verifies credentials and returns a fresh access/refresh pair.
+func (u *Usecase) Login(ctx context.Context, email, password string) (*TokenPair, error) {
+	user, err := u.Authenticate(ctx, email, password)
+	if err != nil {
+		return nil, err
+	}
 	return u.issuePair(user)
 }
 
 // Refresh verifies a refresh token and issues a new access/refresh pair.
-// MVP: no rotation / revocation list; signature validity is enough.
+// Rejects access / MFA challenge tokens while remaining backwards-compatible with
+// legacy tokens that do not carry token_use.
 func (u *Usecase) Refresh(ctx context.Context, refreshToken string) (*TokenPair, error) {
 	if refreshToken == "" {
 		return nil, fmt.Errorf("%w: refresh_token required", errs.ErrInvalid)
 	}
 	claims, err := u.signer.Verify(refreshToken)
 	if err != nil {
+		return nil, errs.ErrUnauthorized
+	}
+	if claims.TokenUse != "" && claims.TokenUse != auth.TokenUseRefresh {
 		return nil, errs.ErrUnauthorized
 	}
 	user, err := u.repo.GetByID(ctx, claims.UserID)
@@ -162,6 +178,121 @@ func (u *Usecase) Refresh(ctx context.Context, refreshToken string) (*TokenPair,
 		return nil, errs.ErrUnauthorized
 	}
 	return u.issuePair(user)
+}
+
+// IssueTokens 为已通过认证（密码/MFA/SSO）的用户直接签发 access/refresh token 对。
+func (u *Usecase) IssueTokens(user *model.User) (*TokenPair, error) {
+	if user == nil || user.ID == 0 {
+		return nil, fmt.Errorf("%w: invalid user", errs.ErrInvalid)
+	}
+	return u.issuePair(user)
+}
+
+// IssueMFAToken 签发用于 MFA 二次验证或强制首次绑定的短时凭证。
+func (u *Usecase) IssueMFAToken(user *model.User, setupRequired bool, ttl time.Duration) (string, error) {
+	if user == nil || user.ID == 0 {
+		return "", fmt.Errorf("%w: invalid user", errs.ErrInvalid)
+	}
+	if ttl <= 0 {
+		ttl = 5 * time.Minute
+	}
+	c := auth.Claims{
+		UserID:      user.ID,
+		Email:       user.Email,
+		Role:        user.Role,
+		IsSuperuser: user.IsSuperuser,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject: fmt.Sprintf("%d", user.ID),
+		},
+	}
+	if setupRequired {
+		return u.signer.SignMFASetup(c, ttl)
+	}
+	return u.signer.SignMFAChallenge(c, ttl)
+}
+
+// VerifyMFAToken 校验 MFA 临时凭证并实时检查账号是否仍处于 active 状态。
+func (u *Usecase) VerifyMFAToken(ctx context.Context, token, expectedUse string) (*model.User, error) {
+	if strings.TrimSpace(token) == "" {
+		return nil, fmt.Errorf("%w: mfa_token required", errs.ErrInvalid)
+	}
+	claims, err := u.signer.Verify(token)
+	if err != nil {
+		return nil, errs.ErrUnauthorized
+	}
+	if claims.TokenUse != expectedUse {
+		return nil, errs.ErrUnauthorized
+	}
+	user, err := u.repo.GetByID(ctx, claims.UserID)
+	if err != nil {
+		if errors.Is(err, errs.ErrNotFound) {
+			return nil, errs.ErrUnauthorized
+		}
+		return nil, err
+	}
+	if user.Status != model.StatusActive {
+		return nil, errs.ErrUnauthorized
+	}
+	user.PassHash = ""
+	return user, nil
+}
+
+// EnsureSSOUser 根据 SSO 返回的邮箱查找或按配置自动创建（JIT）用户，返回用户对象及是否新建。
+func (u *Usecase) EnsureSSOUser(ctx context.Context, email, displayName, defaultRole string, autoCreate bool) (*model.User, bool, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if !validateEmail(email) {
+		return nil, false, fmt.Errorf("%w: invalid email from SSO provider", errs.ErrInvalid)
+	}
+	existing, err := u.repo.GetByEmail(ctx, email)
+	if err == nil && existing != nil {
+		if existing.Status != model.StatusActive {
+			return nil, false, errs.ErrForbidden
+		}
+		existing.PassHash = ""
+		return existing, false, nil
+	}
+	if err != nil && !errors.Is(err, errs.ErrNotFound) {
+		return nil, false, err
+	}
+	if !autoCreate {
+		return nil, false, fmt.Errorf("%w: SSO user auto-provisioning is disabled", errs.ErrForbidden)
+	}
+	role := defaultRole
+	if !model.IsValidRole(role) {
+		role = model.RoleUser
+	}
+	randBytes := make([]byte, 32)
+	if _, err := rand.Read(randBytes); err != nil {
+		return nil, false, fmt.Errorf("generate sso random password: %w", err)
+	}
+	ph, err := hashPassword(base64.RawURLEncoding.EncodeToString(randBytes))
+	if err != nil {
+		return nil, false, fmt.Errorf("hash sso random password: %w", err)
+	}
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		if at := strings.Index(email, "@"); at > 0 {
+			name = email[:at]
+		} else {
+			name = email
+		}
+	}
+	if len([]rune(name)) > 128 {
+		name = string([]rune(name)[:128])
+	}
+	created := &model.User{
+		Email:       email,
+		PassHash:    ph,
+		DisplayName: name,
+		Role:        role,
+		IsSuperuser: role == model.RoleAdmin,
+		Status:      model.StatusActive,
+	}
+	if err := u.repo.Create(ctx, created); err != nil {
+		return nil, false, fmt.Errorf("create sso user: %w", err)
+	}
+	created.PassHash = ""
+	return created, true, nil
 }
 
 // BootstrapAdmin seeds the first admin on a fresh DB. Idempotent: if the

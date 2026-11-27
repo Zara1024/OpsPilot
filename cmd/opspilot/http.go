@@ -55,6 +55,7 @@ func buildHTTPServers(rootCtx context.Context, cfg *config.Config, log *slog.Log
 		)
 	}
 
+	telemetry.apmHandler.SetAuthz(iam.authzMW)
 	pagesHandler := pagesserver.NewHandler(extensions.pageStore, cfg.JWT.Secret)
 	registerProtected := func(protected chi.Router) {
 		// /v1/version — manager binary version, used by the SPA to

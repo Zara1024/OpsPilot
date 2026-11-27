@@ -13,6 +13,14 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+// TokenUse 声明枚举，严格隔离不同用途的 JWT，防止 refresh/MFA 临时凭证误当业务 access token 使用。
+const (
+	TokenUseAccess       = "access"
+	TokenUseRefresh      = "refresh"
+	TokenUseMFAChallenge = "mfa_challenge"
+	TokenUseMFASetup     = "mfa_setup"
+)
+
 // Claims is the JWT payload used by ongrid. It embeds RegisteredClaims so
 // standard fields (exp, iat, sub, ...) are signed too.
 //
@@ -26,6 +34,7 @@ type Claims struct {
 	Email       string `json:"email,omitempty"`
 	Role        string `json:"role"`
 	IsSuperuser bool   `json:"is_superuser,omitempty"`
+	TokenUse    string `json:"token_use,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -56,12 +65,26 @@ func (s *Signer) RefreshTTL() time.Duration { return s.refreshTTL }
 // SignAccess issues a short-lived access token. exp/iat are overwritten from
 // TTL; the caller supplies UserID/Role/Sub.
 func (s *Signer) SignAccess(c Claims) (string, error) {
+	c.TokenUse = TokenUseAccess
 	return s.sign(c, s.accessTTL)
 }
 
 // SignRefresh issues a long-lived refresh token.
 func (s *Signer) SignRefresh(c Claims) (string, error) {
+	c.TokenUse = TokenUseRefresh
 	return s.sign(c, s.refreshTTL)
+}
+
+// SignMFAChallenge 签发短时 MFA 二次验证凭证，仅可用于 /v1/auth/mfa/verify。
+func (s *Signer) SignMFAChallenge(c Claims, ttl time.Duration) (string, error) {
+	c.TokenUse = TokenUseMFAChallenge
+	return s.sign(c, ttl)
+}
+
+// SignMFASetup 签发短时强制 MFA 绑定凭证，仅可用于登录前首次 MFA 绑定接口。
+func (s *Signer) SignMFASetup(c Claims, ttl time.Duration) (string, error) {
+	c.TokenUse = TokenUseMFASetup
+	return s.sign(c, ttl)
 }
 
 // SignWithTTL issues a token with a caller-supplied ttl. This is used for
