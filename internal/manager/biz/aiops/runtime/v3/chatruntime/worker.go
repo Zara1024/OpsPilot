@@ -597,8 +597,14 @@ func (rt *Runtime) runWorker(ctx context.Context, agentDef *Agent, sessID, userT
 	// manager; the worker's own handlers are registered via WithCallbacks below.
 	workerCtx := einocallbacks.InitCallbacks(ctx, nil)
 	src := llm.CallMetaFrom(workerCtx).Source
+	var sessKind string
+	var metaUserID uint64
+	if session != nil {
+		sessKind = session.Kind
+		metaUserID = session.UserID
+	}
 	if src == "" {
-		switch req.SessionKind {
+		switch sessKind {
 		case aiopsmodel.SessionKindInvestigation:
 			src = llm.SourceAlertRCA
 		case "report":
@@ -608,10 +614,6 @@ func (rt *Runtime) runWorker(ctx context.Context, agentDef *Agent, sessID, userT
 		default:
 			src = llm.SourceChat
 		}
-	}
-	var metaUserID uint64
-	if session != nil {
-		metaUserID = session.UserID
 	}
 	workerCtx = llm.WithCallMeta(workerCtx, llm.CallMeta{
 		Source:    src,
