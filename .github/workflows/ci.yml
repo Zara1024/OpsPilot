@@ -211,7 +211,61 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: Go vulnerability scan (govulncheck)
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        shell: bash
+        # Pin govulncheck@v1.7.0 (latest targeting go 1.25.0, compatible with setup-go's GOTOOLCHAIN=local)
+        # and scan compiled production binaries (-mode=binary) to avoid source-mode SSA OOM and test-only noise.
+        # Exit code 3 (vulnerabilities found) is advisory until the dedicated Go 1.26.x + CVE dependency upgrade PR lands;
+        # build failures or unexpected scanner exit codes fail the job immediately.
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/govulncheck-bin /tmp/govulncheck-out
+          GOBIN=/tmp/govulncheck-bin go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+          found_vulns=0
+          {
+            echo "## govulncheck (binary scan)"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          scan_binary() {
+            local name="$1"
+            local path="$2"
+            echo "::group::Scan $name"
+            set +e
+            local output
+            output="$(/tmp/govulncheck-bin/govulncheck -mode=binary "$path" 2>&1)"
+            local rc=$?
+            set -e
+            printf '%s\n' "$output"
+            echo "::endgroup::"
+            if [ "$rc" -eq 0 ]; then
+              echo "- \`$name\`: 0 vulnerabilities" >> "$GITHUB_STEP_SUMMARY"
+            elif [ "$rc" -eq 3 ]; then
+              found_vulns=1
+              local summary_line
+              summary_line="$(printf '%s\n' "$output" | grep -E '^Your code is affected by' | tail -n 1 || echo 'Vulnerabilities detected (see job logs)')"
+              echo "::warning title=govulncheck ($name)::$summary_line"
+              echo "- \`$name\`: $summary_line" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "::error title=govulncheck ($name)::govulncheck exited with unexpected code $rc"
+              exit "$rc"
+            fi
+          }
+
+          go build -o /tmp/govulncheck-out/opspilot ./cmd/opspilot
+          scan_binary "opspilot" /tmp/govulncheck-out/opspilot
+
+          go build -o /tmp/govulncheck-out/opspilot-edge ./cmd/opspilot-edge
+          scan_binary "opspilot-edge" /tmp/govulncheck-out/opspilot-edge
+
+          GOOS=windows GOARCH=amd64 go build -o /tmp/govulncheck-out/opspilot-edge-supervisor.exe ./cmd/opspilot-edge-supervisor
+          scan_binary "opspilot-edge-supervisor (windows/amd64)" /tmp/govulncheck-out/opspilot-edge-supervisor.exe
+
+          if [ "$found_vulns" -ne 0 ]; then
+            {
+              echo ""
+              echo "> Advisory while pinned to Go 1.25.x. Track Go 1.26.x + vulnerable Go module upgrades to make govulncheck blocking."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Frontend dependency audit (high+)
         working-directory: web

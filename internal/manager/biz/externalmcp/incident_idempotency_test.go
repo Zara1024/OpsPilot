@@ -26,7 +26,17 @@ func TestSilenceRetryAfterExpiryReturnsOriginalOperation(t *testing.T) {
 	var err error
 	f.e.Catalog, err = biz.NewCatalog(append(service.ProjectTools(resources.Tools()), f.e.ControlTools()...))
 	require.NoError(t, err)
-	row := &alertmodel.Incident{Title: "review fixture", DedupeKey: "review-fixture", Status: "open", Severity: "warning", ScopeType: "global", Rule: "fixture-rule"}
+	now := time.Now().UTC().Truncate(time.Second)
+	row := &alertmodel.Incident{
+		Title:        "review fixture",
+		DedupeKey:    "review-fixture",
+		Status:       "open",
+		Severity:     "warning",
+		ScopeType:    "global",
+		Rule:         "fixture-rule",
+		FirstFiredAt: now,
+		LastFiredAt:  now,
+	}
 	require.NoError(t, f.db.Create(row).Error)
 	detail, err := f.call(t, "get_incident_detail", map[string]any{"incident_ids": []uint64{row.ID}})
 	require.NoError(t, err)
