@@ -337,10 +337,10 @@ function UserTable({
             <th className="px-4 py-2.5 font-medium">{tr('姓名', 'Name')}</th>
             <th className="px-4 py-2.5 font-medium">{tr('邮箱', 'Email')}</th>
             <th className="px-4 py-2.5 font-medium">{tr('手机', 'Phone')}</th>
-            <th className="px-4 py-2.5 font-medium">{tr('系统角色', 'System role')}</th>
-            <th className="px-4 py-2.5 font-medium">MFA</th>
-            <th className="px-4 py-2.5 font-medium">{tr('状态', 'Status')}</th>
-            <th className="px-4 py-2.5 font-medium">{tr('操作', 'Actions')}</th>
+            <th className="whitespace-nowrap px-4 py-2.5 font-medium">{tr('系统角色', 'System role')}</th>
+            <th className="whitespace-nowrap px-4 py-2.5 font-medium">MFA</th>
+            <th className="whitespace-nowrap px-4 py-2.5 font-medium">{tr('状态', 'Status')}</th>
+            <th className="whitespace-nowrap px-4 py-2.5 font-medium">{tr('操作', 'Actions')}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-800/40">
@@ -356,25 +356,25 @@ function UserTable({
                 <td className="px-4 py-2.5 text-zinc-400">
                   {u.phone || <span className="text-zinc-600">—</span>}
                 </td>
-                <td className="px-4 py-2.5">
+                <td className="whitespace-nowrap px-4 py-2.5">
                   {u.role === 'admin' ? (
-                    <Chip tone="accent">
+                    <Chip className="whitespace-nowrap" tone="accent">
                       <Shield size={10} />
                       admin
                     </Chip>
                   ) : u.role === 'viewer' ? (
-                    <Chip tone="default">viewer</Chip>
+                    <Chip className="whitespace-nowrap" tone="default">viewer</Chip>
                   ) : (
-                    <Chip tone="default">user</Chip>
+                    <Chip className="whitespace-nowrap" tone="default">user</Chip>
                   )}
                 </td>
-                <td className="px-4 py-2.5">
-                  <Chip tone={u.mfa_enabled ? 'success' : 'default'}>
+                <td className="whitespace-nowrap px-4 py-2.5">
+                  <Chip className="whitespace-nowrap" tone={u.mfa_enabled ? 'success' : 'default'}>
                     {u.mfa_enabled ? tr('已开启', 'On') : tr('未开启', 'Off')}
                   </Chip>
                 </td>
-                <td className="px-4 py-2.5">
-                  <Chip tone={u.status === 'active' ? 'success' : 'warning'}>{u.status}</Chip>
+                <td className="whitespace-nowrap px-4 py-2.5">
+                  <Chip className="whitespace-nowrap" tone={u.status === 'active' ? 'success' : 'warning'}>{u.status}</Chip>
                 </td>
                 <td className="px-4 py-2.5">
                   <div className="flex items-center gap-1">

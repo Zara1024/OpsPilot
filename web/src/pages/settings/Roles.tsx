@@ -483,8 +483,8 @@ export default function AdminRolesPage() {
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-12">
+          <div className="lg:col-span-3">
             <Label htmlFor="sim-user" className="mb-1 block text-xs text-text-muted">{tr('测试用户', 'User')}</Label>
             <Select
               id="sim-user"
@@ -497,7 +497,7 @@ export default function AdminRolesPage() {
               className="w-full"
             />
           </div>
-          <div>
+          <div className="lg:col-span-3">
             <Label htmlFor="sim-rtype" className="mb-1 block text-xs text-text-muted">{tr('资源类型', 'Resource type')}</Label>
             <Select
               id="sim-rtype"
@@ -512,7 +512,7 @@ export default function AdminRolesPage() {
               className="w-full"
             />
           </div>
-          <div>
+          <div className="lg:col-span-2">
             <Label htmlFor="sim-keys" className="mb-1 block text-xs text-text-muted">{tr('目标标识（逗号分隔）', 'Target keys')}</Label>
             <Input
               id="sim-keys"
@@ -522,7 +522,7 @@ export default function AdminRolesPage() {
               className="w-full font-mono"
             />
           </div>
-          <div>
+          <div className="lg:col-span-2">
             <Label htmlFor="sim-action" className="mb-1 block text-xs text-text-muted">{tr('操作动作', 'Action')}</Label>
             <Select
               id="sim-action"
@@ -537,7 +537,7 @@ export default function AdminRolesPage() {
               className="w-full"
             />
           </div>
-          <div className="flex items-end">
+          <div className="flex items-end lg:col-span-2">
             <Button variant="primary" onClick={() => void runSimulator()} disabled={simRunning || !simUserId} className="w-full justify-center">
               {simRunning ? <Loader2 size={13} className="animate-spin" /> : <FlaskConical size={13} />}
               <span>{tr('测试权限', 'Check access')}</span>
@@ -573,7 +573,7 @@ export default function AdminRolesPage() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         title={editing ? tr(`编辑资源授权 #${editing.id}`, `Edit RBAC Grant #${editing.id}`) : tr('新建资源授权规则', 'New Resource RBAC Grant')}
-        size="md"
+        size="lg"
         footer={
           <>
             <Button onClick={() => setModalOpen(false)}>{tr('取消', 'Cancel')}</Button>
